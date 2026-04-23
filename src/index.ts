@@ -11,13 +11,20 @@ if (!token) throw new Error('BOT_TOKEN не задан в .env');
 
 const port = parseInt(process.env.PORT ?? '3000', 10);
 
-const bot = createBot(token);
-initNotifications(bot);
-initScheduler(bot);
-
+// 1. Сначала поднимаем HTTP-сервер — Railway сразу увидит healthcheck
 const app = createServer();
-app.listen(port, () => console.log(`Admin panel: http://localhost:${port}`));
+app.listen(port, () => {
+  console.log(`Admin panel запущен на порту ${port}`);
 
-bot.start({
-  onStart: info => console.log(`Maria Crew bot @${info.username} запущен`),
+  // 2. Бот стартует после того как сервер уже слушает
+  const bot = createBot(token!);
+  initNotifications(bot);
+  initScheduler(bot);
+
+  bot.start({
+    onStart: info => console.log(`Maria Crew bot @${info.username} запущен`),
+  }).catch(err => {
+    console.error('Ошибка запуска бота:', err.message);
+    // Не крашим процесс — сервер продолжает работать
+  });
 });
