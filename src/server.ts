@@ -11,6 +11,9 @@ export function createServer(): express.Application {
   app.use(cors());
   app.use(express.json());
 
+  // Health check для Railway
+  app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
   // API
   app.use('/api', apiRouter);
 
