@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: maria-crew
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: maria-crew-db
+          property: connectionString
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_SECRET
+        sync: false
+      - key: CREW_CHANNEL_ID
+        sync: false
+      - key: PORT
+        value: 3000
+
+databases:
+  - name: maria-crew-db
+    databaseName: maria_crew
+    plan: free

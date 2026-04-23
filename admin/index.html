@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Maria Crew — Admin</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Логин -->
+<div id="login-screen">
+  <h1>Maria Crew</h1>
+  <p style="color:#6b7280">Панель управления</p>
+  <input type="password" id="secret-input" placeholder="Секретный ключ" onkeydown="if(event.key==='Enter')login()">
+  <button onclick="login()">Войти</button>
+  <p id="login-error" style="color:#ef4444;font-size:13px"></p>
+</div>
+
+<!-- Приложение -->
+<div id="app">
+  <header>
+    <h1>Maria Crew</h1>
+    <select id="store-select" onchange="onStoreChange()">
+      <option value="">— Все точки —</option>
+    </select>
+    <button class="logout" onclick="logout()">Выйти</button>
+  </header>
+
+  <nav>
+    <button class="tab-btn active" data-tab="metrics"    onclick="switchTab('metrics')">📊 Метрики</button>
+    <button class="tab-btn"        data-tab="coins"      onclick="switchTab('coins')">💰 Монеты</button>
+    <button class="tab-btn"        data-tab="exchanges"  onclick="switchTab('exchanges')">🛍 Заявки</button>
+    <button class="tab-btn"        data-tab="employees"  onclick="switchTab('employees')">👤 Сотрудники</button>
+    <button class="tab-btn"        data-tab="leaderboard" onclick="switchTab('leaderboard')">🏆 Рейтинги</button>
+  </nav>
+
+  <main>
+
+    <!-- ── Метрики ──────────────────────────────────── -->
+    <div id="tab-metrics" class="tab-content">
+      <div class="period-bar">
+        <button onclick="changePeriod(-1)">◀</button>
+        <span id="period-label">Апрель 2026</span>
+        <button onclick="changePeriod(1)">▶</button>
+        <button class="btn btn-ghost" onclick="loadMetrics()" style="margin-left:8px">Обновить</button>
+      </div>
+
+      <div id="metrics-store-ratings" class="hidden">
+        <p class="section-title">Данные по точке</p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+          <label>Рейтинг на отзовиках (0–5):
+            <input type="number" id="store-rating-score" min="0" max="5" step="0.1" value="4.5" style="width:70px;margin-left:6px">
+          </label>
+          <label>% выполнения плана выручки:
+            <input type="number" id="store-revenue-percent" min="0" max="200" step="0.1" value="100" style="width:80px;margin-left:6px">
+          </label>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table id="metrics-table">
+          <thead>
+            <tr>
+              <th>Сотрудник</th>
+              <th>Тайный покуп. (0–100)</th>
+              <th>Отзывов</th>
+              <th>Чек-лист %</th>
+              <th>План %</th>
+            </tr>
+          </thead>
+          <tbody id="metrics-tbody">
+            <tr><td colspan="5" class="empty">Выберите точку</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="saveMetrics()">💾 Сохранить</button>
+        <button class="btn btn-success" onclick="processMonth()" id="process-btn">
+          ⚡ Обработать месяц (MVP + карточки + уведомления)
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Монеты ───────────────────────────────────── -->
+    <div id="tab-coins" class="tab-content hidden">
+      <p class="section-title">Начислить монеты</p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px">
+        <label>Сотрудник:
+          <select id="coin-employee" class="inline" style="width:200px;margin-left:6px">
+            <option value="">— выбери —</option>
+          </select>
+        </label>
+        <label>Причина:
+          <select id="coin-reason" class="inline" style="width:180px;margin-left:6px">
+            <option value="checklist_day">Чек-лист 100% за день (+1)</option>
+            <option value="review">Именной отзыв гостя (+3)</option>
+            <option value="cake_order">Торт на заказ (+2)</option>
+            <option value="substitution">Подмена коллеги (+5)</option>
+            <option value="mentoring">Наставничество (+10)</option>
+            <option value="idea">Идея внедрена (+5)</option>
+            <option value="manual">Вручную (указать сумму)</option>
+          </select>
+        </label>
+        <label id="manual-amount-label" class="hidden">Сумма:
+          <input type="number" id="coin-amount" min="1" value="1" style="width:70px;margin-left:6px">
+        </label>
+        <label>Примечание:
+          <input type="text" id="coin-note" placeholder="необязательно" style="width:160px;margin-left:6px">
+        </label>
+        <button class="btn btn-primary" onclick="awardCoins()">Начислить</button>
+      </div>
+
+      <p class="section-title">История монет сотрудника</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Дата</th><th>Сумма</th><th>Причина</th><th>Примечание</th></tr></thead>
+          <tbody id="coins-history-tbody">
+            <tr><td colspan="4" class="empty">Выберите сотрудника</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Заявки ────────────────────────────────────── -->
+    <div id="tab-exchanges" class="tab-content hidden">
+      <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center">
+        <p class="section-title" style="margin:0">Заявки на обмен</p>
+        <select id="exchanges-status" class="inline" onchange="loadExchanges()">
+          <option value="pending">Ожидают</option>
+          <option value="approved">Одобрены</option>
+          <option value="fulfilled">Выданы</option>
+          <option value="rejected">Отклонены</option>
+        </select>
+        <button class="btn btn-ghost" onclick="loadExchanges()">Обновить</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Сотрудник</th><th>Точка</th><th>Приз</th>
+            <th>Карточек</th><th>Монет</th><th>Дата</th><th>Статус</th><th>Действие</th>
+          </tr></thead>
+          <tbody id="exchanges-tbody">
+            <tr><td colspan="8" class="empty">Загрузка...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Сотрудники ─────────────────────────────────── -->
+    <div id="tab-employees" class="tab-content hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <p class="section-title" style="margin:0">Сотрудники точки</p>
+        <button class="btn btn-primary" onclick="showAddEmployee()">+ Добавить</button>
+      </div>
+
+      <div id="add-employee-form" class="hidden" style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <label>Имя: <input type="text" id="new-emp-name" style="width:180px;margin-left:6px"></label>
+        <label>Роль:
+          <select id="new-emp-role" class="inline" style="margin-left:6px">
+            <option value="employee">Сотрудник</option>
+            <option value="manager">Руководитель</option>
+          </select>
+        </label>
+        <button class="btn btn-primary" onclick="addEmployee()">Добавить</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('add-employee-form').classList.add('hidden')">Отмена</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Имя</th><th>Роль</th><th>Карточек</th><th>Монет</th><th>Героев</th><th>Статус</th><th>Действие</th>
+          </tr></thead>
+          <tbody id="employees-tbody">
+            <tr><td colspan="7" class="empty">Выберите точку</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Рейтинги ───────────────────────────────────── -->
+    <div id="tab-leaderboard" class="tab-content hidden">
+      <div class="period-bar" style="margin-bottom:20px">
+        <button onclick="changePeriod(-1)">◀</button>
+        <span id="lb-period-label">Апрель 2026</span>
+        <button onclick="changePeriod(1)">▶</button>
+        <button class="btn btn-ghost" onclick="loadLeaderboard()" style="margin-left:8px">Обновить</button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;flex-wrap:wrap">
+        <div>
+          <p class="section-title">MVP сотрудников</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>Имя</th><th>Баллы</th><th>Карт.</th></tr></thead>
+              <tbody id="lb-employees-tbody">
+                <tr><td colspan="4" class="empty">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <p class="section-title">Рейтинг точек</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>Точка</th><th>Баллы</th></tr></thead>
+              <tbody id="lb-stores-tbody">
+                <tr><td colspan="3" class="empty">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

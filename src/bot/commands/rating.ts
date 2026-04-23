@@ -1,0 +1,45 @@
+import { getEmployeeLeaderboard } from '../../services/rating.service';
+import type { BotContext } from '../context';
+import { requireAuth } from '../middleware/auth';
+import { rankEmoji, monthName, currentPeriod, esc } from '../helpers';
+
+export async function handleRating(ctx: BotContext): Promise<void> {
+  if (!(await requireAuth(ctx))) return;
+  const employee = ctx.employee!;
+
+  const { year, month } = currentPeriod();
+  const leaderboard = await getEmployeeLeaderboard(employee.storeId, year, month);
+
+  if (leaderboard.length === 0) {
+    await ctx.reply(
+      `📊 Рейтинг за ${monthName(month, true)} ещё не сформирован.\n` +
+      `Руководитель вводит показатели в начале следующего месяца.`
+    );
+    return;
+  }
+
+  const monthLabel = `${monthName(month)} ${year}`;
+  let text = `📊 <b>Рейтинг точки — ${monthLabel}</b>\n\n`;
+
+  let myRank = 0;
+  leaderboard.forEach((entry, i) => {
+    const rank = i + 1;
+    const emoji = rankEmoji(rank);
+    const mvpTag = entry.isMvp ? ' ⭐ MVP' : '';
+    const score = entry.mvpScore !== null ? entry.mvpScore.toFixed(2) : '—';
+    text += `${emoji} ${esc(entry.name)} — ${score}${mvpTag}\n`;
+
+    if (entry.employeeId === employee.id) myRank = rank;
+  });
+
+  if (myRank > 0) {
+    const myEntry = leaderboard[myRank - 1];
+    const score = myEntry.mvpScore !== null ? myEntry.mvpScore.toFixed(2) : '—';
+    text += `\n▶ <b>Ты на ${myRank} месте — ${score} баллов</b>`;
+    if (myEntry.isMvp) text += ' 🏆';
+  }
+
+  text += `\n\n<i>Рейтинг обновляется после обработки месяца.</i>`;
+
+  await ctx.reply(text, { parse_mode: 'HTML' });
+}

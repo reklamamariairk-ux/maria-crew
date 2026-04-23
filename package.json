@@ -1,0 +1,35 @@
+{
+  "name": "maria-crew",
+  "version": "1.0.0",
+  "description": "Система нематериальной мотивации Maria Crew для кондитерских «Мария»",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc && node dist/db/migrate.js",
+    "start": "node dist/index.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "migrate": "ts-node src/db/migrate.ts",
+    "migrate:rollback": "ts-node src/db/migrate.ts rollback",
+    "seed": "ts-node src/db/seed.ts"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "grammy": "^1.27.0",
+    "helmet": "^7.1.0",
+    "node-cron": "^3.0.3",
+    "pg": "^8.12.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.12.7",
+    "@types/node-cron": "^3.0.11",
+    "@types/pg": "^8.11.6",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.4.5"
+  }
+}
