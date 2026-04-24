@@ -178,32 +178,30 @@ async function seedIfEmpty(): Promise<void> {
 }
 
 async function main() {
-  // 1. База данных
-  await withRetry('подключение к БД', checkDatabase);
-  await withRetry('миграции', runMigrations);
-  await withRetry('seed', seedIfEmpty);
-
-  // 3. Создаём бота
-  console.log('[bot] Создаём...');
+  // 1. Создаём бота и сразу запускаем HTTP-сервер
+  // Render убивает процесс если порт не открылся быстро — делаем это первым
   const bot = createBot(token!);
-
-  // Проверяем токен
-  const me = await withRetry('проверка Telegram Bot API', () => bot.api.getMe());
-  console.log(`[bot] ✓ @${me.username} (id=${me.id})`);
-
-  initNotifications(bot);
-  initScheduler(bot);
-
-  // 4. Запускаем HTTP-сервер с webhook-обработчиком
   const app = createServer(bot, webhookSecret);
   await new Promise<void>(resolve => app.listen(port, () => {
     console.log(`[server] ✓ Порт ${port}`);
     resolve();
   }));
 
-  // 5. Регистрируем webhook в Telegram
+  // 2. Уведомления и планировщик (не требуют БД)
+  initNotifications(bot);
+  initScheduler(bot);
+
+  // 3. База данных — с ретраями (Neon cold start может занять ~20 сек)
+  await withRetry('подключение к БД', checkDatabase);
+  await withRetry('миграции', runMigrations);
+  await withRetry('seed', seedIfEmpty);
+
+  // 4. Проверяем токен и регистрируем webhook
+  const me = await withRetry('getMe', () => bot.api.getMe());
+  console.log(`[bot] ✓ @${me.username} (id=${me.id})`);
+
   const webhookUrl = `${serviceUrl}/webhook/${webhookSecret}`;
-  await withRetry('регистрация webhook', () =>
+  await withRetry('setWebhook', () =>
     bot.api.setWebhook(webhookUrl, { drop_pending_updates: false })
   );
   console.log(`[bot] ✓ Webhook установлен: ${webhookUrl}`);
