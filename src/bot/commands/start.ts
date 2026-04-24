@@ -17,21 +17,6 @@ export function mainMenuKeyboard(): InlineKeyboard {
     .text('🛍 Maria Store', 'menu:store').text('👥 Команда', 'menu:crew');
 }
 
-async function getStoresKeyboard(): Promise<InlineKeyboard | null> {
-  const { rows } = await pool.query<{ id: number; name: string }>(
-    `SELECT id, name FROM stores WHERE is_active = true ORDER BY id`
-  );
-  if (rows.length === 0) return null;
-
-  const kb = new InlineKeyboard();
-  rows.forEach((s, i) => {
-    kb.text(s.name, `reg:store:${s.id}`);
-    // НЕ добавляем row() после последней кнопки — пустая строка ломает Telegram API
-    if ((i + 1) % 2 === 0 && i < rows.length - 1) kb.row();
-    else if ((i + 1) % 2 !== 0 && i === rows.length - 1) { /* нечётное кол-во — последняя одна */ }
-  });
-  return kb;
-}
 
 export async function handleStart(ctx: BotContext): Promise<void> {
   console.log(`[start] user=${ctx.from?.id} username=${ctx.from?.username} employee=${!!ctx.employee}`);

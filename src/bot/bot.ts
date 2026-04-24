@@ -13,25 +13,30 @@ import { markBotError, markUpdate } from '../diagnostics';
 export function createBot(token: string): Bot<BotContext> {
   const bot = new Bot<BotContext>(token);
 
+  // ── Базовые middleware (порядок важен) ────────────────────────────────────────
   bot.use(session({ initial: (): SessionData => ({ step: 'idle' }) }));
+
+  // Диагностика — записывает каждый update
   bot.use(async (ctx, next) => {
     markUpdate({
       updateId: ctx.update.update_id,
-      fromId: ctx.from?.id,
-      chatId: ctx.chat?.id,
-      text: ctx.msg?.text,
+      fromId:   ctx.from?.id,
+      chatId:   ctx.chat?.id,
+      text:     ctx.msg?.text,
     });
     await next();
   });
+
+  // Авторизация — должна быть ДО всех команд, чтобы ctx.employee был заполнен
   bot.use(authMiddleware);
 
-  // ── Диагностика ──────────────────────────────────────────────────────────────
+  // ── Диагностика ───────────────────────────────────────────────────────────────
   bot.command('ping', async ctx => {
     console.log(`[ping] from ${ctx.from?.id} @${ctx.from?.username}`);
     await ctx.reply('🏓 Pong! Бот работает.');
   });
 
-  // ── Команды ──────────────────────────────────────────────────────────────────
+  // ── Команды ───────────────────────────────────────────────────────────────────
   bot.command('start',      handleStart);
   bot.command('collection', handleCollection);
   bot.command('coins',      handleCoins);
@@ -40,10 +45,10 @@ export function createBot(token: string): Bot<BotContext> {
   bot.command('store',      handleStore);
   bot.command('crew',       handleCrew);
 
-  // ── Регистрация ───────────────────────────────────────────────────────────────
+  // ── Регистрация (обратная совместимость с inline-кнопками выбора точки) ───────
   bot.callbackQuery(/^reg:store:/, handleStoreSelection);
 
-  // ── Главное меню — кнопки ─────────────────────────────────────────────────────
+  // ── Главное меню ──────────────────────────────────────────────────────────────
   bot.callbackQuery('menu:collection', async ctx => {
     await ctx.answerCallbackQuery();
     await handleCollection(ctx);
