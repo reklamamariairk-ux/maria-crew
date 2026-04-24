@@ -5,6 +5,7 @@ tg.expand();
 
 const API = '/api/webapp';
 const initData = tg.initData || '';
+const hasTelegramUser = Boolean(tg.initDataUnsafe && tg.initDataUnsafe.user);
 
 let employee = null;
 let currentTab = 'collection';
@@ -68,6 +69,16 @@ function updateHeaderStats(stats) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 async function init() {
+  if (!hasTelegramUser || !initData) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('reg-screen').style.display = 'block';
+    document.getElementById('reg-copy').textContent =
+      'Открой приложение кнопкой из Telegram-бота Maria Crew. В обычном браузере авторизация не работает.';
+    document.getElementById('reg-store-wrap').style.display = 'none';
+    document.getElementById('reg-btn').style.display = 'none';
+    return;
+  }
+
   try {
     const res = await fetch(API + '/auth', {
       method: 'POST',
@@ -79,11 +90,17 @@ async function init() {
     if (res.ok && data.registered) {
       employee = data.employee;
       showApp(data.stats);
-    } else {
+    } else if (res.ok && data.registered === false) {
       await loadRegScreen();
+    } else {
+      throw new Error(data.error || 'Не удалось авторизоваться в Mini App');
     }
-  } catch {
-    await loadRegScreen();
+  } catch (err) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('reg-screen').style.display = 'block';
+    document.getElementById('reg-copy').textContent = err.message || 'Ошибка входа в приложение';
+    document.getElementById('reg-store-wrap').style.display = 'none';
+    document.getElementById('reg-btn').style.display = 'none';
   }
 }
 
@@ -92,6 +109,10 @@ async function init() {
 async function loadRegScreen() {
   document.getElementById('loading').style.display = 'none';
   document.getElementById('reg-screen').style.display = 'block';
+  document.getElementById('reg-copy').textContent =
+    'Выбери свою кондитерскую, чтобы привязать аккаунт и открыть Maria Crew.';
+  document.getElementById('reg-store-wrap').style.display = 'block';
+  document.getElementById('reg-btn').style.display = 'block';
 
   try {
     const stores = await fetch(API + '/stores').then(r => r.json());
@@ -145,6 +166,8 @@ function showApp(stats) {
   document.getElementById('header-store').textContent = '🏪 ' + (employee.storeName || '—');
 
   updateHeaderStats(stats);
+  prizesCache = null;
+  myStatsCache = null;
   switchTab('collection');
 }
 

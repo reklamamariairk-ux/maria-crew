@@ -43,6 +43,9 @@ const origPoolQuery = rawPool.query.bind(rawPool);
 const origPoolConnect = rawPool.connect.bind(rawPool);
 (rawPool as any).connect = async () => {
   const client = await origPoolConnect();
+  client.on('error', (err: Error) => {
+    console.error('[db client] Ошибка клиента:', err.message);
+  });
   const origClientQuery = client.query.bind(client);
   (client as any).query = (...args: any[]) => {
     const lastArg = args[args.length - 1];

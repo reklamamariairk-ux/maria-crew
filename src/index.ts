@@ -15,7 +15,11 @@ if (!token) throw new Error('BOT_TOKEN не задан');
 const port = parseInt(process.env.PORT ?? '3000', 10);
 
 // URL сервиса на Render (нужен для webhook)
-const serviceUrl = (process.env.WEBHOOK_URL ?? 'https://maria-crew.onrender.com').replace(/\/$/, '');
+const serviceUrl = (
+  process.env.WEBHOOK_URL ??
+  process.env.RENDER_EXTERNAL_URL ??
+  'https://maria-crew.onrender.com'
+).replace(/\/$/, '');
 
 // Секрет для webhook-эндпоинта (первые 16 символов после ":" в токене)
 const webhookSecret = token.split(':')[1]?.slice(0, 16) ?? 'secret';
@@ -25,6 +29,44 @@ console.log('NODE_ENV:', process.env.NODE_ENV);
 console.log('PORT:', port);
 console.log('SERVICE_URL:', serviceUrl);
 console.log('BOT_TOKEN:', token.slice(0, 10) + '...');
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function withRetry<T>(
+  label: string,
+  fn: () => Promise<T>,
+  options: { attempts?: number; delayMs?: number } = {}
+): Promise<T> {
+  const attempts = options.attempts ?? 5;
+  const delayMs = options.delayMs ?? 3000;
+
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      if (attempt > 1) {
+        console.log(`[retry] ${label} — попытка ${attempt}/${attempts}`);
+      }
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[retry] ${label} — ошибка: ${message}`);
+      if (attempt < attempts) {
+        await sleep(delayMs * attempt);
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+async function checkDatabase(): Promise<void> {
+  console.log('[db] Проверяем подключение...');
+  await pool.query('SELECT 1');
+  console.log('[db] ✓ Подключение к БД есть');
+}
 
 async function runMigrations(): Promise<void> {
   console.log('[migrations] Запуск...');
@@ -136,18 +178,17 @@ async function seedIfEmpty(): Promise<void> {
 }
 
 async function main() {
-  // 1. Миграции
-  await runMigrations();
-
-  // 2. Seed
-  await seedIfEmpty();
+  // 1. База данных
+  await withRetry('подключение к БД', checkDatabase);
+  await withRetry('миграции', runMigrations);
+  await withRetry('seed', seedIfEmpty);
 
   // 3. Создаём бота
   console.log('[bot] Создаём...');
   const bot = createBot(token!);
 
   // Проверяем токен
-  const me = await bot.api.getMe();
+  const me = await withRetry('проверка Telegram Bot API', () => bot.api.getMe());
   console.log(`[bot] ✓ @${me.username} (id=${me.id})`);
 
   initNotifications(bot);
@@ -162,7 +203,9 @@ async function main() {
 
   // 5. Регистрируем webhook в Telegram
   const webhookUrl = `${serviceUrl}/webhook/${webhookSecret}`;
-  await bot.api.setWebhook(webhookUrl, { drop_pending_updates: false });
+  await withRetry('регистрация webhook', () =>
+    bot.api.setWebhook(webhookUrl, { drop_pending_updates: false })
+  );
   console.log(`[bot] ✓ Webhook установлен: ${webhookUrl}`);
 }
 
