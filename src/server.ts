@@ -12,14 +12,13 @@ export function createServer(bot: Bot<BotContext>, webhookSecret: string): expre
 
   app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cors());
+  app.use(express.json());
 
-  // Webhook — raw body нужен grammy ДО express.json()
+  // Для express-адаптера grammy нужен уже распарсенный JSON body.
   app.post(
     `/webhook/${webhookSecret}`,
     webhookCallback(bot, 'express')
   );
-
-  app.use(express.json());
 
   app.get('/api/health', (_req, res) => res.json({ ok: true, mode: 'webhook' }));
 
