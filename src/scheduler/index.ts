@@ -1,4 +1,6 @@
 import cron from 'node-cron';
+import https from 'https';
+import http from 'http';
 import type { Bot } from 'grammy';
 import type { BotContext } from '../bot/context';
 import { remindMetrics } from './jobs/remindMetrics';
@@ -54,13 +56,14 @@ export function initScheduler(bot: Bot<BotContext>): void {
   // ── 4. Keep-alive — пинг каждые 13 минут ─────────────────────────────────
   // Render free tier засыпает через 15 мин без трафика
   const serviceUrl = (process.env.WEBHOOK_URL ?? 'https://maria-crew.onrender.com').replace(/\/$/, '');
-  cron.schedule('*/13 * * * *', async () => {
-    try {
-      const res = await fetch(`${serviceUrl}/api/health`);
-      if (!res.ok) console.warn('[keep-alive] health вернул', res.status);
-    } catch (err) {
-      console.warn('[keep-alive] ping ошибка:', (err as Error).message);
-    }
+  cron.schedule('*/13 * * * *', () => {
+    const url = `${serviceUrl}/api/health`;
+    const client = url.startsWith('https') ? https : http;
+    client.get(url, (res) => {
+      if (res.statusCode !== 200) console.warn('[keep-alive] health вернул', res.statusCode);
+    }).on('error', (err) => {
+      console.warn('[keep-alive] ping ошибка:', err.message);
+    });
   });
 
   console.log('[scheduler] Задачи зарегистрированы:');
