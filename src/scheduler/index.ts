@@ -51,7 +51,20 @@ export function initScheduler(bot: Bot<BotContext>): void {
     await weeklyDigest(publishToChannel);
   }, { timezone: 'Asia/Irkutsk' });
 
+  // ── 4. Keep-alive — пинг каждые 13 минут ─────────────────────────────────
+  // Render free tier засыпает через 15 мин без трафика
+  const serviceUrl = (process.env.WEBHOOK_URL ?? 'https://maria-crew.onrender.com').replace(/\/$/, '');
+  cron.schedule('*/13 * * * *', async () => {
+    try {
+      const res = await fetch(`${serviceUrl}/api/health`);
+      if (!res.ok) console.warn('[keep-alive] health вернул', res.status);
+    } catch (err) {
+      console.warn('[keep-alive] ping ошибка:', (err as Error).message);
+    }
+  });
+
   console.log('[scheduler] Задачи зарегистрированы:');
+  console.log('  • Каждые 13 мин         — keep-alive ping');
   console.log('  • 1-е число месяца 10:00 — напоминание про метрики');
   console.log('  • Пн–Сб 20:00           — напоминание про монеты');
   console.log('  • Пятница 18:00          — еженедельный дайджест в канал');
