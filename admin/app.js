@@ -295,7 +295,7 @@ async function updateExchange(id, status) {
 // ── Сотрудники ────────────────────────────────────────────────────────────────
 async function loadEmployees() {
   if (!state.storeId) {
-    document.getElementById('employees-tbody').innerHTML = '<tr><td colspan="7" class="empty">Выберите точку</td></tr>';
+    document.getElementById('employees-tbody').innerHTML = '<tr><td colspan="8" class="empty">Выберите точку</td></tr>';
     return;
   }
   const emps = await api('GET', `/stores/${state.storeId}/employees`) || [];
@@ -304,10 +304,11 @@ async function loadEmployees() {
 
   const tbody = document.getElementById('employees-tbody');
   if (emps.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty">Нет сотрудников</td></tr>'; return;
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">Нет сотрудников</td></tr>'; return;
   }
   tbody.innerHTML = summaries.filter(Boolean).map(s => `<tr>
     <td><strong>${esc(s.name)}</strong></td>
+    <td style="color:var(--muted);font-size:13px">${s.telegramUsername ? '@' + esc(s.telegramUsername) : '—'}</td>
     <td>${roleLabel(s.role)}</td>
     <td>${s.availableCards}</td>
     <td>${s.coinBalance}</td>
@@ -328,12 +329,14 @@ function showAddEmployee() {
 async function addEmployee() {
   const name = document.getElementById('new-emp-name').value.trim();
   const role = document.getElementById('new-emp-role').value;
+  const telegramUsername = document.getElementById('new-emp-username').value.trim();
   if (!name || !state.storeId) { toast('Введите имя и выберите точку'); return; }
   try {
-    await api('POST', '/employees', { name, storeId: state.storeId, role });
+    await api('POST', '/employees', { name, storeId: state.storeId, role, telegramUsername: telegramUsername || undefined });
     toast('✅ Сотрудник добавлен');
     document.getElementById('add-employee-form').classList.add('hidden');
     document.getElementById('new-emp-name').value = '';
+    document.getElementById('new-emp-username').value = '';
     loadEmployees();
   } catch (e) { toast('❌ ' + e.message); }
 }

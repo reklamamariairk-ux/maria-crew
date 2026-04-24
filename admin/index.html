@@ -157,6 +157,7 @@
 
       <div id="add-employee-form" class="hidden" style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
         <label>Имя: <input type="text" id="new-emp-name" style="width:180px;margin-left:6px"></label>
+        <label>@username: <input type="text" id="new-emp-username" placeholder="@ivan_ivanov" style="width:150px;margin-left:6px"></label>
         <label>Роль:
           <select id="new-emp-role" class="inline" style="margin-left:6px">
             <option value="employee">Сотрудник</option>
@@ -170,10 +171,10 @@
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Имя</th><th>Роль</th><th>Карточек</th><th>Монет</th><th>Героев</th><th>Статус</th><th>Действие</th>
+            <th>Имя</th><th>@username</th><th>Роль</th><th>Карточек</th><th>Монет</th><th>Героев</th><th>Статус</th><th>Действие</th>
           </tr></thead>
           <tbody id="employees-tbody">
-            <tr><td colspan="7" class="empty">Выберите точку</td></tr>
+            <tr><td colspan="8" class="empty">Выберите точку</td></tr>
           </tbody>
         </table>
       </div>
