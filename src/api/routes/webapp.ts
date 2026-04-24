@@ -133,8 +133,7 @@ router.post('/auth', async (req: Request, res: Response, next: NextFunction): Pr
       return;
     }
 
-    const stats = await getStats(employee.id);
-    res.json({ registered: true, employee, stats });
+    res.json({ registered: true, employee });
   } catch (err) { next(err); }
 });
 

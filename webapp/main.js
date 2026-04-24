@@ -105,6 +105,20 @@ function updateHeaderStats(stats) {
   document.getElementById('stat-heroes').textContent = stats.uniqueHeroes ?? '0';
 }
 
+async function refreshHeaderStats() {
+  try {
+    const me = await apiFetch('/me');
+    myStatsCache = me;
+    updateHeaderStats({
+      availableCards: me.availableCards,
+      coinBalance: me.coinBalance,
+      uniqueHeroes: me.uniqueHeroes,
+    });
+  } catch (err) {
+    console.error('[webapp] header stats error:', err);
+  }
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 async function init() {
@@ -125,7 +139,7 @@ async function init() {
 
     if (res.ok && data.registered) {
       employee = data.employee;
-      showApp(data.stats);
+      showApp(data.stats ?? { availableCards: '—', coinBalance: '—', uniqueHeroes: '—' });
     } else if (res.ok && data.registered === false) {
       await loadRegScreen();
     } else {
@@ -203,6 +217,7 @@ function showApp(stats) {
   prizesCache = null;
   myStatsCache = null;
   switchTab('collection');
+  refreshHeaderStats();
 }
 
 // ── Tab routing ───────────────────────────────────────────────────────────────
