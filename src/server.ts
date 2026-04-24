@@ -6,6 +6,7 @@ import { webhookCallback } from 'grammy';
 import type { Bot } from 'grammy';
 import type { BotContext } from './bot/context';
 import apiRouter from './api/router';
+import { getDiagnostics, markBotError, markWebhookHit } from './diagnostics';
 
 export function createServer(bot: Bot<BotContext>, webhookSecret: string): express.Application {
   const app = express();
@@ -21,6 +22,7 @@ export function createServer(bot: Bot<BotContext>, webhookSecret: string): expre
   // Для express-адаптера grammy нужен уже распарсенный JSON body.
   app.post(`/webhook/${webhookSecret}`, async (req, res, next) => {
     const update = req.body;
+    markWebhookHit(update);
     if (!update || typeof update !== 'object' || typeof update.update_id !== 'number') {
       console.error('[webhook] Некорректный payload:', update);
       res.status(400).json({ error: 'Invalid Telegram update payload' });
@@ -31,6 +33,7 @@ export function createServer(bot: Bot<BotContext>, webhookSecret: string): expre
       await telegramWebhook(req, res);
     } catch (err) {
       console.error('[webhook] Ошибка обработки update:', err);
+      markBotError(err instanceof Error ? err.message : String(err));
       if (!res.headersSent) {
         res.status(500).json({ error: 'Webhook processing failed' });
       } else {
@@ -39,7 +42,11 @@ export function createServer(bot: Bot<BotContext>, webhookSecret: string): expre
     }
   });
 
-  app.get('/api/health', (_req, res) => res.json({ ok: true, mode: 'webhook' }));
+  app.get('/api/health', (_req, res) => res.json({
+    ok: true,
+    mode: 'webhook',
+    diagnostics: getDiagnostics(),
+  }));
 
   app.use('/api', apiRouter);
 

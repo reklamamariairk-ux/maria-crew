@@ -8,11 +8,21 @@ import { handleRating } from './commands/rating';
 import { handleTop } from './commands/top';
 import { handleStore, handleStoreCallback } from './commands/store';
 import { handleCrew } from './commands/crew';
+import { markBotError, markUpdate } from '../diagnostics';
 
 export function createBot(token: string): Bot<BotContext> {
   const bot = new Bot<BotContext>(token);
 
   bot.use(session({ initial: (): SessionData => ({ step: 'idle' }) }));
+  bot.use(async (ctx, next) => {
+    markUpdate({
+      updateId: ctx.update.update_id,
+      fromId: ctx.from?.id,
+      chatId: ctx.chat?.id,
+      text: ctx.msg?.text,
+    });
+    await next();
+  });
   bot.use(authMiddleware);
 
   // ── Диагностика ──────────────────────────────────────────────────────────────
@@ -76,6 +86,7 @@ export function createBot(token: string): Bot<BotContext> {
   bot.catch(async (err: BotError<BotContext>) => {
     const ctx = err.ctx;
     console.error(`[bot] Ошибка update#${ctx.update.update_id}:`, err.error);
+    markBotError(err.error instanceof Error ? err.error.message : String(err.error));
     try {
       if (ctx.callbackQuery) {
         await ctx.answerCallbackQuery('Ошибка, попробуй снова').catch(() => {});
