@@ -51,7 +51,16 @@ export function createServer(bot: Bot<BotContext>, webhookSecret: string): expre
   app.use('/api', apiRouter);
 
   const webappDir = path.join(__dirname, '../webapp');
-  app.use('/webapp', express.static(webappDir));
+  app.use('/webapp', express.static(webappDir, {
+    etag: false,
+    lastModified: false,
+    setHeaders: res => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.setHeader('Surrogate-Control', 'no-store');
+    },
+  }));
 
   const adminDir = path.join(__dirname, '../admin');
   app.use(express.static(adminDir));
