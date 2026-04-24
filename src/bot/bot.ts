@@ -33,7 +33,8 @@ export function createBot(token: string): Bot<BotContext> {
   // ── Диагностика ───────────────────────────────────────────────────────────────
   bot.command('ping', async ctx => {
     console.log(`[ping] from ${ctx.from?.id} @${ctx.from?.username}`);
-    await ctx.reply('🏓 Pong! Бот работает.');
+    if (!ctx.chat?.id) return;
+    await ctx.api.sendMessage(ctx.chat.id, '🏓 Pong! Бот работает.');
   });
 
   // ── Команды ───────────────────────────────────────────────────────────────────

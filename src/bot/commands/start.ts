@@ -21,22 +21,30 @@ export function mainMenuKeyboard(): InlineKeyboard {
 export async function handleStart(ctx: BotContext): Promise<void> {
   console.log(`[start] user=${ctx.from?.id} username=${ctx.from?.username} employee=${!!ctx.employee}`);
 
+  const send = async (text: string, reply_markup: InlineKeyboard) => {
+    if (!ctx.chat?.id) return;
+    await ctx.api.sendMessage(ctx.chat.id, text, {
+      parse_mode: 'HTML',
+      reply_markup,
+    });
+  };
+
   if (ctx.employee) {
-    await ctx.reply(
+    await send(
       `👋 Привет, <b>${esc(ctx.employee.name)}</b>!\n\n` +
       `Добро пожаловать в <b>Maria Crew</b> — выбери раздел:`,
-      { parse_mode: 'HTML', reply_markup: mainMenuKeyboard() }
+      mainMenuKeyboard()
     );
     return;
   }
 
   const kb = new InlineKeyboard().webApp('🚀 Открыть приложение', WEBAPP_URL);
 
-  await ctx.reply(
+  await send(
     '👋 Добро пожаловать в <b>Maria Crew</b>!\n\n' +
     'Программа мотивации сотрудников кондитерских «Мария».\n\n' +
     'Нажми кнопку ниже, чтобы открыть приложение, выбрать свою точку и начать собирать карточки! 🃏',
-    { parse_mode: 'HTML', reply_markup: kb }
+    kb
   );
 }
 
