@@ -5,6 +5,7 @@ const REQUEST_TIMEOUT_MS = 30000;
 let tg = null;
 let initData = '';
 let hasTelegramUser = false;
+let tgUser = null;
 
 let employee = null;
 let currentTab = 'collection';
@@ -77,6 +78,10 @@ async function authMiniApp() {
   }
 
   throw lastError;
+}
+
+async function loadViewer() {
+  return apiFetch('/me');
 }
 
 async function apiFetch(path, opts = {}) {
@@ -171,14 +176,23 @@ async function init() {
   try {
     setLoadingHint('Подключаем Maria Crew…');
     const data = await authMiniApp();
+    tgUser = data.user || null;
 
-    if (data.registered) {
-      employee = data.employee;
-      showApp(data.stats ?? { availableCards: '—', coinBalance: '—', uniqueHeroes: '—' });
-    } else if (data.registered === false) {
-      await loadRegScreen();
-    } else {
-      throw new Error(data.error || 'Не удалось авторизоваться в Mini App');
+    try {
+      const me = await loadViewer();
+      employee = me;
+      myStatsCache = me;
+      showApp({
+        availableCards: me.availableCards ?? '—',
+        coinBalance: me.coinBalance ?? '—',
+        uniqueHeroes: me.uniqueHeroes ?? '—',
+      });
+    } catch (err) {
+      if (String(err.message || '').includes('Не зарегистрирован')) {
+        await loadRegScreen();
+        return;
+      }
+      throw err;
     }
   } catch (err) {
     showBootError(err.message || 'Ошибка входа в приложение');

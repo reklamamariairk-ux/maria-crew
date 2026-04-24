@@ -155,27 +155,11 @@ router.post('/auth', async (req: Request, res: Response, next: NextFunction): Pr
       return;
     }
 
-    let employee = await getEmployee(user.id);
-
-    // Try to link by username
-    if (!employee && user.username) {
-      const { rows } = await withDbRetry('auth-link-by-username', () => pool.query<{ id: number }>(
-        `UPDATE employees SET telegram_id = $1
-         WHERE LOWER(telegram_username) = $2 AND telegram_id IS NULL AND is_active = true
-         RETURNING id`,
-        [user.id, user.username]
-      ));
-      if (rows[0]) employee = await getEmployee(user.id);
-    }
-
-    if (!employee) {
-      markWebappAuth('auth:not_registered', { userId: user.id, username: user.username ?? null });
-      res.json({ registered: false });
-      return;
-    }
-
-    markWebappAuth('auth:ok', { userId: user.id, employeeId: employee.id });
-    res.json({ registered: true, employee });
+    markWebappAuth('auth:validated', { userId: user.id, username: user.username ?? null });
+    res.json({
+      ok: true,
+      user,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     markWebappAuth('auth:error', { message });
