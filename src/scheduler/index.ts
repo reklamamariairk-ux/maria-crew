@@ -55,7 +55,11 @@ export function initScheduler(bot: Bot<BotContext>): void {
 
   // ── 4. Keep-alive — пинг каждые 13 минут ─────────────────────────────────
   // Render free tier засыпает через 15 мин без трафика
-  const serviceUrl = (process.env.WEBHOOK_URL ?? 'https://maria-crew.onrender.com').replace(/\/$/, '');
+  const serviceUrl = (
+    process.env.WEBHOOK_URL ??
+    process.env.RENDER_EXTERNAL_URL ??
+    'https://maria-crew.onrender.com'
+  ).replace(/\/$/, '');
   cron.schedule('*/13 * * * *', () => {
     const url = `${serviceUrl}/api/health`;
     const client = url.startsWith('https') ? https : http;

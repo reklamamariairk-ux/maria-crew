@@ -3,7 +3,11 @@ import { pool } from '../../db/pool';
 import type { BotContext } from '../context';
 import { esc } from '../helpers';
 
-const WEBAPP_URL = (process.env.WEBHOOK_URL ?? 'https://maria-crew.onrender.com').replace(/\/$/, '') + '/webapp';
+const WEBAPP_URL = (
+  process.env.WEBHOOK_URL ??
+  process.env.RENDER_EXTERNAL_URL ??
+  'https://maria-crew.onrender.com'
+).replace(/\/$/, '') + '/webapp';
 
 export function mainMenuKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
