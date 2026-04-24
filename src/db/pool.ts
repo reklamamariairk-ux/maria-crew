@@ -21,8 +21,8 @@ function camelizeResult(result: any): any {
 const rawPool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  // Настройки для Neon free tier (холодный старт 3-5 сек)
-  connectionTimeoutMillis: 15000,
+  // Настройки для Neon/Render free tier: холодный старт может занимать заметно дольше.
+  connectionTimeoutMillis: 40000,
   idleTimeoutMillis: 30000,
   max: 5,
 });

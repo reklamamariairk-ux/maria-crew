@@ -47,14 +47,39 @@ type Employee = {
   role: string;
 };
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function withDbRetry<T>(label: string, fn: () => Promise<T>, attempts = 2): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      if (attempt > 1) {
+        console.log(`[webapp] ${label}: retry ${attempt}/${attempts}`);
+      }
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      console.error(`[webapp] ${label}:`, err instanceof Error ? err.message : err);
+      if (attempt < attempts) {
+        await sleep(1500 * attempt);
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 async function getEmployee(telegramId: number): Promise<Employee | null> {
-  const { rows } = await pool.query<Employee>(
+  const { rows } = await withDbRetry('getEmployee', () => pool.query<Employee>(
     `SELECT e.id, e.name, e.store_id AS "storeId", s.name AS "storeName",
             e.telegram_id AS "telegramId", e.telegram_username AS "telegramUsername", e.role
      FROM employees e JOIN stores s ON s.id = e.store_id
      WHERE e.telegram_id = $1 AND e.is_active = true`,
     [telegramId]
-  );
+  ));
   return rows[0] ?? null;
 }
 
@@ -119,12 +144,12 @@ router.post('/auth', async (req: Request, res: Response, next: NextFunction): Pr
 
     // Try to link by username
     if (!employee && user.username) {
-      const { rows } = await pool.query<{ id: number }>(
+      const { rows } = await withDbRetry('auth-link-by-username', () => pool.query<{ id: number }>(
         `UPDATE employees SET telegram_id = $1
          WHERE LOWER(telegram_username) = $2 AND telegram_id IS NULL AND is_active = true
          RETURNING id`,
         [user.id, user.username]
-      );
+      ));
       if (rows[0]) employee = await getEmployee(user.id);
     }
 
@@ -167,24 +192,24 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
     // Check if pre-added by username
     let employee = await getEmployee(user.id);
     if (!employee && user.username) {
-      const { rows } = await pool.query<{ id: number }>(
+      const { rows } = await withDbRetry('register-link-by-username', () => pool.query<{ id: number }>(
         `UPDATE employees SET telegram_id = $1, store_id = $2
          WHERE LOWER(telegram_username) = $3 AND telegram_id IS NULL AND is_active = true
          RETURNING id`,
         [user.id, storeId, user.username]
-      );
+      ));
       if (rows[0]) employee = await getEmployee(user.id);
     }
 
     if (!employee) {
       const name = user.firstName;
-      const { rows } = await pool.query<{ id: number }>(
+      const { rows } = await withDbRetry('register-insert-employee', () => pool.query<{ id: number }>(
         `INSERT INTO employees (telegram_id, telegram_username, name, store_id, joined_at)
          VALUES ($1, $2, $3, $4, CURRENT_DATE)
          ON CONFLICT (telegram_id) DO UPDATE SET store_id = EXCLUDED.store_id
          RETURNING id`,
         [user.id, user.username ?? null, name, storeId]
-      );
+      ));
       employee = await getEmployee(user.id);
     }
 
