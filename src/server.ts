@@ -9,7 +9,10 @@ import apiRouter from './api/router';
 
 export function createServer(bot: Bot<BotContext>, webhookSecret: string): express.Application {
   const app = express();
-  const telegramWebhook = webhookCallback(bot, 'express');
+  const telegramWebhook = webhookCallback(bot, 'express', {
+    onTimeout: 'return',
+    timeoutMilliseconds: 25000,
+  });
 
   app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cors());
