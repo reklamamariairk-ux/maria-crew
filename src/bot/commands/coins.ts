@@ -1,3 +1,4 @@
+import { InlineKeyboard } from 'grammy';
 import { getBalance, getHistory, getMonthlySummary, COIN_AMOUNTS } from '../../services/coin.service';
 import type { BotContext } from '../context';
 import { requireAuth } from '../middleware/auth';
@@ -38,7 +39,8 @@ export async function handleCoins(ctx: BotContext): Promise<void> {
   text += `+${COIN_AMOUNTS.mentoring} — наставничество\n\n`;
   text += `Обменяй монеты в /store`;
 
-  await ctx.reply(text, { parse_mode: 'HTML' });
+  const kb = new InlineKeyboard().text('🛍 Maria Store', 'menu:store').text('← Меню', 'menu:main');
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
 }
 
 function coinWord(n: number): string {

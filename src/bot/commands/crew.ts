@@ -1,3 +1,4 @@
+import { InlineKeyboard } from 'grammy';
 import { pool } from '../../db/pool';
 import type { BotContext } from '../context';
 import { requireAuth } from '../middleware/auth';
@@ -20,8 +21,9 @@ export async function handleCrew(ctx: BotContext): Promise<void> {
     [employee.storeId]
   );
 
+  const kb = new InlineKeyboard().text('🃏 Коллекция', 'menu:collection').text('← Меню', 'menu:main');
   if (members.length === 0) {
-    await ctx.reply('В команде пока нет зарегистрированных сотрудников.');
+    await ctx.reply('В команде пока нет зарегистрированных сотрудников.', { reply_markup: kb });
     return;
   }
 
@@ -83,5 +85,5 @@ export async function handleCrew(ctx: BotContext): Promise<void> {
     text += `\n<b>Не хватает команде:</b> ${missingNames}`;
   }
 
-  await ctx.reply(text, { parse_mode: 'HTML' });
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
 }

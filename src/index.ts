@@ -62,8 +62,91 @@ async function runMigrations(): Promise<void> {
   }
 }
 
+async function seedIfEmpty(): Promise<void> {
+  const { rows } = await pool.query<{ cnt: string }>('SELECT COUNT(*) AS cnt FROM stores');
+  if (parseInt(rows[0].cnt) > 0) return;
+
+  console.log('  → Таблицы пустые, запускаем начальные данные...');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 12 героев
+    const heroes = [
+      ['Пекарь Антон',     'Мастер слоёного теста'],
+      ['Кондитер Света',   'Королева торта на заказ'],
+      ['Баристо Макс',     'Кофейный волшебник'],
+      ['Кассир Аня',       'Быстрее всех в кассе'],
+      ['Уборщик Гена',     'Идеальный чек-лист каждый день'],
+      ['Наставник Ирина',  'Обучила уже 10 новичков'],
+      ['Продавец Дима',    'Король апсейла'],
+      ['Декоратор Оля',    'Витрина, как в журнале'],
+      ['Технолог Борис',   'Хранитель рецептов'],
+      ['Логист Женя',      'Всегда вовремя и без потерь'],
+      ['Менеджер Катя',    'Лучший тайный покупатель боится'],
+      ['Основатель Мария', 'Легендарная карточка. Редкая.'],
+    ];
+    for (let i = 0; i < heroes.length; i++) {
+      await client.query(
+        `INSERT INTO heroes (name, description, sort_order) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+        [heroes[i][0], heroes[i][1], i + 1]
+      );
+    }
+
+    // 4 лимитных героя
+    const limited: [string, string][] = [
+      ['Ice Breaker', 'summer'], ['Upsale King', 'autumn'],
+      ['Holiday Star', 'winter'], ['Rookie of Season', 'spring'],
+    ];
+    for (let i = 0; i < limited.length; i++) {
+      await client.query(
+        `INSERT INTO heroes (name, is_limited, season, sort_order) VALUES ($1, true, $2, $3) ON CONFLICT DO NOTHING`,
+        [limited[i][0], limited[i][1], 100 + i]
+      );
+    }
+
+    // 16 точек «Мария»
+    for (let i = 1; i <= 16; i++) {
+      await client.query(
+        `INSERT INTO stores (name, address) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [`Кондитерская «Мария» #${i}`, `Иркутск, точка ${i}`]
+      );
+    }
+
+    // Призы Maria Store
+    const prizes: [string, string, number, number, number][] = [
+      ['Торт или пирог «Мария»',          'cake',         3,  0,  1],
+      ['Сертификат 1 500₽ (Ozon/кино)',   'certificate',  5,  0,  2],
+      ['Денежная премия 3 000₽',          'cash',         7,  0,  3],
+      ['Премия 5 000₽ + выбор смен',      'shift_choice', 10, 0,  4],
+      ['Золотой бейдж 7 000₽ + выходной', 'golden_badge', 12, 0,  5],
+      ['Кофе + десерт в «Марии»',         'coffee',       0,  10, 10],
+      ['Скидка 30% на торт на заказ',     'discount',     0,  20, 11],
+      ['Мерч Maria Crew',                 'merch',        0,  30, 12],
+      ['Сертификат 2 000₽ (Ozon/WB)',     'certificate',  0,  50, 13],
+      ['Доп. перерыв 15 мин.',            'break',        0,  15, 14],
+    ];
+    for (const [name, type, cards, coins, order] of prizes) {
+      await client.query(
+        `INSERT INTO prizes (name, prize_type, cards_required, coins_required, sort_order)
+         VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING`,
+        [name, type, cards, coins, order]
+      );
+    }
+
+    await client.query('COMMIT');
+    console.log('✓ Начальные данные добавлены (16 точек, 16 героев, 10 призов)');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 async function main() {
   await runMigrations();
+  await seedIfEmpty();
 
   const app = createServer();
   app.listen(port, () => {

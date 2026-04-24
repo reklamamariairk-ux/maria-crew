@@ -1,3 +1,4 @@
+import { InlineKeyboard } from 'grammy';
 import { pool } from '../../db/pool';
 import { getCollection } from '../../services/card.service';
 import type { BotContext } from '../context';
@@ -51,7 +52,8 @@ export async function handleCollection(ctx: BotContext): Promise<void> {
     text += `\n\nДо полной Crew: <b>${left} ${heroWord(left)}</b> 💪`;
   }
 
-  await ctx.reply(text, { parse_mode: 'HTML' });
+  const kb = new InlineKeyboard().text('← Меню', 'menu:main');
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
 }
 
 function heroWord(n: number): string {

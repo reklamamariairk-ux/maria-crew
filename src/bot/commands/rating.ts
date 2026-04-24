@@ -1,3 +1,4 @@
+import { InlineKeyboard } from 'grammy';
 import { getEmployeeLeaderboard } from '../../services/rating.service';
 import type { BotContext } from '../context';
 import { requireAuth } from '../middleware/auth';
@@ -10,10 +11,12 @@ export async function handleRating(ctx: BotContext): Promise<void> {
   const { year, month } = currentPeriod();
   const leaderboard = await getEmployeeLeaderboard(employee.storeId, year, month);
 
+  const kb = new InlineKeyboard().text('🏆 Топ точек', 'menu:top').text('← Меню', 'menu:main');
   if (leaderboard.length === 0) {
     await ctx.reply(
       `📊 Рейтинг за ${monthName(month, true)} ещё не сформирован.\n` +
-      `Руководитель вводит показатели в начале следующего месяца.`
+      `Руководитель вводит показатели в начале следующего месяца.`,
+      { reply_markup: kb }
     );
     return;
   }
@@ -41,5 +44,5 @@ export async function handleRating(ctx: BotContext): Promise<void> {
 
   text += `\n\n<i>Рейтинг обновляется после обработки месяца.</i>`;
 
-  await ctx.reply(text, { parse_mode: 'HTML' });
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
 }

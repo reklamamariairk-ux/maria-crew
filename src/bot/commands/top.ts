@@ -1,3 +1,4 @@
+import { InlineKeyboard } from 'grammy';
 import { getStoreLeaderboard } from '../../services/rating.service';
 import type { BotContext } from '../context';
 import { requireAuth } from '../middleware/auth';
@@ -10,10 +11,12 @@ export async function handleTop(ctx: BotContext): Promise<void> {
   const { year, month } = currentPeriod();
   const ranking = await getStoreLeaderboard(year, month);
 
+  const kb = new InlineKeyboard().text('⭐ Рейтинг точки', 'menu:rating').text('← Меню', 'menu:main');
   if (ranking.length === 0) {
     await ctx.reply(
       `🏆 Рейтинг точек за ${monthName(month, true)} ещё не сформирован.\n` +
-      `Результаты появятся в начале следующего месяца.`
+      `Результаты появятся в начале следующего месяца.`,
+      { reply_markup: kb }
     );
     return;
   }
@@ -37,5 +40,5 @@ export async function handleTop(ctx: BotContext): Promise<void> {
     if (myStore?.isTop) text += ' 🎉 Топ-точка! Всем +1 карточка!';
   }
 
-  await ctx.reply(text, { parse_mode: 'HTML' });
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
 }
