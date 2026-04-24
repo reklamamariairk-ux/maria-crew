@@ -15,7 +15,13 @@ export function createBot(token: string): Bot<BotContext> {
   bot.use(session({ initial: (): SessionData => ({ step: 'idle' }) }));
   bot.use(authMiddleware);
 
-  // Команды
+  // ── Диагностика ──────────────────────────────────────────────────────────────
+  bot.command('ping', async ctx => {
+    console.log(`[ping] from ${ctx.from?.id} @${ctx.from?.username}`);
+    await ctx.reply('🏓 Pong! Бот работает.');
+  });
+
+  // ── Команды ──────────────────────────────────────────────────────────────────
   bot.command('start',      handleStart);
   bot.command('collection', handleCollection);
   bot.command('coins',      handleCoins);
@@ -24,10 +30,10 @@ export function createBot(token: string): Bot<BotContext> {
   bot.command('store',      handleStore);
   bot.command('crew',       handleCrew);
 
-  // Регистрация — выбор точки
+  // ── Регистрация ───────────────────────────────────────────────────────────────
   bot.callbackQuery(/^reg:store:/, handleStoreSelection);
 
-  // Главное меню — кнопки
+  // ── Главное меню — кнопки ─────────────────────────────────────────────────────
   bot.callbackQuery('menu:collection', async ctx => {
     await ctx.answerCallbackQuery();
     await handleCollection(ctx);
@@ -54,39 +60,28 @@ export function createBot(token: string): Bot<BotContext> {
   });
   bot.callbackQuery('menu:main', async ctx => {
     if (!ctx.employee) { await ctx.answerCallbackQuery(); return; }
+    const text = `👋 Привет, <b>${ctx.employee.name}</b>! Выбери раздел:`;
     try {
-      await ctx.editMessageText(
-        `👋 Привет, <b>${ctx.employee.name}</b>! Выбери раздел:`,
-        { parse_mode: 'HTML', reply_markup: mainMenuKeyboard() }
-      );
+      await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: mainMenuKeyboard() });
     } catch {
-      await ctx.reply(
-        `👋 Привет, <b>${ctx.employee.name}</b>! Выбери раздел:`,
-        { parse_mode: 'HTML', reply_markup: mainMenuKeyboard() }
-      );
+      await ctx.reply(text, { parse_mode: 'HTML', reply_markup: mainMenuKeyboard() });
     }
     await ctx.answerCallbackQuery();
   });
 
-  // Магазин
+  // ── Магазин ───────────────────────────────────────────────────────────────────
   bot.callbackQuery(/^store:/, handleStoreCallback);
 
-  // Глобальный обработчик ошибок — ВСЕГДА отвечает пользователю
+  // ── Глобальный обработчик ошибок ──────────────────────────────────────────────
   bot.catch(async (err: BotError<BotContext>) => {
     const ctx = err.ctx;
-    const e = err.error;
-    console.error(`[bot] Ошибка в update ${ctx.update.update_id}:`, e);
-
+    console.error(`[bot] Ошибка update#${ctx.update.update_id}:`, err.error);
     try {
       if (ctx.callbackQuery) {
-        await ctx.answerCallbackQuery('Произошла ошибка, попробуй снова').catch(() => {});
+        await ctx.answerCallbackQuery('Ошибка, попробуй снова').catch(() => {});
       }
-      await ctx.reply(
-        '⚠️ Произошла ошибка. Попробуй снова или отправь /start'
-      ).catch(() => {});
-    } catch {
-      // ignore reply errors
-    }
+      await ctx.reply('⚠️ Произошла ошибка. Попробуй ещё раз или отправь /start').catch(() => {});
+    } catch { /* ignore */ }
   });
 
   return bot;

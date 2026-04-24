@@ -5,26 +5,23 @@ import { pool } from './db/pool';
 import { createBot } from './bot/bot';
 import { createServer } from './server';
 import { initNotifications } from './bot/notifications/sender';
-import { initScheduler } from './scheduler';
+import { initScheduler } from './scheduler/index';
 import fs from 'fs';
 import path from 'path';
-
-console.log('=== ENV CHECK ===');
-console.log('BOT_TOKEN:', process.env.BOT_TOKEN ? 'SET (' + process.env.BOT_TOKEN.slice(0, 10) + '...)' : 'NOT SET');
-console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'SET (' + process.env.DATABASE_URL.slice(0, 30) + '...)' : 'NOT SET');
-console.log('NODE_ENV:', process.env.NODE_ENV);
-console.log('PORT:', process.env.PORT);
-console.log('All keys:', Object.keys(process.env).filter(k => !k.includes('npm')).join(', '));
-console.log('=================');
 
 const token = process.env.BOT_TOKEN;
 if (!token) throw new Error('BOT_TOKEN не задан');
 
 const port = parseInt(process.env.PORT ?? '3000', 10);
 
-console.log('DATABASE_URL:', process.env.DATABASE_URL ? process.env.DATABASE_URL.slice(0, 40) + '...' : 'НЕ ЗАДАН');
+console.log('=== STARTUP ===');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('PORT:', port);
+console.log('BOT_TOKEN:', token ? token.slice(0, 10) + '...' : 'NOT SET');
+console.log('DATABASE_URL:', process.env.DATABASE_URL ? process.env.DATABASE_URL.slice(0, 40) + '...' : 'NOT SET');
 
 async function runMigrations(): Promise<void> {
+  console.log('[migrations] Запуск...');
   const MIGRATIONS_DIR = path.join(__dirname, '../migrations');
   const client = await pool.connect();
   try {
@@ -56,23 +53,24 @@ async function runMigrations(): Promise<void> {
         throw err;
       }
     }
-    console.log(count > 0 ? `✓ Применено миграций: ${count}` : '✓ Миграции актуальны');
+    console.log(count > 0 ? `[migrations] ✓ Применено: ${count}` : '[migrations] ✓ Актуальны');
   } finally {
     client.release();
   }
 }
 
 async function seedIfEmpty(): Promise<void> {
-  const { rows } = await pool.query<{ cnt: string }>('SELECT COUNT(*) AS cnt FROM stores');
-  if (parseInt(rows[0].cnt) > 0) return;
+  const { rows } = await pool.query<{ cnt: string }>('SELECT COUNT(*)::text AS cnt FROM stores');
+  const cnt = parseInt(rows[0]?.cnt ?? '0', 10);
+  console.log(`[seed] Магазинов в БД: ${cnt}`);
+  if (cnt > 0) return;
 
-  console.log('  → Таблицы пустые, запускаем начальные данные...');
+  console.log('[seed] БД пустая, заполняем начальные данные...');
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    // 12 героев
-    const heroes = [
+    const heroes: [string, string][] = [
       ['Пекарь Антон',     'Мастер слоёного теста'],
       ['Кондитер Света',   'Королева торта на заказ'],
       ['Баристо Макс',     'Кофейный волшебник'],
@@ -93,7 +91,6 @@ async function seedIfEmpty(): Promise<void> {
       );
     }
 
-    // 4 лимитных героя
     const limited: [string, string][] = [
       ['Ice Breaker', 'summer'], ['Upsale King', 'autumn'],
       ['Holiday Star', 'winter'], ['Rookie of Season', 'spring'],
@@ -105,15 +102,13 @@ async function seedIfEmpty(): Promise<void> {
       );
     }
 
-    // 16 точек «Мария»
     for (let i = 1; i <= 16; i++) {
       await client.query(
-        `INSERT INTO stores (name, address) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-        [`Кондитерская «Мария» #${i}`, `Иркутск, точка ${i}`]
+        `INSERT INTO stores (name, address) VALUES ($1, $2)`,
+        [`Точка #${i}`, `Иркутск`]
       );
     }
 
-    // Призы Maria Store
     const prizes: [string, string, number, number, number][] = [
       ['Торт или пирог «Мария»',          'cake',         3,  0,  1],
       ['Сертификат 1 500₽ (Ozon/кино)',   'certificate',  5,  0,  2],
@@ -128,16 +123,16 @@ async function seedIfEmpty(): Promise<void> {
     ];
     for (const [name, type, cards, coins, order] of prizes) {
       await client.query(
-        `INSERT INTO prizes (name, prize_type, cards_required, coins_required, sort_order)
-         VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING`,
+        `INSERT INTO prizes (name, prize_type, cards_required, coins_required, sort_order) VALUES ($1, $2, $3, $4, $5)`,
         [name, type, cards, coins, order]
       );
     }
 
     await client.query('COMMIT');
-    console.log('✓ Начальные данные добавлены (16 точек, 16 героев, 10 призов)');
+    console.log('[seed] ✓ Данные добавлены');
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('[seed] ОШИБКА:', err);
     throw err;
   } finally {
     client.release();
@@ -145,26 +140,42 @@ async function seedIfEmpty(): Promise<void> {
 }
 
 async function main() {
+  // 1. Миграции
   await runMigrations();
+
+  // 2. Заполнение начальных данных
   await seedIfEmpty();
 
+  // 3. Создаём и проверяем бота ДО старта HTTP-сервера
+  console.log('[bot] Инициализация...');
+  const bot = createBot(token!);
+
+  // Проверяем токен и подключение к Telegram
+  const me = await bot.api.getMe();
+  console.log(`[bot] ✓ Подключён: @${me.username} (id=${me.id})`);
+
+  // Удаляем webhook (если был) перед long polling
+  await bot.api.deleteWebhook({ drop_pending_updates: true });
+  console.log('[bot] ✓ Webhook удалён, pending updates сброшены');
+
+  initNotifications(bot);
+  initScheduler(bot);
+
+  // 4. Запускаем HTTP-сервер
   const app = createServer();
-  app.listen(port, () => {
-    console.log(`Сервер запущен на порту ${port}`);
+  await new Promise<void>(resolve => app.listen(port, () => {
+    console.log(`[server] ✓ Слушает порт ${port}`);
+    resolve();
+  }));
 
-    const bot = createBot(token!);
-    initNotifications(bot);
-    initScheduler(bot);
-
-    bot.start({
-      onStart: info => console.log(`Бот @${info.username} запущен`),
-    }).catch(err => {
-      console.error('Ошибка бота:', err.message);
-    });
+  // 5. Запускаем long polling (блокирующий, поэтому последний)
+  console.log('[bot] Запускаем long polling...');
+  await bot.start({
+    onStart: info => console.log(`[bot] ✓ Polling запущен @${info.username}`),
   });
 }
 
 main().catch(err => {
-  console.error('Критическая ошибка:', err);
+  console.error('[FATAL]', err);
   process.exit(1);
 });
