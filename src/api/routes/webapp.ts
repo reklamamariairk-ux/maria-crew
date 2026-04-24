@@ -5,6 +5,7 @@ import { getBalance, getHistory, getMonthlySummary } from '../../services/coin.s
 import { getAvailableCardCount } from '../../services/card.service';
 import { getPrizes, requestExchange } from '../../services/exchange.service';
 import { getEmployeeLeaderboard } from '../../services/rating.service';
+import { markWebappAuth } from '../../diagnostics';
 
 const router = Router();
 
@@ -131,14 +132,28 @@ async function getStats(empId: number) {
 // POST /api/webapp/auth
 router.post('/auth', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    markWebappAuth('auth:start');
+
     const { initData } = req.body as { initData?: string };
-    if (!initData) { res.status(400).json({ error: 'initData обязателен' }); return; }
+    if (!initData) {
+      markWebappAuth('auth:missing_init_data');
+      res.status(400).json({ error: 'initData обязателен' });
+      return;
+    }
 
     const data = validateInitData(initData);
-    if (!data) { res.status(401).json({ error: 'Неверная подпись initData' }); return; }
+    if (!data) {
+      markWebappAuth('auth:invalid_signature', { initDataLength: initData.length });
+      res.status(401).json({ error: 'Неверная подпись initData' });
+      return;
+    }
 
     const user = parseTgUser(data);
-    if (!user) { res.status(400).json({ error: 'Нет данных пользователя' }); return; }
+    if (!user) {
+      markWebappAuth('auth:no_user');
+      res.status(400).json({ error: 'Нет данных пользователя' });
+      return;
+    }
 
     let employee = await getEmployee(user.id);
 
@@ -154,12 +169,22 @@ router.post('/auth', async (req: Request, res: Response, next: NextFunction): Pr
     }
 
     if (!employee) {
+      markWebappAuth('auth:not_registered', { userId: user.id, username: user.username ?? null });
       res.json({ registered: false });
       return;
     }
 
+    markWebappAuth('auth:ok', { userId: user.id, employeeId: employee.id });
     res.json({ registered: true, employee });
-  } catch (err) { next(err); }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    markWebappAuth('auth:error', { message });
+    if (/timeout|terminating connection|ECONNRESET|57P01|Connection terminated|connect/i.test(message)) {
+      res.status(503).json({ error: 'База данных Maria Crew просыпается. Попробуй ещё раз через несколько секунд.' });
+      return;
+    }
+    next(err);
+  }
 });
 
 // GET /api/webapp/stores

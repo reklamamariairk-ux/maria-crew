@@ -11,11 +11,18 @@ type ErrorSummary = {
   at: string;
 };
 
+type WebappAuthSummary = {
+  stage: string;
+  at: string;
+  details?: Record<string, unknown>;
+};
+
 const state: {
   lastWebhookHitAt?: string;
   lastWebhookPayload?: unknown;
   lastUpdate?: UpdateSummary;
   lastBotError?: ErrorSummary;
+  lastWebappAuth?: WebappAuthSummary;
 } = {};
 
 export function markWebhookHit(payload: unknown): void {
@@ -42,11 +49,20 @@ export function markBotError(message: string): void {
   };
 }
 
+export function markWebappAuth(stage: string, details?: Record<string, unknown>): void {
+  state.lastWebappAuth = {
+    stage,
+    details,
+    at: new Date().toISOString(),
+  };
+}
+
 export function getDiagnostics(): Record<string, unknown> {
   return {
     lastWebhookHitAt: state.lastWebhookHitAt ?? null,
     lastWebhookPayload: state.lastWebhookPayload ?? null,
     lastUpdate: state.lastUpdate ?? null,
     lastBotError: state.lastBotError ?? null,
+    lastWebappAuth: state.lastWebappAuth ?? null,
   };
 }

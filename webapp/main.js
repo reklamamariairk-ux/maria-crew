@@ -52,7 +52,7 @@ function sleep(ms) {
 async function authMiniApp() {
   let lastError = null;
 
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
     try {
       const res = await withTimeout(fetch(API + '/auth', {
         method: 'POST',
@@ -61,14 +61,17 @@ async function authMiniApp() {
       }));
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (res.status >= 500 || res.status === 503) {
+          throw new Error(data.error || 'Maria Crew ещё запускается. Ждём сервер…');
+        }
         throw new Error(data.error || 'Не удалось авторизоваться в Mini App');
       }
       return data;
     } catch (err) {
       lastError = err;
-      if (attempt === 1) {
-        setLoadingHint('Разогреваем сервер Maria Crew. Первый запуск может занять до 30 секунд…');
-        await sleep(2500);
+      if (attempt < 4) {
+        setLoadingHint(`Разогреваем Maria Crew. Попытка ${attempt + 1} из 4…`);
+        await sleep(2500 * attempt);
       }
     }
   }
