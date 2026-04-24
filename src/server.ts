@@ -15,7 +15,12 @@ export function createServer(bot: Bot<BotContext>, webhookSecret: string): expre
     timeoutMilliseconds: 25000,
   });
 
-  app.use(helmet({ contentSecurityPolicy: false }));
+  app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginOpenerPolicy: false,
+    crossOriginResourcePolicy: false,
+    frameguard: false,
+  }));
   app.use(cors());
   app.use(express.json());
 
