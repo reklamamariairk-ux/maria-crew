@@ -1,11 +1,10 @@
 /* global Telegram */
-const tg = window.Telegram.WebApp;
-tg.ready();
-tg.expand();
-
 const API = '/api/webapp';
-const initData = tg.initData || '';
-const hasTelegramUser = Boolean(tg.initDataUnsafe && tg.initDataUnsafe.user);
+const REQUEST_TIMEOUT_MS = 12000;
+
+let tg = null;
+let initData = '';
+let hasTelegramUser = false;
 
 let employee = null;
 let currentTab = 'collection';
@@ -34,18 +33,58 @@ const MONTHS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'и�
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+function withTimeout(promise, ms = REQUEST_TIMEOUT_MS) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Сервер отвечает слишком долго. Попробуй ещё раз.')), ms)),
+  ]);
+}
+
 async function apiFetch(path, opts = {}) {
-  const res = await fetch(API + path, {
+  const res = await withTimeout(fetch(API + path, {
     ...opts,
     headers: {
       'Content-Type': 'application/json',
       'Authorization': 'tma ' + initData,
       ...(opts.headers || {}),
     },
-  });
+  }));
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Ошибка сервера');
   return data;
+}
+
+function showBootError(message) {
+  const loading = document.getElementById('loading');
+  const regScreen = document.getElementById('reg-screen');
+  const regCopy = document.getElementById('reg-copy');
+  const regStoreWrap = document.getElementById('reg-store-wrap');
+  const regBtn = document.getElementById('reg-btn');
+
+  if (loading) loading.style.display = 'none';
+  if (regScreen) regScreen.style.display = 'block';
+  if (regCopy) regCopy.textContent = message;
+  if (regStoreWrap) regStoreWrap.style.display = 'none';
+  if (regBtn) {
+    regBtn.style.display = 'block';
+    regBtn.textContent = 'Закрыть и открыть заново';
+    regBtn.disabled = false;
+    regBtn.onclick = () => window.location.reload();
+  }
+}
+
+function initTelegramContext() {
+  const webApp = window.Telegram && window.Telegram.WebApp;
+  if (!webApp) {
+    throw new Error('Telegram WebApp SDK не загрузился. Открой Maria Crew ещё раз из сообщения бота.');
+  }
+
+  tg = webApp;
+  initData = tg.initData || '';
+  hasTelegramUser = Boolean(tg.initDataUnsafe && tg.initDataUnsafe.user);
+
+  try { tg.ready(); } catch {}
+  try { tg.expand(); } catch {}
 }
 
 function showToast(msg) {
@@ -69,22 +108,19 @@ function updateHeaderStats(stats) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 async function init() {
+  initTelegramContext();
+
   if (!hasTelegramUser || !initData) {
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('reg-screen').style.display = 'block';
-    document.getElementById('reg-copy').textContent =
-      'Открой приложение кнопкой из Telegram-бота Maria Crew. В обычном браузере авторизация не работает.';
-    document.getElementById('reg-store-wrap').style.display = 'none';
-    document.getElementById('reg-btn').style.display = 'none';
+    showBootError('Открой приложение кнопкой из Telegram-бота Maria Crew. В обычном браузере авторизация не работает.');
     return;
   }
 
   try {
-    const res = await fetch(API + '/auth', {
+    const res = await withTimeout(fetch(API + '/auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ initData }),
-    });
+    }));
     const data = await res.json().catch(() => ({}));
 
     if (res.ok && data.registered) {
@@ -96,11 +132,7 @@ async function init() {
       throw new Error(data.error || 'Не удалось авторизоваться в Mini App');
     }
   } catch (err) {
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('reg-screen').style.display = 'block';
-    document.getElementById('reg-copy').textContent = err.message || 'Ошибка входа в приложение';
-    document.getElementById('reg-store-wrap').style.display = 'none';
-    document.getElementById('reg-btn').style.display = 'none';
+    showBootError(err.message || 'Ошибка входа в приложение');
   }
 }
 
@@ -113,9 +145,11 @@ async function loadRegScreen() {
     'Выбери свою кондитерскую, чтобы привязать аккаунт и открыть Maria Crew.';
   document.getElementById('reg-store-wrap').style.display = 'block';
   document.getElementById('reg-btn').style.display = 'block';
+  document.getElementById('reg-btn').textContent = 'Присоединиться к команде 🎉';
+  document.getElementById('reg-btn').onclick = register;
 
   try {
-    const stores = await fetch(API + '/stores').then(r => r.json());
+    const stores = await withTimeout(fetch(API + '/stores')).then(r => r.json());
     const sel = document.getElementById('reg-store');
     sel.innerHTML = '<option value="">— выбери точку —</option>';
     stores.forEach(s => {
@@ -344,4 +378,19 @@ async function doExchange(prizeId) {
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
-init();
+window.register = register;
+
+window.addEventListener('error', event => {
+  showBootError(event.error?.message || event.message || 'Ошибка запуска Mini App');
+});
+
+window.addEventListener('unhandledrejection', event => {
+  const message = event.reason instanceof Error ? event.reason.message : String(event.reason);
+  showBootError(message || 'Ошибка запуска Mini App');
+});
+
+window.addEventListener('DOMContentLoaded', () => {
+  init().catch(err => {
+    showBootError(err instanceof Error ? err.message : 'Ошибка запуска Mini App');
+  });
+});
