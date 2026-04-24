@@ -25,6 +25,9 @@ export function createServer(bot: Bot<BotContext>, webhookSecret: string): expre
 
   app.use('/api', apiRouter);
 
+  const webappDir = path.join(__dirname, '../webapp');
+  app.use('/webapp', express.static(webappDir));
+
   const adminDir = path.join(__dirname, '../admin');
   app.use(express.static(adminDir));
   app.get('*', (_req, res) => res.sendFile(path.join(adminDir, 'index.html')));

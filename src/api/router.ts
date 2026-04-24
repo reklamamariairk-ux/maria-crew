@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { adminAuth } from './middleware/adminAuth';
 import authRoutes      from './routes/auth';
+import webappRoutes    from './routes/webapp';
 import storeRoutes     from './routes/stores';
 import employeeRoutes  from './routes/employees';
 import metricsRoutes   from './routes/metrics';
@@ -12,6 +13,9 @@ const router = Router();
 
 // Логин не требует auth
 router.use('/auth', authRoutes);
+
+// Mini App — использует Telegram initData, не admin-токен
+router.use('/webapp', webappRoutes);
 
 // Всё остальное — требует Bearer-токен
 router.use(adminAuth);

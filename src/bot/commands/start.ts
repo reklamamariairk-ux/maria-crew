@@ -3,8 +3,11 @@ import { pool } from '../../db/pool';
 import type { BotContext } from '../context';
 import { esc } from '../helpers';
 
+const WEBAPP_URL = (process.env.WEBHOOK_URL ?? 'https://maria-crew.onrender.com').replace(/\/$/, '') + '/webapp';
+
 export function mainMenuKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
+    .webApp('🚀 Открыть Maria Crew', WEBAPP_URL).row()
     .text('🃏 Коллекция', 'menu:collection').text('💰 Монеты', 'menu:coins').row()
     .text('⭐ Рейтинг', 'menu:rating').text('🏆 Топ точек', 'menu:top').row()
     .text('🛍 Maria Store', 'menu:store').text('👥 Команда', 'menu:crew');
@@ -38,26 +41,12 @@ export async function handleStart(ctx: BotContext): Promise<void> {
     return;
   }
 
-  let kb: InlineKeyboard | null = null;
-  try {
-    kb = await getStoresKeyboard();
-  } catch (err) {
-    console.error('[start] getStoresKeyboard error:', err);
-  }
-
-  if (!kb) {
-    await ctx.reply(
-      '👋 Добро пожаловать в <b>Maria Crew</b>!\n\n' +
-      'Система ещё настраивается. Попробуй снова через минуту или обратись к руководителю.',
-      { parse_mode: 'HTML' }
-    );
-    return;
-  }
+  const kb = new InlineKeyboard().webApp('🚀 Открыть приложение', WEBAPP_URL);
 
   await ctx.reply(
     '👋 Добро пожаловать в <b>Maria Crew</b>!\n\n' +
     'Программа мотивации сотрудников кондитерских «Мария».\n\n' +
-    '🏪 Выбери свою кондитерскую:',
+    'Нажми кнопку ниже, чтобы открыть приложение, выбрать свою точку и начать собирать карточки! 🃏',
     { parse_mode: 'HTML', reply_markup: kb }
   );
 }
