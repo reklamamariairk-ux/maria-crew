@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: maria-crew
+    runtime: node
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
