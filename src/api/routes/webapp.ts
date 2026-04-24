@@ -232,11 +232,21 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
 // GET /api/webapp/me
 router.get('/me', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    markWebappAuth('me:start');
     const auth = await requireAuth(req, res);
     if (!auth) return;
     const stats = await getStats(auth.employee.id);
+    markWebappAuth('me:ok', { userId: auth.user.id, employeeId: auth.employee.id });
     res.json({ ...auth.employee, ...stats });
-  } catch (err) { next(err); }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    markWebappAuth('me:error', { message });
+    if (/timeout|terminating connection|ECONNRESET|57P01|Connection terminated|connect/i.test(message)) {
+      res.status(503).json({ error: 'Данные Maria Crew ещё загружаются. Попробуй ещё раз через несколько секунд.' });
+      return;
+    }
+    next(err);
+  }
 });
 
 // GET /api/webapp/collection

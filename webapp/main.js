@@ -84,6 +84,28 @@ async function loadViewer() {
   return apiFetch('/me');
 }
 
+async function loadViewerWithRetry() {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    try {
+      return await loadViewer();
+    } catch (err) {
+      lastError = err;
+      const message = String(err.message || '');
+      if (message.includes('Не зарегистрирован')) {
+        throw err;
+      }
+      if (attempt < 4) {
+        setLoadingHint(`Подключаем данные Maria Crew. Попытка ${attempt + 1} из 4…`);
+        await sleep(2500 * attempt);
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 async function apiFetch(path, opts = {}) {
   const res = await withTimeout(fetch(API + path, {
     ...opts,
@@ -179,7 +201,8 @@ async function init() {
     tgUser = data.user || null;
 
     try {
-      const me = await loadViewer();
+      setLoadingHint('Загружаем данные сотрудника…');
+      const me = await loadViewerWithRetry();
       employee = me;
       myStatsCache = me;
       showApp({
