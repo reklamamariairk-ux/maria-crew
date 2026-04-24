@@ -9,6 +9,14 @@ import { initScheduler } from './scheduler';
 import fs from 'fs';
 import path from 'path';
 
+console.log('=== ENV CHECK ===');
+console.log('BOT_TOKEN:', process.env.BOT_TOKEN ? 'SET (' + process.env.BOT_TOKEN.slice(0, 10) + '...)' : 'NOT SET');
+console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'SET (' + process.env.DATABASE_URL.slice(0, 30) + '...)' : 'NOT SET');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('PORT:', process.env.PORT);
+console.log('All keys:', Object.keys(process.env).filter(k => !k.includes('npm')).join(', '));
+console.log('=================');
+
 const token = process.env.BOT_TOKEN;
 if (!token) throw new Error('BOT_TOKEN не задан');
 
