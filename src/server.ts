@@ -9,16 +9,32 @@ import apiRouter from './api/router';
 
 export function createServer(bot: Bot<BotContext>, webhookSecret: string): express.Application {
   const app = express();
+  const telegramWebhook = webhookCallback(bot, 'express');
 
   app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cors());
   app.use(express.json());
 
   // Для express-адаптера grammy нужен уже распарсенный JSON body.
-  app.post(
-    `/webhook/${webhookSecret}`,
-    webhookCallback(bot, 'express')
-  );
+  app.post(`/webhook/${webhookSecret}`, async (req, res, next) => {
+    const update = req.body;
+    if (!update || typeof update !== 'object' || typeof update.update_id !== 'number') {
+      console.error('[webhook] Некорректный payload:', update);
+      res.status(400).json({ error: 'Invalid Telegram update payload' });
+      return;
+    }
+
+    try {
+      await telegramWebhook(req, res);
+    } catch (err) {
+      console.error('[webhook] Ошибка обработки update:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Webhook processing failed' });
+      } else {
+        next(err);
+      }
+    }
+  });
 
   app.get('/api/health', (_req, res) => res.json({ ok: true, mode: 'webhook' }));
 
