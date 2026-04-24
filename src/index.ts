@@ -14,11 +14,17 @@ if (!token) throw new Error('BOT_TOKEN не задан');
 
 const port = parseInt(process.env.PORT ?? '3000', 10);
 
+// URL сервиса на Render (нужен для webhook)
+const serviceUrl = (process.env.WEBHOOK_URL ?? 'https://maria-crew.onrender.com').replace(/\/$/, '');
+
+// Секрет для webhook-эндпоинта (первые 16 символов после ":" в токене)
+const webhookSecret = token.split(':')[1]?.slice(0, 16) ?? 'secret';
+
 console.log('=== STARTUP ===');
 console.log('NODE_ENV:', process.env.NODE_ENV);
 console.log('PORT:', port);
-console.log('BOT_TOKEN:', token ? token.slice(0, 10) + '...' : 'NOT SET');
-console.log('DATABASE_URL:', process.env.DATABASE_URL ? process.env.DATABASE_URL.slice(0, 40) + '...' : 'NOT SET');
+console.log('SERVICE_URL:', serviceUrl);
+console.log('BOT_TOKEN:', token.slice(0, 10) + '...');
 
 async function runMigrations(): Promise<void> {
   console.log('[migrations] Запуск...');
@@ -65,7 +71,7 @@ async function seedIfEmpty(): Promise<void> {
   console.log(`[seed] Магазинов в БД: ${cnt}`);
   if (cnt > 0) return;
 
-  console.log('[seed] БД пустая, заполняем начальные данные...');
+  console.log('[seed] Заполняем начальные данные...');
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -86,29 +92,20 @@ async function seedIfEmpty(): Promise<void> {
     ];
     for (let i = 0; i < heroes.length; i++) {
       await client.query(
-        `INSERT INTO heroes (name, description, sort_order) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+        `INSERT INTO heroes (name, description, sort_order) VALUES ($1, $2, $3)`,
         [heroes[i][0], heroes[i][1], i + 1]
       );
     }
-
-    const limited: [string, string][] = [
-      ['Ice Breaker', 'summer'], ['Upsale King', 'autumn'],
-      ['Holiday Star', 'winter'], ['Rookie of Season', 'spring'],
-    ];
-    for (let i = 0; i < limited.length; i++) {
+    for (let i = 0; i < 4; i++) {
+      const lim = [['Ice Breaker', 'summer'], ['Upsale King', 'autumn'], ['Holiday Star', 'winter'], ['Rookie of Season', 'spring']];
       await client.query(
-        `INSERT INTO heroes (name, is_limited, season, sort_order) VALUES ($1, true, $2, $3) ON CONFLICT DO NOTHING`,
-        [limited[i][0], limited[i][1], 100 + i]
+        `INSERT INTO heroes (name, is_limited, season, sort_order) VALUES ($1, true, $2, $3)`,
+        [lim[i][0], lim[i][1], 100 + i]
       );
     }
-
     for (let i = 1; i <= 16; i++) {
-      await client.query(
-        `INSERT INTO stores (name, address) VALUES ($1, $2)`,
-        [`Точка #${i}`, `Иркутск`]
-      );
+      await client.query(`INSERT INTO stores (name, address) VALUES ($1, $2)`, [`Точка #${i}`, `Иркутск`]);
     }
-
     const prizes: [string, string, number, number, number][] = [
       ['Торт или пирог «Мария»',          'cake',         3,  0,  1],
       ['Сертификат 1 500₽ (Ozon/кино)',   'certificate',  5,  0,  2],
@@ -121,13 +118,12 @@ async function seedIfEmpty(): Promise<void> {
       ['Сертификат 2 000₽ (Ozon/WB)',     'certificate',  0,  50, 13],
       ['Доп. перерыв 15 мин.',            'break',        0,  15, 14],
     ];
-    for (const [name, type, cards, coins, order] of prizes) {
+    for (const [n, t, c, co, o] of prizes) {
       await client.query(
-        `INSERT INTO prizes (name, prize_type, cards_required, coins_required, sort_order) VALUES ($1, $2, $3, $4, $5)`,
-        [name, type, cards, coins, order]
+        `INSERT INTO prizes (name, prize_type, cards_required, coins_required, sort_order) VALUES ($1,$2,$3,$4,$5)`,
+        [n, t, c, co, o]
       );
     }
-
     await client.query('COMMIT');
     console.log('[seed] ✓ Данные добавлены');
   } catch (err) {
@@ -143,36 +139,31 @@ async function main() {
   // 1. Миграции
   await runMigrations();
 
-  // 2. Заполнение начальных данных
+  // 2. Seed
   await seedIfEmpty();
 
-  // 3. Создаём и проверяем бота ДО старта HTTP-сервера
-  console.log('[bot] Инициализация...');
+  // 3. Создаём бота
+  console.log('[bot] Создаём...');
   const bot = createBot(token!);
 
-  // Проверяем токен и подключение к Telegram
+  // Проверяем токен
   const me = await bot.api.getMe();
-  console.log(`[bot] ✓ Подключён: @${me.username} (id=${me.id})`);
-
-  // Удаляем webhook (если был) перед long polling
-  await bot.api.deleteWebhook({ drop_pending_updates: true });
-  console.log('[bot] ✓ Webhook удалён, pending updates сброшены');
+  console.log(`[bot] ✓ @${me.username} (id=${me.id})`);
 
   initNotifications(bot);
   initScheduler(bot);
 
-  // 4. Запускаем HTTP-сервер
-  const app = createServer();
+  // 4. Запускаем HTTP-сервер с webhook-обработчиком
+  const app = createServer(bot, webhookSecret);
   await new Promise<void>(resolve => app.listen(port, () => {
-    console.log(`[server] ✓ Слушает порт ${port}`);
+    console.log(`[server] ✓ Порт ${port}`);
     resolve();
   }));
 
-  // 5. Запускаем long polling (блокирующий, поэтому последний)
-  console.log('[bot] Запускаем long polling...');
-  await bot.start({
-    onStart: info => console.log(`[bot] ✓ Polling запущен @${info.username}`),
-  });
+  // 5. Регистрируем webhook в Telegram
+  const webhookUrl = `${serviceUrl}/webhook/${webhookSecret}`;
+  await bot.api.setWebhook(webhookUrl, { drop_pending_updates: false });
+  console.log(`[bot] ✓ Webhook установлен: ${webhookUrl}`);
 }
 
 main().catch(err => {
