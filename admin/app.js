@@ -131,7 +131,7 @@ async function loadMetrics() {
 
   // Объединяем сотрудников с их метриками
   const metricMap = {};
-  (rows || []).forEach(r => metricMap[r.employeeId || r.employee_id] = r);
+  (rows || []).forEach(r => metricMap[r.employeeId] = r);
 
   const tbody = document.getElementById('metrics-tbody');
   if (!employees || employees.length === 0) {
@@ -139,14 +139,14 @@ async function loadMetrics() {
     return;
   }
 
-  tbody.innerHTML = employees.filter(e => e.is_active).map(e => {
+  tbody.innerHTML = employees.filter(e => e.isActive).map(e => {
     const m = metricMap[e.id] || {};
     return `<tr data-employee-id="${e.id}">
       <td><strong>${esc(e.name)}</strong></td>
-      <td><input type="number" class="m-mystery" min="0" max="100" step="0.1" value="${m.mystery_shopper_score ?? ''}" placeholder="—"></td>
-      <td><input type="number" class="m-reviews" min="0" max="10" step="1" value="${m.reviews_count ?? 0}"></td>
-      <td><input type="number" class="m-checklist" min="0" max="100" step="0.1" value="${m.checklist_percent ?? ''}" placeholder="—"></td>
-      <td><input type="number" class="m-revenue" min="0" max="300" step="0.1" value="${m.revenue_percent ?? ''}" placeholder="—"></td>
+      <td><input type="number" class="m-mystery" min="0" max="100" step="0.1" value="${m.mysteryShopperScore ?? ''}" placeholder="—"></td>
+      <td><input type="number" class="m-reviews" min="0" max="10" step="1" value="${m.reviewsCount ?? 0}"></td>
+      <td><input type="number" class="m-checklist" min="0" max="100" step="0.1" value="${m.checklistPercent ?? ''}" placeholder="—"></td>
+      <td><input type="number" class="m-revenue" min="0" max="300" step="0.1" value="${m.revenuePercent ?? ''}" placeholder="—"></td>
     </tr>`;
   }).join('');
 }
@@ -201,7 +201,7 @@ async function processMonth() {
 async function loadCoinEmployees() {
   if (!state.storeId) return;
   const emps = await api('GET', `/stores/${state.storeId}/employees`) || [];
-  state.employees = emps.filter(e => e.is_active);
+  state.employees = emps.filter(e => e.isActive);
 
   const sel = document.getElementById('coin-employee');
   sel.innerHTML = '<option value="">— выбери —</option>';
@@ -229,7 +229,7 @@ async function loadCoinHistory() {
     tbody.innerHTML = '<tr><td colspan="4" class="empty">Нет операций</td></tr>'; return;
   }
   tbody.innerHTML = history.map(t => `<tr>
-    <td>${formatDate(t.created_at)}</td>
+    <td>${formatDate(t.createdAt)}</td>
     <td style="color:${t.amount > 0 ? 'var(--green)' : 'var(--red)'};font-weight:600">
       ${t.amount > 0 ? '+' : ''}${t.amount}
     </td>
@@ -270,9 +270,9 @@ async function loadExchanges() {
     <td>${esc(ex.employeeName)}</td>
     <td>${esc(ex.storeName)}</td>
     <td>${esc(ex.prizeName)}</td>
-    <td>${ex.cards_spent}</td>
-    <td>${ex.coins_spent}</td>
-    <td>${formatDate(ex.created_at)}</td>
+    <td>${ex.cardsSpent}</td>
+    <td>${ex.coinsSpent}</td>
+    <td>${formatDate(ex.createdAt)}</td>
     <td><span class="badge badge-${ex.status}">${statusLabel(ex.status)}</span></td>
     <td>
       ${ex.status === 'pending' ? `
@@ -312,9 +312,9 @@ async function loadEmployees() {
     <td>${s.availableCards}</td>
     <td>${s.coinBalance}</td>
     <td>${s.uniqueHeroes}/12</td>
-    <td>${s.is_active ? '<span class="badge badge-approved">Активен</span>' : '<span class="badge badge-rejected">Неактивен</span>'}</td>
+    <td>${s.isActive ? '<span class="badge badge-approved">Активен</span>' : '<span class="badge badge-rejected">Неактивен</span>'}</td>
     <td>
-      ${s.is_active
+      ${s.isActive
         ? `<button class="btn btn-ghost" onclick="toggleEmployee(${s.id}, false)">Деактив.</button>`
         : `<button class="btn btn-ghost" onclick="toggleEmployee(${s.id}, true)">Активировать</button>`}
     </td>

@@ -4,7 +4,6 @@ import { getAvailableCardCount } from '../../services/card.service';
 import { getBalance } from '../../services/coin.service';
 import type { BotContext } from '../context';
 import { requireAuth } from '../middleware/auth';
-import type { Prize } from '../../types';
 import { esc } from '../helpers';
 
 // ─── /store ──────────────────────────────────────────────────────────────────
@@ -20,6 +19,7 @@ export async function handleStore(ctx: BotContext): Promise<void> {
 
   const kb = new InlineKeyboard()
     .text('🃏 Обмен карточек', 'store:cards')
+    .row()
     .text('💰 Обмен монет', 'store:coins');
 
   await ctx.reply(
@@ -37,7 +37,7 @@ export async function handleStoreCallback(ctx: BotContext): Promise<void> {
 
   if (data === 'store:cards') return showPrizes(ctx, 'cards');
   if (data === 'store:coins') return showPrizes(ctx, 'coins');
-  if (data === 'store:cancel') return cancelPurchase(ctx);
+  if (data === 'store:main')  return showStoreMain(ctx);
 
   const buyMatch     = data.match(/^store:buy:(\d+)$/);
   const confirmMatch = data.match(/^store:confirm:(\d+)$/);
@@ -45,6 +45,31 @@ export async function handleStoreCallback(ctx: BotContext): Promise<void> {
   if (buyMatch)     return confirmPurchase(ctx, parseInt(buyMatch[1], 10));
   if (confirmMatch) return completePurchase(ctx, parseInt(confirmMatch[1], 10));
 
+  await ctx.answerCallbackQuery();
+}
+
+async function showStoreMain(ctx: BotContext): Promise<void> {
+  const employee = ctx.employee!;
+  const [cards, coins] = await Promise.all([
+    getAvailableCardCount(employee.id),
+    getBalance(employee.id),
+  ]);
+
+  const kb = new InlineKeyboard()
+    .text('🃏 Обмен карточек', 'store:cards')
+    .row()
+    .text('💰 Обмен монет', 'store:coins');
+
+  const text =
+    `🛍 <b>Maria Store</b>\n\n` +
+    `У тебя: <b>${cards} карточек</b> · <b>${coins} монет</b>\n\n` +
+    `Выбери раздел:`;
+
+  try {
+    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+  } catch {
+    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+  }
   await ctx.answerCallbackQuery();
 }
 
@@ -61,15 +86,13 @@ async function showPrizes(ctx: BotContext, tab: 'cards' | 'coins'): Promise<void
   );
 
   const kb = new InlineKeyboard();
-  filtered.forEach((p, i) => {
+  filtered.forEach(p => {
     const canAfford = tab === 'cards'
       ? cardCount >= p.cardsRequired
       : coinBalance >= p.coinsRequired;
-    const label = `${canAfford ? '✅' : '❌'} ${p.name}`;
-    kb.text(label, `store:buy:${p.id}`);
-    if ((i + 1) % 1 === 0) kb.row(); // по одному в ряд (названия длинные)
+    kb.text(`${canAfford ? '✅' : '❌'} ${p.name}`, `store:buy:${p.id}`).row();
   });
-  kb.row().text('« Назад', tab === 'cards' ? 'store:coins' : 'store:cards');
+  kb.text('« Назад', 'store:main');
 
   const resource = tab === 'cards'
     ? `🃏 Карточек: <b>${cardCount}</b>`
@@ -79,18 +102,20 @@ async function showPrizes(ctx: BotContext, tab: 'cards' | 'coins'): Promise<void
     ? '🃏 <b>Обмен карточек</b>'
     : '💰 <b>Обмен монет</b>';
 
-  const rows = filtered.map(p => {
-    const cost = tab === 'cards'
-      ? `${p.cardsRequired} карт.`
-      : `${p.coinsRequired} монет`;
-    const canAfford = tab === 'cards'
-      ? cardCount >= p.cardsRequired
-      : coinBalance >= p.coinsRequired;
-    return `${canAfford ? '✅' : '❌'} <b>${esc(p.name)}</b> — ${cost}`;
-  }).join('\n');
+  const listText = filtered.length > 0
+    ? filtered.map(p => {
+        const cost = tab === 'cards'
+          ? `${p.cardsRequired} карт.`
+          : `${p.coinsRequired} монет`;
+        const canAfford = tab === 'cards'
+          ? cardCount >= p.cardsRequired
+          : coinBalance >= p.coinsRequired;
+        return `${canAfford ? '✅' : '❌'} <b>${esc(p.name)}</b> — ${cost}`;
+      }).join('\n')
+    : '<i>Нет доступных призов</i>';
 
   await ctx.editMessageText(
-    `${header}\n${resource}\n\n${rows}\n\n<i>Нажми на приз, чтобы обменять</i>`,
+    `${header}\n${resource}\n\n${listText}\n\n<i>Нажми на приз, чтобы обменять</i>`,
     { parse_mode: 'HTML', reply_markup: kb }
   );
   await ctx.answerCallbackQuery();
@@ -107,22 +132,24 @@ async function confirmPurchase(ctx: BotContext, prizeId: number): Promise<void> 
     getBalance(employee.id),
   ]);
 
-  const cost = prize.cardsRequired > 0
+  const isCardPrize = prize.cardsRequired > 0;
+  const cost = isCardPrize
     ? `${prize.cardsRequired} карточки`
     : `${prize.coinsRequired} монет`;
 
-  const canAfford = prize.cardsRequired > 0
+  const canAfford = isCardPrize
     ? cardCount >= prize.cardsRequired
     : coinBalance >= prize.coinsRequired;
 
   if (!canAfford) {
-    await ctx.answerCallbackQuery('Недостаточно ресурсов 😔');
+    await ctx.answerCallbackQuery({ text: 'Недостаточно ресурсов 😔', show_alert: true });
     return;
   }
 
+  const tab = isCardPrize ? 'cards' : 'coins';
   const kb = new InlineKeyboard()
     .text('✅ Подтвердить', `store:confirm:${prizeId}`)
-    .text('❌ Отмена', 'store:cancel');
+    .text('❌ Отмена', 'store:main');
 
   await ctx.editMessageText(
     `🛍 <b>Подтвердить обмен?</b>\n\n` +
@@ -140,8 +167,8 @@ async function completePurchase(ctx: BotContext, prizeId: number): Promise<void>
     await requestExchange(employee.id, prizeId);
     await ctx.editMessageText(
       `✅ <b>Заявка принята!</b>\n\n` +
-      `Руководитель получит уведомление и подтвердит выдачу приза.\n\n` +
-      `История обменов: /store`,
+      `Руководитель подтвердит выдачу приза.\n\n` +
+      `Вернуться: /store`,
       { parse_mode: 'HTML' }
     );
     await ctx.answerCallbackQuery('Заявка отправлена! 🎉');
@@ -149,12 +176,4 @@ async function completePurchase(ctx: BotContext, prizeId: number): Promise<void>
     const message = err instanceof Error ? err.message : 'Ошибка';
     await ctx.answerCallbackQuery({ text: message, show_alert: true });
   }
-}
-
-async function cancelPurchase(ctx: BotContext): Promise<void> {
-  await ctx.editMessageText(
-    '❌ Обмен отменён.\n\nВернуться в магазин: /store',
-    { parse_mode: 'HTML' }
-  );
-  await ctx.answerCallbackQuery();
 }

@@ -22,12 +22,6 @@ export async function handleCollection(ctx: BotContext): Promise<void> {
     .map(h => `${owned.has(h.id) ? '✅' : '⬜'} ${esc(h.name)}`)
     .join('\n');
 
-  // Лимитные карточки отдельно
-  const limited = summary.cards.filter(c => {
-    // Определяем лимитную по наличию в heroes с is_limited=true
-    return false; // будет заполнено ниже
-  });
-
   const { rows: limitedCards } = await pool.query<{ heroName: string; earnedAt: Date }>(
     `SELECT h.name AS "heroName", ec.earned_at AS "earnedAt"
      FROM employee_cards ec

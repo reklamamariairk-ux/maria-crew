@@ -64,19 +64,23 @@ export async function awardCards(
   try {
     await client.query('BEGIN');
 
-    // Источники, уже начисленные в этом месяце
+    // Источники, уже начисленные в этом месяце (review — до 2 раз)
     const { rows: existing } = await client.query<{ source: CardSource }>(
       `SELECT source FROM employee_cards
        WHERE employee_id = $1 AND year = $2 AND month = $3`,
       [employeeId, year, month]
     );
-    const existingSources = new Set(existing.map(r => r.source));
+    const sourceCounts = new Map<string, number>();
+    for (const r of existing) {
+      sourceCounts.set(r.source, (sourceCounts.get(r.source) ?? 0) + 1);
+    }
 
     const inserted: EmployeeCard[] = [];
 
     for (const award of awards) {
-      // review может быть до 2 раз — считаем уже вставленные в этой транзакции
-      if (award.source !== 'review' && existingSources.has(award.source)) continue;
+      const current = sourceCounts.get(award.source) ?? 0;
+      const limit = award.source === 'review' ? 2 : 1;
+      if (current >= limit) continue;
 
       const heroId = randomHeroId();
       const { rows } = await client.query<EmployeeCard>(
@@ -86,12 +90,7 @@ export async function awardCards(
         [employeeId, heroId, award.isMvp, award.source, year, month]
       );
       inserted.push(rows[0]);
-
-      if (award.source === 'review') {
-        // review не уникален по source — продолжаем, но не добавляем в set
-      } else {
-        existingSources.add(award.source);
-      }
+      sourceCounts.set(award.source, current + 1);
     }
 
     await client.query('COMMIT');
@@ -134,11 +133,6 @@ export async function getCollection(employeeId: number): Promise<CollectionSumma
   );
 
   const available = rows.filter(c => !c.isSpent);
-  const uniqueHeroes = new Set(
-    rows.filter(c => !c.heroId).length === 0
-      ? rows.filter(c => !c.isSpent || true).map(c => c.heroId)
-      : []
-  );
 
   // Считаем уникальных основных героев среди всех карточек (включая потраченные)
   const { rows: heroRows } = await pool.query<{ count: string }>(

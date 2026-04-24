@@ -3,7 +3,45 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-export const pool = new Pool({
+function camelize(s: string): string {
+  return s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+}
+
+function camelizeResult(result: any): any {
+  if (result && Array.isArray(result.rows)) {
+    result.rows = result.rows.map((row: Record<string, unknown>) => {
+      const camel: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(row)) camel[camelize(k)] = v;
+      return camel;
+    });
+  }
+  return result;
+}
+
+const rawPool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
+
+// Patch pool.query to auto-camelize results
+const origPoolQuery = rawPool.query.bind(rawPool);
+(rawPool as any).query = (...args: any[]) => {
+  const lastArg = args[args.length - 1];
+  if (typeof lastArg === 'function') return (origPoolQuery as any)(...args);
+  return (origPoolQuery as any)(...args).then(camelizeResult);
+};
+
+// Patch pool.connect so client.query also camelizes
+const origPoolConnect = rawPool.connect.bind(rawPool);
+(rawPool as any).connect = async () => {
+  const client = await origPoolConnect();
+  const origClientQuery = client.query.bind(client);
+  (client as any).query = (...args: any[]) => {
+    const lastArg = args[args.length - 1];
+    if (typeof lastArg === 'function') return (origClientQuery as any)(...args);
+    return (origClientQuery as any)(...args).then(camelizeResult);
+  };
+  return client;
+};
+
+export const pool = rawPool;
