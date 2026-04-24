@@ -1,4 +1,4 @@
-import { Bot, session } from 'grammy';
+import { Bot, session, BotError } from 'grammy';
 import type { BotContext, SessionData } from './context';
 import { authMiddleware } from './middleware/auth';
 import { handleStart, handleStoreSelection, mainMenuKeyboard } from './commands/start';
@@ -71,8 +71,22 @@ export function createBot(token: string): Bot<BotContext> {
   // Магазин
   bot.callbackQuery(/^store:/, handleStoreCallback);
 
-  bot.catch(err => {
-    console.error('Bot error:', err.error);
+  // Глобальный обработчик ошибок — ВСЕГДА отвечает пользователю
+  bot.catch(async (err: BotError<BotContext>) => {
+    const ctx = err.ctx;
+    const e = err.error;
+    console.error(`[bot] Ошибка в update ${ctx.update.update_id}:`, e);
+
+    try {
+      if (ctx.callbackQuery) {
+        await ctx.answerCallbackQuery('Произошла ошибка, попробуй снова').catch(() => {});
+      }
+      await ctx.reply(
+        '⚠️ Произошла ошибка. Попробуй снова или отправь /start'
+      ).catch(() => {});
+    } catch {
+      // ignore reply errors
+    }
   });
 
   return bot;

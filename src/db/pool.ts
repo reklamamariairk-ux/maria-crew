@@ -21,6 +21,14 @@ function camelizeResult(result: any): any {
 const rawPool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  // Настройки для Neon free tier (холодный старт 3-5 сек)
+  connectionTimeoutMillis: 15000,
+  idleTimeoutMillis: 30000,
+  max: 5,
+});
+
+rawPool.on('error', (err) => {
+  console.error('[pool] Неожиданная ошибка:', err.message);
 });
 
 // Patch pool.query to auto-camelize results
