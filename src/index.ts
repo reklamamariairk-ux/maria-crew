@@ -278,6 +278,13 @@ async function main() {
       { attempts: 10, delayMs: 2000 }
     );
     console.log(`[bot] ✓ Webhook: ${webhookUrl}`);
+
+    // Постоянная кнопка меню внизу чата — открывает Mini App без команд
+    const webappUrl = `${serviceUrl}/webapp`;
+    await bot.api.setMyDefaultAdministratorRights().catch(() => {});
+    await bot.api.setChatMenuButton({
+      menu_button: { type: 'web_app', text: '🍰 Maria Crew', web_app: { url: webappUrl } },
+    }).catch((e: Error) => console.warn('[bot] setChatMenuButton:', e.message));
   } catch (err) {
     // Не падаем — webhook мог быть установлен при прошлом старте
     console.error('[bot] Не удалось установить webhook:', err instanceof Error ? err.message : err);
