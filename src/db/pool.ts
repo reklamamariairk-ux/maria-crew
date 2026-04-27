@@ -22,11 +22,12 @@ const rawPool = new Pool({
   connectionString: process.env.DATABASE_URL,
   // Neon всегда требует SSL; rejectUnauthorized:false — для совместимости с self-signed прокси
   ssl: { rejectUnauthorized: false },
-  // Neon free tier: прокси принимает соединение сразу, пробуждение БД < 5s
   connectionTimeoutMillis: 15000,
+  // query_timeout: таймаут выполнения запроса (мс). Страхует от зависания, когда
+  // Neon принял TCP-соединение, но база ещё не проснулась.
+  query_timeout: 12000,
   idleTimeoutMillis: 20000,
   max: 5,
-  // Keepalive предотвращает разрыв простаивающих соединений Render/Neon
   keepAlive: true,
   keepAliveInitialDelayMillis: 10000,
 });

@@ -57,16 +57,25 @@ async function withRetry<T>(
   throw lastError;
 }
 
+async function queryWithTimeout<T>(fn: () => Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    fn(),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Query timeout after ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
 async function checkDatabase(): Promise<void> {
   console.log('[db] Проверяем подключение...');
-  await pool.query('SELECT 1');
+  await queryWithTimeout(() => pool.query('SELECT 1'), 12000);
   console.log('[db] ✓ Подключение к БД есть');
 }
 
 async function runMigrations(): Promise<void> {
   console.log('[migrations] Запуск...');
   const MIGRATIONS_DIR = path.join(__dirname, '../migrations');
-  const client = await pool.connect();
+  const client = await queryWithTimeout(() => pool.connect(), 12000);
   try {
     const bootstrap = fs.readFileSync(path.join(MIGRATIONS_DIR, '000_migrations_table.sql'), 'utf8');
     await client.query(bootstrap);
@@ -103,13 +112,16 @@ async function runMigrations(): Promise<void> {
 }
 
 async function seedIfEmpty(): Promise<void> {
-  const { rows } = await pool.query<{ cnt: string }>('SELECT COUNT(*)::text AS cnt FROM stores');
+  const { rows } = await queryWithTimeout(
+    () => pool.query<{ cnt: string }>('SELECT COUNT(*)::text AS cnt FROM stores'),
+    12000
+  );
   const cnt = parseInt(rows[0]?.cnt ?? '0', 10);
   console.log(`[seed] Магазинов в БД: ${cnt}`);
   if (cnt > 0) return;
 
   console.log('[seed] Заполняем начальные данные...');
-  const client = await pool.connect();
+  const client = await queryWithTimeout(() => pool.connect(), 12000);
   try {
     await client.query('BEGIN');
 
