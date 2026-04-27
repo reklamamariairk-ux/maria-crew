@@ -308,7 +308,7 @@ async function loadEmployees() {
   }
   tbody.innerHTML = summaries.filter(Boolean).map(s => `<tr>
     <td><strong>${esc(s.name)}</strong></td>
-    <td style="color:var(--muted);font-size:13px">${s.telegramUsername ? '@' + esc(s.telegramUsername) : '—'}</td>
+    <td style="color:var(--gray);font-size:13px">${s.telegramUsername ? '@' + esc(s.telegramUsername) : '—'}</td>
     <td>${roleLabel(s.role)}</td>
     <td>${s.availableCards}</td>
     <td>${s.coinBalance}</td>
