@@ -20,7 +20,9 @@ export type CoinReason =
   | 'mentoring'
   | 'idea'
   | 'spend'
-  | 'manual';
+  | 'manual'
+  | 'quiz'
+  | 'checkin';
 
 export type PrizeType =
   | 'cake'

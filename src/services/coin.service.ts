@@ -9,6 +9,8 @@ export const COIN_AMOUNTS: Record<Exclude<CoinReason, 'spend' | 'manual'>, numbe
   substitution:  5,
   mentoring:     10,
   idea:          5,
+  quiz:          2,
+  checkin:       5,
 };
 
 /** Текущий баланс монет сотрудника */

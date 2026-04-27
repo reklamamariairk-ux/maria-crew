@@ -33,6 +33,7 @@
     <button class="tab-btn"        data-tab="exchanges"  onclick="switchTab('exchanges')">🛍 Заявки</button>
     <button class="tab-btn"        data-tab="employees"  onclick="switchTab('employees')">👤 Сотрудники</button>
     <button class="tab-btn"        data-tab="leaderboard" onclick="switchTab('leaderboard')">🏆 Рейтинги</button>
+    <button class="tab-btn"        data-tab="quiz"        onclick="switchTab('quiz')">🧩 Квиз</button>
   </nav>
 
   <main>
@@ -213,6 +214,61 @@
             </table>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- ── Квиз ──────────────────────────────────── -->
+    <div id="tab-quiz" class="tab-content hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <p class="section-title" style="margin:0">Вопросы квиза</p>
+        <button class="btn btn-primary" onclick="showAddQuestion()">+ Добавить вопрос</button>
+      </div>
+
+      <div id="add-question-form" class="hidden" style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px">
+        <p class="section-title">Новый вопрос</p>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <label>Вопрос:
+            <textarea id="q-question" rows="2" style="width:100%;margin-top:4px;padding:8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:14px"></textarea>
+          </label>
+          <label>Вариант А: <input type="text" id="q-opt0" style="width:100%;margin-left:6px"></label>
+          <label>Вариант Б: <input type="text" id="q-opt1" style="width:100%;margin-left:6px"></label>
+          <label>Вариант В: <input type="text" id="q-opt2" style="width:100%;margin-left:6px"></label>
+          <label>Вариант Г: <input type="text" id="q-opt3" style="width:100%;margin-left:6px"></label>
+          <label>Правильный ответ:
+            <select id="q-correct" class="inline" style="margin-left:6px">
+              <option value="0">А</option>
+              <option value="1">Б</option>
+              <option value="2">В</option>
+              <option value="3">Г</option>
+            </select>
+          </label>
+          <label>Категория:
+            <select id="q-category" class="inline" style="margin-left:6px">
+              <option value="product">Продукция</option>
+              <option value="service">Сервис</option>
+              <option value="crew">Команда</option>
+            </select>
+          </label>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="addQuestion()">Сохранить</button>
+            <button class="btn btn-ghost" onclick="document.getElementById('add-question-form').classList.add('hidden')">Отмена</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:40px">#</th>
+            <th>Вопрос</th>
+            <th>Категория</th>
+            <th style="width:80px">Статус</th>
+            <th style="width:120px">Действие</th>
+          </tr></thead>
+          <tbody id="quiz-tbody">
+            <tr><td colspan="5" class="empty">Загрузка...</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
 

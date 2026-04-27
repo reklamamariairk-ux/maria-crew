@@ -1,0 +1,76 @@
+import { pool } from '../db/pool';
+
+export interface StreakInfo {
+  checkedInToday: boolean;
+  currentStreak: number;
+  lastCheckin: string | null;
+}
+
+export async function getStreak(employeeId: number): Promise<StreakInfo> {
+  const today = new Date().toISOString().split('T')[0];
+
+  const { rows } = await pool.query<{ checkinDate: string; streakDay: number }>(
+    `SELECT checkin_date AS "checkinDate", streak_day AS "streakDay"
+     FROM daily_checkins
+     WHERE employee_id = $1
+     ORDER BY checkin_date DESC
+     LIMIT 2`,
+    [employeeId]
+  );
+
+  const latest = rows[0];
+  const checkedInToday = latest?.checkinDate === today;
+  const currentStreak = latest?.streakDay ?? 0;
+
+  return {
+    checkedInToday,
+    currentStreak,
+    lastCheckin: latest?.checkinDate ?? null,
+  };
+}
+
+export async function doCheckin(employeeId: number): Promise<{ streakDay: number; coinsEarned: number; alreadyCheckedIn: boolean }> {
+  const today = new Date().toISOString().split('T')[0];
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString().split('T')[0];
+
+  const { rows: existing } = await pool.query<{ id: number }>(
+    `SELECT id FROM daily_checkins WHERE employee_id = $1 AND checkin_date = $2`,
+    [employeeId, today]
+  );
+  if (existing[0]) return { streakDay: 0, coinsEarned: 0, alreadyCheckedIn: true };
+
+  const { rows: prev } = await pool.query<{ streakDay: number }>(
+    `SELECT streak_day AS "streakDay" FROM daily_checkins
+     WHERE employee_id = $1 AND checkin_date = $2`,
+    [employeeId, yesterday]
+  );
+
+  const streakDay = (prev[0]?.streakDay ?? 0) + 1;
+  const isWeekly = streakDay % 7 === 0;
+  const coinsEarned = isWeekly ? 20 : 5;
+  const note = isWeekly
+    ? `🔥 Серия ${streakDay} дней! Недельный бонус`
+    : `Ежедневный вход, серия ${streakDay} ${plural(streakDay, 'день', 'дня', 'дней')}`;
+
+  await pool.query(
+    `INSERT INTO daily_checkins (employee_id, checkin_date, streak_day, coins_earned)
+     VALUES ($1, $2, $3, $4)`,
+    [employeeId, today, streakDay, coinsEarned]
+  );
+
+  await pool.query(
+    `INSERT INTO coin_transactions (employee_id, amount, reason, note)
+     VALUES ($1, $2, 'checkin', $3)`,
+    [employeeId, coinsEarned, note]
+  );
+
+  return { streakDay, coinsEarned, alreadyCheckedIn: false };
+}
+
+function plural(n: number, one: string, few: string, many: string): string {
+  const m10 = n % 10, m100 = n % 100;
+  if (m100 >= 11 && m100 <= 19) return many;
+  if (m10 === 1) return one;
+  if (m10 >= 2 && m10 <= 4) return few;
+  return many;
+}

@@ -8,6 +8,7 @@ import metricsRoutes   from './routes/metrics';
 import coinsRoutes     from './routes/coins';
 import exchangeRoutes  from './routes/exchanges';
 import leaderboardRoutes from './routes/leaderboard';
+import quizRoutes from './routes/quiz';
 
 const router = Router();
 
@@ -25,5 +26,6 @@ router.use('/metrics',     metricsRoutes);
 router.use('/coins',       coinsRoutes);
 router.use('/exchanges',   exchangeRoutes);
 router.use('/leaderboard', leaderboardRoutes);
+router.use('/quiz',       quizRoutes);
 
 export default router;

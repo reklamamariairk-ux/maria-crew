@@ -2,6 +2,8 @@ import crypto from 'crypto';
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { getBalance, getHistory, getMonthlySummary } from '../../services/coin.service';
+import { getDailyQuestionsWithAnswers, submitAnswer } from '../../services/quiz.service';
+import { getStreak, doCheckin } from '../../services/streak.service';
 import { getAvailableCardCount } from '../../services/card.service';
 import { getPrizes, requestExchange } from '../../services/exchange.service';
 import { getEmployeeLeaderboard } from '../../services/rating.service';
@@ -321,6 +323,55 @@ router.get('/prizes', async (req: Request, res: Response, next: NextFunction): P
     if (!auth) return;
     const prizes = await getPrizes();
     res.json(prizes);
+  } catch (err) { next(err); }
+});
+
+// GET /api/webapp/quiz/daily
+router.get('/quiz/daily', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const result = await getDailyQuestionsWithAnswers(auth.employee.id);
+    // Strip correctIndex before sending — client submits answers one-by-one
+    res.json({
+      alreadyDone: result.alreadyDone,
+      questions: result.questions.map(q => ({ id: q.id, question: q.question, options: q.options, category: q.category })),
+    });
+  } catch (err) { next(err); }
+});
+
+// POST /api/webapp/quiz/answer
+router.post('/quiz/answer', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const { questionId, answerIndex } = req.body as { questionId: number; answerIndex: number };
+    if (questionId === undefined || answerIndex === undefined) {
+      res.status(400).json({ error: 'questionId и answerIndex обязательны' });
+      return;
+    }
+    const result = await submitAnswer(auth.employee.id, questionId, answerIndex);
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
+// GET /api/webapp/streak
+router.get('/streak', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const streak = await getStreak(auth.employee.id);
+    res.json(streak);
+  } catch (err) { next(err); }
+});
+
+// POST /api/webapp/checkin
+router.post('/checkin', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const result = await doCheckin(auth.employee.id);
+    res.json(result);
   } catch (err) { next(err); }
 });
 
