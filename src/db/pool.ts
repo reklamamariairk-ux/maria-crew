@@ -33,6 +33,12 @@ rawPool.on('error', (err) => {
   console.error('[pool] Неожиданная ошибка:', err.message);
 });
 
+export function camelizeRow<T = Record<string, unknown>>(row: Record<string, unknown>): T {
+  const result: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(row)) result[camelize(k)] = v;
+  return result as T;
+}
+
 // Patch pool.query to auto-camelize results
 const origPoolQuery = rawPool.query.bind(rawPool);
 (rawPool as any).query = (...args: any[]) => {

@@ -203,6 +203,9 @@ async function loadCoinEmployees() {
   const emps = await api('GET', `/stores/${state.storeId}/employees`) || [];
   state.employees = emps.filter(e => e.isActive);
 
+  document.getElementById('coins-history-tbody').innerHTML =
+    '<tr><td colspan="4" class="empty">Выберите сотрудника</td></tr>';
+
   const sel = document.getElementById('coin-employee');
   sel.innerHTML = '<option value="">— выбери —</option>';
   state.employees.forEach(e => {
@@ -259,7 +262,10 @@ async function awardCoins() {
 // ── Заявки ────────────────────────────────────────────────────────────────────
 async function loadExchanges() {
   const status = document.getElementById('exchanges-status').value;
-  const params = status ? `?status=${status}` : '';
+  const parts = [];
+  if (status) parts.push(`status=${status}`);
+  if (state.storeId) parts.push(`storeId=${state.storeId}`);
+  const params = parts.length ? '?' + parts.join('&') : '';
   const data = await api('GET', `/exchanges${params}`) || [];
 
   const tbody = document.getElementById('exchanges-tbody');

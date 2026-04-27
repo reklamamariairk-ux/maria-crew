@@ -1,4 +1,4 @@
-import { pool } from '../db/pool';
+import { pool, camelizeRow } from '../db/pool';
 import type {
   CardAwardItem,
   CardSource,
@@ -89,7 +89,7 @@ export async function awardCards(
          RETURNING *`,
         [employeeId, heroId, award.isMvp, award.source, year, month]
       );
-      inserted.push(rows[0]);
+      inserted.push(camelizeRow<EmployeeCard>(rows[0] as unknown as Record<string, unknown>));
       sourceCounts.set(award.source, current + 1);
     }
 
