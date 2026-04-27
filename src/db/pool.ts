@@ -23,7 +23,7 @@ const rawPool = new Pool({
   // Neon всегда требует SSL; rejectUnauthorized:false — для совместимости с self-signed прокси
   ssl: { rejectUnauthorized: false },
   connectionTimeoutMillis: 120_000,
-  idleTimeoutMillis: 20000,
+  idleTimeoutMillis: 90_000,  // longer than 1-min keep-alive cron so connections survive
   max: 5,
   keepAlive: true,
   keepAliveInitialDelayMillis: 10000,

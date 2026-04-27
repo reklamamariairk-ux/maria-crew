@@ -236,6 +236,12 @@ async function initDatabaseBackground(): Promise<void> {
       await seedIfEmpty();
       markDbReady();
       console.log('[db] ✓ База данных полностью готова');
+      // Warm up the pool so the first API request doesn't hit Neon cold
+      pool.query('SELECT 1').then(() => {
+        console.log('[pool] ✓ Pool initialized');
+      }).catch((e: Error) => {
+        console.warn('[pool] Pool warm-up failed:', e.message);
+      });
       return;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
