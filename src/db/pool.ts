@@ -41,20 +41,4 @@ const origPoolQuery = rawPool.query.bind(rawPool);
   return (origPoolQuery as any)(...args).then(camelizeResult);
 };
 
-// Patch pool.connect so client.query also camelizes
-const origPoolConnect = rawPool.connect.bind(rawPool);
-(rawPool as any).connect = async () => {
-  const client = await origPoolConnect();
-  client.on('error', (err: Error) => {
-    console.error('[db client] Ошибка клиента:', err.message);
-  });
-  const origClientQuery = client.query.bind(client);
-  (client as any).query = (...args: any[]) => {
-    const lastArg = args[args.length - 1];
-    if (typeof lastArg === 'function') return (origClientQuery as any)(...args);
-    return (origClientQuery as any)(...args).then(camelizeResult);
-  };
-  return client;
-};
-
 export const pool = rawPool;
