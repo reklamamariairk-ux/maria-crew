@@ -22,10 +22,10 @@ const rawPool = new Pool({
   connectionString: process.env.DATABASE_URL,
   // Neon всегда требует SSL; rejectUnauthorized:false — для совместимости с self-signed прокси
   ssl: { rejectUnauthorized: false },
-  connectionTimeoutMillis: 15000,
-  // query_timeout: таймаут выполнения запроса (мс). Страхует от зависания, когда
-  // Neon принял TCP-соединение, но база ещё не проснулась.
-  query_timeout: 12000,
+  connectionTimeoutMillis: 30000,
+  // query_timeout: Neon принимает TCP-соединение мгновенно, но поднимает compute
+  // до 20-25 секунд — поэтому ставим 30 с, чтобы не обрывать легитимный cold start.
+  query_timeout: 30000,
   idleTimeoutMillis: 20000,
   max: 5,
   keepAlive: true,
