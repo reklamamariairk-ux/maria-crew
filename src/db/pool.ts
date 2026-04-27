@@ -20,11 +20,15 @@ function camelizeResult(result: any): any {
 
 const rawPool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  // Настройки для Neon/Render free tier: холодный старт может занимать заметно дольше.
-  connectionTimeoutMillis: 40000,
-  idleTimeoutMillis: 30000,
+  // Neon всегда требует SSL; rejectUnauthorized:false — для совместимости с self-signed прокси
+  ssl: { rejectUnauthorized: false },
+  // Neon free tier: прокси принимает соединение сразу, пробуждение БД < 5s
+  connectionTimeoutMillis: 15000,
+  idleTimeoutMillis: 20000,
   max: 5,
+  // Keepalive предотвращает разрыв простаивающих соединений Render/Neon
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000,
 });
 
 rawPool.on('error', (err) => {

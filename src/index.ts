@@ -6,6 +6,8 @@ import { createBot } from './bot/bot';
 import { createServer } from './server';
 import { initNotifications } from './bot/notifications/sender';
 import { initScheduler } from './scheduler/index';
+import { effectiveAdminSecret } from './api/middleware/adminAuth';
+import { markDbReady, markDbError } from './diagnostics';
 import fs from 'fs';
 import path from 'path';
 
@@ -14,14 +16,12 @@ if (!token) throw new Error('BOT_TOKEN не задан');
 
 const port = parseInt(process.env.PORT ?? '3000', 10);
 
-// URL сервиса на Render (нужен для webhook)
 const serviceUrl = (
   process.env.WEBHOOK_URL ??
   process.env.RENDER_EXTERNAL_URL ??
   'https://maria-crew.onrender.com'
 ).replace(/\/$/, '');
 
-// Секрет для webhook-эндпоинта (первые 16 символов после ":" в токене)
 const webhookSecret = token.split(':')[1]?.slice(0, 16) ?? 'secret';
 
 console.log('=== STARTUP ===');
@@ -29,6 +29,7 @@ console.log('NODE_ENV:', process.env.NODE_ENV);
 console.log('PORT:', port);
 console.log('SERVICE_URL:', serviceUrl);
 console.log('BOT_TOKEN:', token.slice(0, 10) + '...');
+console.log('ADMIN_SECRET:', process.env.ADMIN_SECRET ? '(из env)' : `(авто) ${effectiveAdminSecret}`);
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -45,20 +46,14 @@ async function withRetry<T>(
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      if (attempt > 1) {
-        console.log(`[retry] ${label} — попытка ${attempt}/${attempts}`);
-      }
+      if (attempt > 1) console.log(`[retry] ${label} — попытка ${attempt}/${attempts}`);
       return await fn();
     } catch (err) {
       lastError = err;
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`[retry] ${label} — ошибка: ${message}`);
-      if (attempt < attempts) {
-        await sleep(delayMs * attempt);
-      }
+      console.error(`[retry] ${label} — ошибка: ${err instanceof Error ? err.message : String(err)}`);
+      if (attempt < attempts) await sleep(delayMs * attempt);
     }
   }
-
   throw lastError;
 }
 
@@ -138,8 +133,11 @@ async function seedIfEmpty(): Promise<void> {
         [heroes[i][0], heroes[i][1], i + 1]
       );
     }
-    for (let i = 0; i < 4; i++) {
-      const lim = [['Ice Breaker', 'summer'], ['Upsale King', 'autumn'], ['Holiday Star', 'winter'], ['Rookie of Season', 'spring']];
+    const lim: [string, string][] = [
+      ['Ice Breaker', 'summer'], ['Upsale King', 'autumn'],
+      ['Holiday Star', 'winter'], ['Rookie of Season', 'spring'],
+    ];
+    for (let i = 0; i < lim.length; i++) {
       await client.query(
         `INSERT INTO heroes (name, is_limited, season, sort_order) VALUES ($1, true, $2, $3)`,
         [lim[i][0], lim[i][1], 100 + i]
@@ -177,36 +175,67 @@ async function seedIfEmpty(): Promise<void> {
   }
 }
 
+// Инициализирует БД в фоне, никогда не крашит процесс.
+// Повторяет попытки пока не успеет.
+async function initDatabaseBackground(): Promise<void> {
+  let attempt = 0;
+  while (true) {
+    attempt++;
+    try {
+      await checkDatabase();
+      await runMigrations();
+      await seedIfEmpty();
+      markDbReady();
+      console.log('[db] ✓ База данных полностью готова');
+      return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      markDbError(msg);
+      const delay = Math.min(attempt * 5000, 30000); // 5s, 10s, 15s … max 30s
+      console.error(`[db] Попытка ${attempt} не удалась (${msg}), следующая через ${delay / 1000}с`);
+      await sleep(delay);
+    }
+  }
+}
+
 async function main() {
-  // 1. Создаём бота и сразу запускаем HTTP-сервер
-  // Render убивает процесс если порт не открылся быстро — делаем это первым
+  // 1. HTTP-сервер — первым делом, Render следит за портом
   const bot = createBot(token!);
   const app = createServer(bot, webhookSecret);
-  await new Promise<void>(resolve => app.listen(port, () => {
-    console.log(`[server] ✓ Порт ${port}`);
-    resolve();
-  }));
+  await new Promise<void>((resolve, reject) =>
+    app.listen(port, () => {
+      console.log(`[server] ✓ Порт ${port}`);
+      resolve();
+    }).on('error', reject)
+  );
 
-  // 2. Уведомления и планировщик (не требуют БД)
+  // 2. Уведомления и планировщик не требуют БД
   initNotifications(bot);
   initScheduler(bot);
 
-  // 3. База данных — с ретраями (Neon cold start может занять ~20 сек)
-  await withRetry('подключение к БД', checkDatabase);
-  await withRetry('миграции', runMigrations);
-  await withRetry('seed', seedIfEmpty);
+  // 3. Webhook устанавливаем ДО ожидания БД — чтобы бот принимал сообщения
+  try {
+    const me = await withRetry('getMe', () => bot.api.getMe(), { attempts: 10, delayMs: 2000 });
+    console.log(`[bot] ✓ @${me.username} (id=${me.id})`);
+    const webhookUrl = `${serviceUrl}/webhook/${webhookSecret}`;
+    await withRetry('setWebhook', () =>
+      bot.api.setWebhook(webhookUrl, { drop_pending_updates: false }),
+      { attempts: 10, delayMs: 2000 }
+    );
+    console.log(`[bot] ✓ Webhook: ${webhookUrl}`);
+  } catch (err) {
+    // Не падаем — webhook мог быть установлен при прошлом старте
+    console.error('[bot] Не удалось установить webhook:', err instanceof Error ? err.message : err);
+  }
 
-  // 4. Проверяем токен и регистрируем webhook
-  const me = await withRetry('getMe', () => bot.api.getMe());
-  console.log(`[bot] ✓ @${me.username} (id=${me.id})`);
-
-  const webhookUrl = `${serviceUrl}/webhook/${webhookSecret}`;
-  await withRetry('setWebhook', () =>
-    bot.api.setWebhook(webhookUrl, { drop_pending_updates: false })
-  );
-  console.log(`[bot] ✓ Webhook установлен: ${webhookUrl}`);
+  // 4. БД инициализируется в фоне, сервер уже принимает запросы
+  initDatabaseBackground().catch(err => {
+    // этот catch никогда не сработает (цикл бесконечный), но для TypeScript
+    console.error('[db] Неожиданный выход из фонового цикла:', err);
+  });
 }
 
+// Только фатальные ошибки (например, порт занят) роняют процесс
 main().catch(err => {
   console.error('[FATAL]', err);
   process.exit(1);

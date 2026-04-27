@@ -23,7 +23,14 @@ const state: {
   lastUpdate?: UpdateSummary;
   lastBotError?: ErrorSummary;
   lastWebappAuth?: WebappAuthSummary;
-} = {};
+  dbReady: boolean;
+  dbReadyAt?: string;
+  dbError?: string;
+  startedAt: string;
+} = {
+  dbReady: false,
+  startedAt: new Date().toISOString(),
+};
 
 export function markWebhookHit(payload: unknown): void {
   state.lastWebhookHitAt = new Date().toISOString();
@@ -57,10 +64,23 @@ export function markWebappAuth(stage: string, details?: Record<string, unknown>)
   };
 }
 
+export function markDbReady(): void {
+  state.dbReady = true;
+  state.dbReadyAt = new Date().toISOString();
+  state.dbError = undefined;
+}
+
+export function markDbError(message: string): void {
+  state.dbError = message;
+}
+
 export function getDiagnostics(): Record<string, unknown> {
   return {
+    startedAt: state.startedAt,
+    dbReady: state.dbReady,
+    dbReadyAt: state.dbReadyAt ?? null,
+    dbError: state.dbError ?? null,
     lastWebhookHitAt: state.lastWebhookHitAt ?? null,
-    lastWebhookPayload: state.lastWebhookPayload ?? null,
     lastUpdate: state.lastUpdate ?? null,
     lastBotError: state.lastBotError ?? null,
     lastWebappAuth: state.lastWebappAuth ?? null,

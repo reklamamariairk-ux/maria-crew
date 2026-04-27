@@ -106,18 +106,34 @@ async function loadViewerWithRetry() {
   throw lastError;
 }
 
-async function apiFetch(path, opts = {}) {
-  const res = await withTimeout(fetch(API + path, {
-    ...opts,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'tma ' + initData,
-      ...(opts.headers || {}),
-    },
-  }));
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Ошибка сервера');
-  return data;
+async function apiFetch(path, opts = {}, retries = 2) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await withTimeout(fetch(API + path, {
+        ...opts,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'tma ' + initData,
+          ...(opts.headers || {}),
+        },
+      }));
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if ((res.status >= 500 || res.status === 0) && attempt < retries) {
+          lastError = new Error(data.error || 'Ошибка сервера');
+          await sleep(1500 * attempt);
+          continue;
+        }
+        throw new Error(data.error || 'Ошибка сервера');
+      }
+      return data;
+    } catch (err) {
+      lastError = err;
+      if (attempt < retries) await sleep(1500 * attempt);
+    }
+  }
+  throw lastError;
 }
 
 function showBootError(message) {
