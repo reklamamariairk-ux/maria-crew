@@ -100,10 +100,19 @@ async function checkDatabase(): Promise<void> {
   console.log('[db] ✓ Подключение к БД есть');
 }
 
+function makeDirectClient(): import('pg').Client {
+  return new Client({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+    connectionTimeoutMillis: 120_000,
+  });
+}
+
 async function runMigrations(): Promise<void> {
   console.log('[migrations] Запуск...');
   const MIGRATIONS_DIR = path.join(__dirname, '../migrations');
-  const client = await queryWithTimeout(() => pool.connect(), 35000);
+  const client = makeDirectClient();
+  await client.connect();
   try {
     const bootstrap = fs.readFileSync(path.join(MIGRATIONS_DIR, '000_migrations_table.sql'), 'utf8');
     await client.query(bootstrap);
@@ -135,22 +144,22 @@ async function runMigrations(): Promise<void> {
     }
     console.log(count > 0 ? `[migrations] ✓ Применено: ${count}` : '[migrations] ✓ Актуальны');
   } finally {
-    client.release();
+    try { await client.end(); } catch {}
   }
 }
 
 async function seedIfEmpty(): Promise<void> {
-  const { rows } = await queryWithTimeout(
-    () => pool.query<{ cnt: string }>('SELECT COUNT(*)::text AS cnt FROM stores'),
-    35000
-  );
-  const cnt = parseInt(rows[0]?.cnt ?? '0', 10);
-  console.log(`[seed] Магазинов в БД: ${cnt}`);
-  if (cnt > 0) return;
-
-  console.log('[seed] Заполняем начальные данные...');
-  const client = await queryWithTimeout(() => pool.connect(), 35000);
+  const client = makeDirectClient();
+  await client.connect();
   try {
+    const { rows } = await client.query<{ cnt: string }>(
+      'SELECT COUNT(*)::text AS cnt FROM stores'
+    );
+    const cnt = parseInt(rows[0]?.cnt ?? '0', 10);
+    console.log(`[seed] Магазинов в БД: ${cnt}`);
+    if (cnt > 0) return;
+
+    console.log('[seed] Заполняем начальные данные...');
     await client.query('BEGIN');
 
     const heroes: [string, string][] = [
@@ -207,11 +216,11 @@ async function seedIfEmpty(): Promise<void> {
     await client.query('COMMIT');
     console.log('[seed] ✓ Данные добавлены');
   } catch (err) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch {}
     console.error('[seed] ОШИБКА:', err);
     throw err;
   } finally {
-    client.release();
+    try { await client.end(); } catch {}
   }
 }
 
