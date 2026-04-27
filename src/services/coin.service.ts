@@ -110,7 +110,7 @@ export async function getMonthlySummary(
   const { rows } = await pool.query<{ earned: string; spent: string }>(
     `SELECT
        COALESCE(SUM(amount) FILTER (WHERE amount > 0), 0)::text AS earned,
-       COALESCE(ABS(SUM(amount)) FILTER (WHERE amount < 0), 0)::text AS spent
+       COALESCE(ABS(SUM(amount) FILTER (WHERE amount < 0)), 0)::text AS spent
      FROM coin_transactions
      WHERE employee_id = $1
        AND EXTRACT(YEAR  FROM created_at) = $2
