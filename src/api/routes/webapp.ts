@@ -156,10 +156,18 @@ router.post('/auth', async (req: Request, res: Response, next: NextFunction): Pr
     }
 
     markWebappAuth('auth:validated', { userId: user.id, username: user.username ?? null });
-    res.json({
-      ok: true,
-      user,
-    });
+
+    // Load employee + stats in the same request so the frontend skips a separate /me call
+    let employee: Employee | null = null;
+    let stats: Awaited<ReturnType<typeof getStats>> | null = null;
+    try {
+      employee = await getEmployee(user.id);
+      if (employee) stats = await getStats(employee.id);
+    } catch (err) {
+      console.error('[webapp] auth: employee preload failed:', err instanceof Error ? err.message : err);
+    }
+
+    res.json({ ok: true, user, employee, stats });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     markWebappAuth('auth:error', { message });

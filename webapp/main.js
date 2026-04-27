@@ -211,22 +211,34 @@ async function init() {
     const data = await authMiniApp();
     tgUser = data.user || null;
 
-    try {
-      setLoadingHint('Загружаем твои данные...');
-      const me = await loadViewerWithRetry();
-      employee = me;
-      myStatsCache = me;
+    if (data.employee && data.stats) {
+      // Auth response already includes employee + stats — no extra /me needed
+      employee = { ...data.employee, ...data.stats };
+      myStatsCache = employee;
       showApp({
-        availableCards: me.availableCards ?? 0,
-        coinBalance: me.coinBalance ?? 0,
-        uniqueHeroes: me.uniqueHeroes ?? 0,
+        availableCards: data.stats.availableCards ?? 0,
+        coinBalance: data.stats.coinBalance ?? 0,
+        uniqueHeroes: data.stats.uniqueHeroes ?? 0,
       });
-    } catch (err) {
-      if (String(err.message || '').includes('Не зарегистрирован')) {
-        await loadRegScreen();
-        return;
+    } else {
+      // Not registered yet, or auth preload failed — fall back to /me
+      try {
+        setLoadingHint('Загружаем твои данные...');
+        const me = await loadViewerWithRetry();
+        employee = me;
+        myStatsCache = me;
+        showApp({
+          availableCards: me.availableCards ?? 0,
+          coinBalance: me.coinBalance ?? 0,
+          uniqueHeroes: me.uniqueHeroes ?? 0,
+        });
+      } catch (err) {
+        if (String(err.message || '').includes('Не зарегистрирован')) {
+          await loadRegScreen();
+          return;
+        }
+        throw err;
       }
-      throw err;
     }
   } catch (err) {
     showBootError(err.message || 'Ошибка при входе в приложение');
@@ -316,9 +328,7 @@ function showApp(stats) {
 
   updateHeaderStats(stats);
   prizesCache = null;
-  myStatsCache = null;
   switchTab('collection');
-  refreshHeaderStats();
 }
 
 // ── Tab routing ───────────────────────────────────────────────────────────────
