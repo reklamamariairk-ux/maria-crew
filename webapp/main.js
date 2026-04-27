@@ -674,7 +674,14 @@ async function doExchange(prizeId) {
   const prize = prizesCache && prizesCache.find(p => p.id === prizeId);
   const name = prize ? prize.name : 'приз';
 
-  if (!confirm(`Обменять на «${name}»? Заявка уйдёт руководителю.`)) return;
+  const confirmed = await new Promise(resolve => {
+    if (tg && tg.showConfirm) {
+      tg.showConfirm(`Обменять на «${name}»?\n\nЗаявка уйдёт руководителю на подтверждение.`, resolve);
+    } else {
+      resolve(window.confirm(`Обменять на «${name}»? Заявка уйдёт руководителю.`));
+    }
+  });
+  if (!confirmed) return;
 
   try {
     await apiFetch('/exchange', { method: 'POST', body: JSON.stringify({ prizeId }) });
