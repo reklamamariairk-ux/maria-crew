@@ -4,6 +4,7 @@ import { pool } from '../../db/pool';
 import { getBalance, getHistory, getMonthlySummary } from '../../services/coin.service';
 import { getDailyQuestionsWithAnswers, submitAnswer } from '../../services/quiz.service';
 import { getStreak, doCheckin } from '../../services/streak.service';
+import { getActiveChallenge, checkAndCompleteChallenge } from '../../services/challenge.service';
 import { getAvailableCardCount } from '../../services/card.service';
 import { getPrizes, requestExchange } from '../../services/exchange.service';
 import { getEmployeeLeaderboard } from '../../services/rating.service';
@@ -372,6 +373,28 @@ router.post('/checkin', async (req: Request, res: Response, next: NextFunction):
     if (!auth) return;
     const result = await doCheckin(auth.employee.id);
     res.json(result);
+  } catch (err) { next(err); }
+});
+
+// GET /api/webapp/challenge
+router.get('/challenge', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const challenge = await getActiveChallenge(auth.employee.id);
+    res.json({ challenge });
+  } catch (err) { next(err); }
+});
+
+// POST /api/webapp/challenge/check
+router.post('/challenge/check', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const { challengeId } = req.body as { challengeId: number };
+    if (!challengeId) { res.status(400).json({ error: 'challengeId обязателен' }); return; }
+    const completed = await checkAndCompleteChallenge(auth.employee.id, challengeId);
+    res.json({ completed });
   } catch (err) { next(err); }
 });
 

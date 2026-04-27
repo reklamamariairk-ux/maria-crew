@@ -48,13 +48,29 @@ async function seed() {
     }
     console.log('  → limited heroes seeded');
 
-    // 16 точек (placeholder)
-    for (let i = 1; i <= 16; i++) {
+    // 16 точек (реальные адреса с maria-irk.ru)
+    const stores = [
+      { name: 'Ржанова',                  address: 'ул. Ржанова, 45/2' },
+      { name: 'Дьяконова',                address: 'ул. Э. Дьяконова, 10' },
+      { name: 'Байкальская 295Б',          address: 'ул. Байкальская, 295Б' },
+      { name: 'Рабочая',                  address: 'ул. Рабочая, 2а/4' },
+      { name: 'Лермонтова 81/5',           address: 'ул. Лермонтова, 81/5' },
+      { name: 'ТЦ Сезон',                 address: 'ул. Свердлова, 36' },
+      { name: 'Пушкина',                  address: 'ул. Пушкина, 9' },
+      { name: 'Верхняя Набережная',        address: 'ул. Верхняя Набережная, 161/16' },
+      { name: 'Баррикад',                 address: 'ул. Баррикад, 153' },
+      { name: 'Лермонтова 343/8',          address: 'ул. Лермонтова, 343/8' },
+      { name: 'Ядринцева',                address: 'ул. Ядринцева, 90' },
+      { name: 'Депутатская',              address: 'ул. Депутатская, 51' },
+      { name: 'Байкальская 141',           address: 'ул. Байкальская, 141' },
+      { name: 'Юбилейный',                address: 'мкр. Юбилейный, 56' },
+      { name: 'Жукова',                   address: 'пр-т Жукова, 11/4' },
+      { name: 'Декабрьских Событий',       address: 'ул. Декабрьских Событий, 103' },
+    ];
+    for (const s of stores) {
       await client.query(
-        `INSERT INTO stores (name, address)
-         VALUES ($1, $2)
-         ON CONFLICT DO NOTHING`,
-        [`Кондитерская «Мария» #${i}`, `Иркутск, точка ${i}`]
+        `INSERT INTO stores (name, address) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [s.name, s.address]
       );
     }
     console.log('  → stores seeded');

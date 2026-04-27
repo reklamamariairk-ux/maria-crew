@@ -367,10 +367,51 @@ window.doCheckin = async function () {
 
 // ── Collection ────────────────────────────────────────────────────────────────
 
+async function loadChallengeBanner() {
+  const el = document.getElementById('challenge-banner');
+  if (!el) return;
+  try {
+    const { challenge } = await apiFetch('/challenge');
+    if (!challenge) { el.innerHTML = ''; return; }
+
+    const SEASON_ICON = { spring: '🌸', summer: '🏄', autumn: '🍂', winter: '⭐' };
+    const icon = SEASON_ICON[challenge.season] || '🏆';
+
+    if (challenge.completed) {
+      el.innerHTML = `
+        <div class="challenge-card challenge-done">
+          <div class="challenge-icon">${icon}</div>
+          <div class="challenge-body">
+            <div class="challenge-name">${challenge.name}</div>
+            <div class="challenge-cond" style="color:var(--green);font-weight:700">✅ Челлендж выполнен! ${challenge.cardAwarded ? 'Карточка выдана.' : 'Ожидай карточку от руководителя.'}</div>
+          </div>
+        </div>`;
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="challenge-card">
+        <div class="challenge-icon">${icon}</div>
+        <div class="challenge-body">
+          <div class="challenge-label">Сезонный челлендж</div>
+          <div class="challenge-name">${challenge.name}</div>
+          <div class="challenge-cond">${challenge.conditionDescription}</div>
+          <div class="challenge-footer">
+            <span class="challenge-reward">🃏 Лимитная карточка «${challenge.heroName}»</span>
+            <span class="challenge-days">${challenge.daysLeft} ${plural(challenge.daysLeft,'день','дня','дней')}</span>
+          </div>
+        </div>
+      </div>`;
+  } catch {
+    el.innerHTML = '';
+  }
+}
+
 async function loadCollection() {
   const grid = document.getElementById('hero-grid');
   grid.innerHTML = '<div class="empty"><div class="empty-icon">🃏</div><div class="empty-text">Загружаем...</div></div>';
   document.getElementById('collection-howto').innerHTML = '';
+  loadChallengeBanner();
 
   try {
     const { heroes, owned, mvpIds } = await apiFetch('/collection');

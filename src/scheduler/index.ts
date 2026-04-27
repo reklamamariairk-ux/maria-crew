@@ -7,6 +7,7 @@ import { pool } from '../db/pool';
 import { remindMetrics } from './jobs/remindMetrics';
 import { remindDailyCoins } from './jobs/remindDailyCoins';
 import { weeklyDigest } from './jobs/weeklyDigest';
+import { remindQuiz } from './jobs/remindQuiz';
 
 export function initScheduler(bot: Bot<BotContext>): void {
   const sendMessage = async (telegramId: string, html: string): Promise<void> => {
@@ -24,6 +25,12 @@ export function initScheduler(bot: Bot<BotContext>): void {
       console.error('[scheduler] Ошибка публикации в канал:', err);
     }
   };
+
+  // ── 0. Утреннее напоминание квиза в канал (Пн–Сб 09:00) ─────────────────
+  cron.schedule('0 9 * * 1-6', async () => {
+    console.log('[scheduler] remindQuiz — запуск');
+    await remindQuiz(publishToChannel);
+  }, { timezone: 'Asia/Irkutsk' });
 
   // ── 1. Ежемесячное напоминание руководителям ──────────────────────────────
   cron.schedule('0 2 1 * *', async () => {
@@ -75,6 +82,7 @@ export function initScheduler(bot: Bot<BotContext>): void {
   console.log('[scheduler] Задачи зарегистрированы:');
   console.log('  • Каждую минуту         — Neon keep-alive');
   console.log('  • Каждые 13 мин         — Render keep-alive');
+  console.log('  • Пн–Сб 09:00           — напоминание квиза в канал');
   console.log('  • 1-е число месяца 10:00 — напоминание про метрики');
   console.log('  • Пн–Сб 20:00           — напоминание про монеты');
   console.log('  • Пятница 18:00          — еженедельный дайджест в канал');
