@@ -294,6 +294,7 @@ function showWelcome(stats) {
 window.closeWelcome = function () {
   document.getElementById('welcome-overlay').classList.remove('show');
   showApp(window._pendingStats || { availableCards: 0, coinBalance: 0, uniqueHeroes: 0 });
+  if (isNewUser) switchTab('quiz');
 };
 
 // ── App shell ─────────────────────────────────────────────────────────────────
@@ -355,6 +356,7 @@ window.doCheckin = async function () {
       : `🔥 Серия ${result.streakDay} ${plural(result.streakDay,'день','дня','дней')} · +${result.coinsEarned} монет`;
     showToast(msg);
     updateStreakBadge({ checkedInToday: true, currentStreak: result.streakDay });
+    loadDailyActionsBar();
     // Refresh coin balance in header
     apiFetch('/me').then(me => {
       myStatsCache = me;
@@ -407,10 +409,34 @@ async function loadChallengeBanner() {
   }
 }
 
+async function loadDailyActionsBar() {
+  const el = document.getElementById('daily-actions-bar');
+  if (!el) return;
+  try {
+    const streak = await apiFetch('/streak');
+    const checkedIn = streak.checkedInToday;
+    const days = streak.currentStreak || 0;
+    el.innerHTML = `
+      <div class="daily-actions">
+        <div class="daily-action${checkedIn ? ' done' : ''}" onclick="${checkedIn ? '' : 'doCheckin()'}">
+          <span class="daily-action-icon">${checkedIn ? '✅' : '🔥'}</span>
+          <span class="daily-action-label">${checkedIn ? 'Отметился' : 'Отметиться'}</span>
+          <span class="daily-action-sub">${days} ${plural(days, 'день', 'дня', 'дней')} подряд</span>
+        </div>
+        <div class="daily-action" onclick="switchTab('quiz')">
+          <span class="daily-action-icon">🧩</span>
+          <span class="daily-action-label">Пройти квиз</span>
+          <span class="daily-action-sub">+2 монеты за ответ</span>
+        </div>
+      </div>`;
+  } catch { el.innerHTML = ''; }
+}
+
 async function loadCollection() {
   const grid = document.getElementById('hero-grid');
   grid.innerHTML = '<div class="empty"><div class="empty-icon">🃏</div><div class="empty-text">Загружаем...</div></div>';
   document.getElementById('collection-howto').innerHTML = '';
+  loadDailyActionsBar();
   loadChallengeBanner();
 
   try {
@@ -526,7 +552,9 @@ async function loadCoins() {
 
 async function loadQuiz() {
   const container = document.getElementById('quiz-container');
+  const firstBanner = document.getElementById('quiz-first-banner');
   container.innerHTML = '<div class="empty"><div class="empty-icon">🧩</div><div class="empty-text">Загружаем...</div></div>';
+  if (firstBanner) firstBanner.style.display = 'none';
 
   try {
     const data = await apiFetch('/quiz/daily');
@@ -544,6 +572,18 @@ async function loadQuiz() {
     if (!data.questions || data.questions.length === 0) {
       container.innerHTML = '<div class="empty"><div class="empty-icon">🧩</div><div class="empty-text">Вопросы ещё не добавлены</div></div>';
       return;
+    }
+
+    if (firstBanner && isNewUser) {
+      firstBanner.style.display = 'block';
+      firstBanner.innerHTML = `
+        <div class="first-quiz-banner">
+          <div class="first-quiz-banner-icon">🎉</div>
+          <div class="first-quiz-banner-text">
+            <strong>Твой первый квиз!</strong>
+            <span>Ответь правильно на все 5 вопросов — получи +10 монет прямо сейчас</span>
+          </div>
+        </div>`;
     }
 
     quizQuestions = data.questions;

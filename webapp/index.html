@@ -386,6 +386,30 @@
       border-radius: 30px; margin-bottom: 16px; animation: pulse 0.6s ease;
     }
     .quiz-results-note   { font-size: 13px; color: var(--hint); font-weight: 500; }
+
+    .first-quiz-banner {
+      display: flex; align-items: center; gap: 12px;
+      background: linear-gradient(135deg, var(--brand-bg), #fff4f0);
+      border: 1.5px solid var(--brand); border-radius: var(--radius);
+      padding: 14px; margin-bottom: 14px; animation: fadeUp 0.3s ease;
+    }
+    .first-quiz-banner-icon { font-size: 28px; flex-shrink: 0; }
+    .first-quiz-banner-text strong { display: block; font-size: 14px; font-weight: 800; color: var(--text); margin-bottom: 3px; }
+    .first-quiz-banner-text span   { font-size: 12px; color: var(--hint); font-weight: 500; line-height: 1.35; }
+
+    .daily-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; animation: fadeUp 0.3s ease; }
+    .daily-action {
+      background: #fff; border-radius: var(--radius);
+      padding: 14px 12px; text-align: center; cursor: pointer;
+      border: 1.5px solid var(--cream-dark);
+      transition: border-color 0.15s, background 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .daily-action:active { background: var(--cream-dark); }
+    .daily-action.done { border-color: var(--green); background: var(--green-bg); cursor: default; }
+    .daily-action-icon { font-size: 26px; display: block; margin-bottom: 5px; }
+    .daily-action-label { font-size: 13px; font-weight: 800; color: var(--text); display: block; }
+    .daily-action-sub { font-size: 11px; color: var(--hint); font-weight: 500; display: block; margin-top: 2px; }
     .btn-quiz-retry {
       display: block; margin: 20px auto 0; padding: 13px 32px;
       border-radius: 30px; background: var(--brand); color: #fff;
@@ -637,6 +661,7 @@
   <div>
     <!-- Коллекция -->
     <div id="tab-collection" class="tab-content active">
+      <div id="daily-actions-bar"></div>
       <div id="challenge-banner"></div>
       <div class="collection-header" style="margin-top:4px">
         <div class="section-title">Коллекция героев</div>
@@ -675,6 +700,7 @@
         <div class="section-title">Ежедневный квиз</div>
         <div style="font-size:13px;color:var(--hint);font-weight:500;margin-top:-6px">5 вопросов · +2 монеты за каждый правильный ответ</div>
       </div>
+      <div id="quiz-first-banner" style="display:none"></div>
       <div id="quiz-container">
         <div class="empty"><div class="empty-icon">🧩</div><div class="empty-text">Загружаем...</div></div>
       </div>
@@ -719,6 +745,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="main.js?v=20260427b"></script>
+<script src="main.js?v=20260427c"></script>
 </body>
 </html>
