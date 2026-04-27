@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+import { Client } from 'pg';
 import { pool } from './db/pool';
 import { createBot } from './bot/bot';
 import { createServer } from './server';
@@ -66,9 +67,36 @@ async function queryWithTimeout<T>(fn: () => Promise<T>, ms: number): Promise<T>
   ]);
 }
 
+// Uses a dedicated Client (not the pool) so a hanging cold-start query
+// doesn't occupy a pool slot. Client is destroyed on timeout.
 async function checkDatabase(): Promise<void> {
   console.log('[db] Проверяем подключение...');
-  await queryWithTimeout(() => pool.query('SELECT 1'), 35000);
+  const TIMEOUT_MS = 120_000;
+
+  const client = new Client({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+    connectionTimeoutMillis: TIMEOUT_MS,
+  });
+
+  let timedOut = false;
+  const timer = setTimeout(async () => {
+    timedOut = true;
+    try { await client.end(); } catch {}
+  }, TIMEOUT_MS);
+
+  try {
+    await client.connect();
+    await client.query('SELECT 1');
+  } catch (err) {
+    clearTimeout(timer);
+    try { await client.end(); } catch {}
+    if (timedOut) throw new Error(`DB connection timeout after ${TIMEOUT_MS / 1000}s`);
+    throw err;
+  }
+
+  clearTimeout(timer);
+  try { await client.end(); } catch {}
   console.log('[db] ✓ Подключение к БД есть');
 }
 
