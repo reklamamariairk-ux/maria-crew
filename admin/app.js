@@ -956,6 +956,7 @@ async function loadStoresAdmin() {
     <td style="color:var(--muted);font-size:12px">${s.id}</td>
     <td><input type="text" class="store-name-input" value="${esc(s.name)}" data-original="${esc(s.name)}"></td>
     <td><input type="text" class="store-address-input" value="${esc(s.address ?? '')}" data-original="${esc(s.address ?? '')}"></td>
+    <td><input type="text" class="store-gis2-input" placeholder="70000001xxxxxxxxx" value="${esc(s.gis2Id ?? '')}" data-original="${esc(s.gis2Id ?? '')}"></td>
     <td>
       <select class="store-active-select" data-original="${s.isActive}">
         <option value="true"${s.isActive ? ' selected' : ''}>Активна</option>
@@ -974,27 +975,43 @@ async function saveStoreAdmin(id, btn) {
   const row = document.querySelector(`tr[data-store-id="${id}"]`);
   const nameEl    = row.querySelector('.store-name-input');
   const addressEl = row.querySelector('.store-address-input');
+  const gis2El    = row.querySelector('.store-gis2-input');
   const activeEl  = row.querySelector('.store-active-select');
 
   const name = nameEl.value.trim();
   const address = addressEl.value.trim();
+  const gis2Id = gis2El.value.trim();
   const isActive = activeEl.value === 'true';
 
   if (!name) { toast('Название не может быть пустым'); return; }
 
   btn.disabled = true; btn.textContent = '⏳';
   try {
-    await api('PUT', `/stores/${id}`, { name, address: address || null, isActive });
+    await api('PUT', `/stores/${id}`, { name, address: address || null, gis2Id: gis2Id || null, isActive });
     toast('✅ Точка обновлена');
     nameEl.dataset.original = name;
     addressEl.dataset.original = address;
+    gis2El.dataset.original = gis2Id;
     activeEl.dataset.original = isActive;
-    // Обновим в state и переотрисуем все селекторы
     const s = state.stores.find(x => x.id === id);
-    if (s) { s.name = name; s.address = address; s.isActive = isActive; }
+    if (s) { s.name = name; s.address = address; s.gis2Id = gis2Id; s.isActive = isActive; }
     populateStoreSelectors();
   } catch (e) { toast('❌ ' + e.message); }
   finally { btn.disabled = false; btn.textContent = 'Сохранить'; }
+}
+
+async function fetchGis2Rating() {
+  if (!state.storeId) { toast('Выберите точку'); return; }
+  const btn = document.getElementById('gis2-btn');
+  btn.disabled = true; btn.textContent = '⏳';
+  try {
+    const data = await api('GET', `/stores/${state.storeId}/gis2-rating`);
+    if (data?.rating != null) {
+      document.getElementById('store-rating-score').value = data.rating.toFixed(2);
+      toast(`✅ Рейтинг из 2ГИС: ${data.rating.toFixed(2)}`);
+    }
+  } catch (e) { toast('❌ ' + e.message); }
+  finally { btn.disabled = false; btn.innerHTML = '<i data-lucide="map-pin"></i> из 2ГИС'; renderIcons(); }
 }
 
 async function addStore() {

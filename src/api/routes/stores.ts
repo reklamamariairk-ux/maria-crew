@@ -1,13 +1,16 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { logAudit } from '../../services/audit.service';
+import { fetchGis2Rating } from '../../services/gis2.service';
 
 const router = Router();
 
 // GET /api/stores
 router.get('/', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { rows } = await pool.query(`SELECT id, name, address, is_active AS "isActive" FROM stores ORDER BY id`);
+    const { rows } = await pool.query(
+      `SELECT id, name, address, gis2_id AS "gis2Id", is_active AS "isActive" FROM stores ORDER BY id`
+    );
     res.json(rows);
   } catch (err) { next(err); }
 });
@@ -51,10 +54,23 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
   } catch (err) { next(err); }
 });
 
+// GET /api/stores/:id/gis2-rating — получить текущий рейтинг из 2ГИС
+router.get('/:id/gis2-rating', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { rows } = await pool.query(`SELECT gis2_id FROM stores WHERE id = $1`, [req.params.id]);
+    const gis2Id = rows[0]?.gis2_id as string | null;
+    if (!gis2Id) { res.status(400).json({ error: 'У точки не задан 2ГИС ID' }); return; }
+    if (!process.env.GIS2_API_KEY) { res.status(500).json({ error: 'GIS2_API_KEY не задан на сервере' }); return; }
+    const rating = await fetchGis2Rating(gis2Id);
+    if (rating === null) { res.status(502).json({ error: 'Не удалось получить рейтинг из 2ГИС' }); return; }
+    res.json({ rating });
+  } catch (err) { next(err); }
+});
+
 // PUT /api/stores/:id — обновить точку
 router.put('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const body = req.body as { name?: string; address?: string | null; isActive?: boolean };
+    const body = req.body as { name?: string; address?: string | null; gis2Id?: string | null; isActive?: boolean };
     const sets: string[] = [];
     const vals: (string | boolean | null)[] = [];
 
@@ -63,6 +79,9 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     }
     if ('address' in body) {
       vals.push(body.address ?? null); sets.push(`address = $${vals.length}`);
+    }
+    if ('gis2Id' in body) {
+      vals.push(body.gis2Id ?? null); sets.push(`gis2_id = $${vals.length}`);
     }
     if ('isActive' in body && body.isActive !== undefined) {
       vals.push(body.isActive); sets.push(`is_active = $${vals.length}`);
@@ -73,7 +92,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     const { rows } = await pool.query(
       `UPDATE stores SET ${sets.join(', ')}
        WHERE id = $${vals.length}
-       RETURNING id, name, address, is_active AS "isActive"`,
+       RETURNING id, name, address, gis2_id AS "gis2Id", is_active AS "isActive"`,
       vals
     );
     if (!rows[0]) { res.status(404).json({ error: 'Точка не найдена' }); return; }

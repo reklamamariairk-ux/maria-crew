@@ -107,7 +107,12 @@
         <p class="section-title">Данные по точке (для расчёта рейтинга)</p>
         <div class="form-row" style="margin-bottom:0">
           <label>Рейтинг на отзовиках (0–5)
-            <input type="number" id="store-rating-score" min="0" max="5" step="0.1" value="4.5" style="width:90px">
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="number" id="store-rating-score" min="0" max="5" step="0.1" value="4.5" style="width:90px">
+              <button class="btn btn-ghost btn-sm" onclick="fetchGis2Rating()" id="gis2-btn" title="Загрузить рейтинг из 2ГИС">
+                <i data-lucide="map-pin"></i> из 2ГИС
+              </button>
+            </div>
           </label>
           <label>% выполнения плана
             <input type="number" id="store-revenue-percent" min="0" max="200" step="0.1" value="100" style="width:100px">
@@ -473,11 +478,12 @@
             <th style="width:50px">#</th>
             <th>Название</th>
             <th>Адрес</th>
+            <th style="width:180px">2ГИС ID</th>
             <th style="width:140px">Статус</th>
             <th style="width:120px">Действие</th>
           </tr></thead>
           <tbody id="stores-admin-tbody">
-            <tr><td colspan="5" class="empty">Загрузка...</td></tr>
+            <tr><td colspan="6" class="empty">Загрузка...</td></tr>
           </tbody>
         </table>
       </div>
