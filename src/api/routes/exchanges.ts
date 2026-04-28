@@ -35,7 +35,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
 router.put('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { status, processedBy, notes } = req.body as {
-      status: ExchangeStatus; processedBy: number; notes?: string;
+      status: ExchangeStatus; processedBy?: number | null; notes?: string;
     };
     const allowed: ExchangeStatus[] = ['approved', 'rejected', 'fulfilled'];
     if (!allowed.includes(status)) {
@@ -44,7 +44,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     const exchange = await processExchange(
       parseInt(req.params.id, 10),
       status as 'approved' | 'rejected' | 'fulfilled',
-      processedBy,
+      processedBy ?? null,
       notes
     );
     res.json(exchange);

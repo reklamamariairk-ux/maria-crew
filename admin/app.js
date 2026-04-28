@@ -305,7 +305,7 @@ async function loadExchanges() {
 
 async function updateExchange(id, status) {
   try {
-    await api('PUT', `/exchanges/${id}`, { status, processedBy: 1 });
+    await api('PUT', `/exchanges/${id}`, { status });
     toast(status === 'fulfilled' ? '✅ Приз выдан' : '❌ Заявка отклонена');
     loadExchanges();
   } catch (e) { toast('❌ ' + e.message); }
@@ -313,10 +313,10 @@ async function updateExchange(id, status) {
 
 // ── Сотрудники ────────────────────────────────────────────────────────────────
 function renderEmployeeAvatar(s) {
-  if (s.telegramPhotoUrl) {
-    return `<img src="${esc(s.telegramPhotoUrl)}" alt="" class="emp-avatar" referrerpolicy="no-referrer" onerror="this.outerHTML='<span class=\\'emp-avatar emp-avatar-fallback\\'>${esc((s.name || '?')[0].toUpperCase())}</span>'">`;
-  }
   const letter = (s.name || '?')[0].toUpperCase();
+  if (s.telegramPhotoUrl) {
+    return `<img src="${esc(s.telegramPhotoUrl)}" alt="${esc(letter)}" class="emp-avatar" referrerpolicy="no-referrer">`;
+  }
   return `<span class="emp-avatar emp-avatar-fallback">${esc(letter)}</span>`;
 }
 

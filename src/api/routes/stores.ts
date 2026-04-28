@@ -52,17 +52,27 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
 // PUT /api/stores/:id — обновить точку
 router.put('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { name, address, isActive } = req.body as {
-      name?: string; address?: string | null; isActive?: boolean;
-    };
+    const body = req.body as { name?: string; address?: string | null; isActive?: boolean };
+    const sets: string[] = [];
+    const vals: (string | boolean | null)[] = [];
+
+    if ('name' in body && body.name !== undefined) {
+      vals.push(body.name); sets.push(`name = $${vals.length}`);
+    }
+    if ('address' in body) {
+      vals.push(body.address ?? null); sets.push(`address = $${vals.length}`);
+    }
+    if ('isActive' in body && body.isActive !== undefined) {
+      vals.push(body.isActive); sets.push(`is_active = $${vals.length}`);
+    }
+    if (!sets.length) { res.status(400).json({ error: 'Нечего обновлять' }); return; }
+
+    vals.push(req.params.id);
     const { rows } = await pool.query(
-      `UPDATE stores SET
-         name      = COALESCE($1, name),
-         address   = COALESCE($2, address),
-         is_active = COALESCE($3, is_active)
-       WHERE id = $4
+      `UPDATE stores SET ${sets.join(', ')}
+       WHERE id = $${vals.length}
        RETURNING id, name, address, is_active AS "isActive"`,
-      [name ?? null, address ?? null, isActive ?? null, req.params.id]
+      vals
     );
     if (!rows[0]) { res.status(404).json({ error: 'Точка не найдена' }); return; }
     res.json(rows[0]);

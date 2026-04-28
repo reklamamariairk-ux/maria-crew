@@ -168,7 +168,7 @@ function initTelegramContext() {
 }
 
 function escapeAttr(s) {
-  return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function setAvatar(name) {
@@ -176,11 +176,14 @@ function setAvatar(name) {
   if (!el) return;
   const letter = (name || '?')[0].toUpperCase();
   const photoUrl = (employee && employee.telegramPhotoUrl) || (tgUser && tgUser.photo_url) || '';
-  if (photoUrl) {
-    el.innerHTML = `<img src="${escapeAttr(photoUrl)}" alt="" referrerpolicy="no-referrer" onerror="this.parentNode.textContent='${escapeAttr(letter)}'">`;
-  } else {
-    el.textContent = letter;
-  }
+  el.textContent = letter;
+  if (!photoUrl) return;
+  const img = document.createElement('img');
+  img.src = photoUrl;
+  img.alt = '';
+  img.referrerPolicy = 'no-referrer';
+  img.onerror = () => { el.textContent = letter; };
+  img.onload = () => { el.textContent = ''; el.appendChild(img); };
 }
 
 function showToast(msg) {
@@ -827,13 +830,18 @@ async function doExchange(prizeId) {
 
   try {
     await apiFetch('/exchange', { method: 'POST', body: JSON.stringify({ prizeId }) });
-    prizesCache = null; myStatsCache = null;
     showToast('✅ Заявка отправлена! Руководитель скоро подтвердит.');
     tg?.HapticFeedback?.notificationOccurred('success');
-    const me = await apiFetch('/me');
-    myStatsCache = me;
-    updateHeaderStats({ availableCards: me.availableCards, coinBalance: me.coinBalance, uniqueHeroes: me.uniqueHeroes });
-    renderPrizes();
+    // Сбрасываем кэш и пере-загружаем призы и баланс одним запросом
+    prizesCache = null; myStatsCache = null;
+    await loadStore();
+    if (myStatsCache) {
+      updateHeaderStats({
+        availableCards: myStatsCache.availableCards,
+        coinBalance:    myStatsCache.coinBalance,
+        uniqueHeroes:   myStatsCache.uniqueHeroes,
+      });
+    }
   } catch (err) {
     showToast(err.message || 'Ошибка. Попробуй ещё раз.');
     tg?.HapticFeedback?.notificationOccurred('error');

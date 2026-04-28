@@ -112,7 +112,7 @@ export async function awardChallengeCard(employeeId: number, challengeId: number
 
   await pool.query(
     `INSERT INTO employee_cards (employee_id, hero_id, source, year, month)
-     VALUES ($1, $2, 'challenge', $3, $4)
+     VALUES ($1, $2, 'seasonal', $3, $4)
      ON CONFLICT DO NOTHING`,
     [employeeId, ch[0].hero_id, now.getFullYear(), now.getMonth() + 1]
   );
