@@ -116,3 +116,9 @@ select.inline { width: auto; text-align: left; }
               font-weight: 700; font-size: 14px; flex-shrink: 0; }
 .emp-avatar-fallback { background: linear-gradient(135deg, var(--pink), #ff6fbb);
                        color: #fff; }
+
+.emp-store-select { padding: 5px 8px; border: 1px solid var(--border);
+                    border-radius: 6px; font-size: 13px; background: var(--white);
+                    max-width: 180px; cursor: pointer; }
+.emp-store-select:disabled { opacity: 0.6; cursor: not-allowed; }
+.emp-store-select:hover { border-color: var(--pink); }

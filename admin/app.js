@@ -318,15 +318,22 @@ function lastSeenLabel(iso) {
   return formatDate(iso);
 }
 
+function renderStoreSelect(empId, currentStoreId) {
+  const opts = state.stores.map(s =>
+    `<option value="${s.id}"${s.id === currentStoreId ? ' selected' : ''}>${esc(s.name)}</option>`
+  ).join('');
+  return `<select class="emp-store-select" data-emp-id="${empId}" data-current="${currentStoreId ?? ''}" onchange="changeEmployeeStore(${empId}, this)">${opts}</select>`;
+}
+
 async function loadEmployees() {
   const tbody = document.getElementById('employees-tbody');
-  tbody.innerHTML = '<tr><td colspan="9" class="empty">Загрузка...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="10" class="empty">Загрузка...</td></tr>';
 
   const path = state.storeId ? `/employees?storeId=${state.storeId}` : '/employees';
   const list = await api('GET', path) || [];
 
   if (list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" class="empty">${state.storeId ? 'Нет сотрудников на этой точке' : 'Нет сотрудников'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="empty">${state.storeId ? 'Нет сотрудников на этой точке' : 'Нет сотрудников'}</td></tr>`;
     return;
   }
 
@@ -345,8 +352,9 @@ async function loadEmployees() {
       : (e.telegramId ? `id ${e.telegramId}` : '—');
     return `<tr>
       <td>${renderEmployeeAvatar(e)}</td>
-      <td><strong>${esc(e.name)}</strong>${state.storeId ? '' : `<div style="color:var(--gray);font-size:12px">${esc(e.storeName)}</div>`}</td>
+      <td><strong>${esc(e.name)}</strong></td>
       <td style="color:var(--gray);font-size:13px">${tgInfo}</td>
+      <td>${renderStoreSelect(e.id, e.storeId)}</td>
       <td>${roleLabel(e.role)}</td>
       <td>${cards}</td>
       <td>${coins}</td>
@@ -359,6 +367,29 @@ async function loadEmployees() {
       </td>
     </tr>`;
   }).join('');
+}
+
+async function changeEmployeeStore(id, selectEl) {
+  const newStoreId = parseInt(selectEl.value, 10);
+  const oldStoreId = parseInt(selectEl.dataset.current, 10);
+  if (!newStoreId || newStoreId === oldStoreId) return;
+  const newStoreName = state.stores.find(s => s.id === newStoreId)?.name || 'другую точку';
+  if (!confirm(`Перевести сотрудника на «${newStoreName}»?`)) {
+    selectEl.value = String(oldStoreId);
+    return;
+  }
+  selectEl.disabled = true;
+  try {
+    await api('PUT', `/employees/${id}`, { storeId: newStoreId });
+    selectEl.dataset.current = String(newStoreId);
+    toast(`✅ Сотрудник переведён на «${newStoreName}»`);
+    if (state.storeId && state.storeId !== newStoreId) loadEmployees();
+  } catch (e) {
+    selectEl.value = String(oldStoreId);
+    toast('❌ ' + e.message);
+  } finally {
+    selectEl.disabled = false;
+  }
 }
 
 function showAddEmployee() {
