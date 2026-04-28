@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
+import { logAudit } from '../../services/audit.service';
 
 const router = Router();
 
@@ -46,6 +47,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
       [name.trim(), address?.trim() || null]
     );
     res.status(201).json(rows[0]);
+    logAudit('store_create', { storeId: rows[0].id, name: rows[0].name }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -76,6 +78,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     );
     if (!rows[0]) { res.status(404).json({ error: 'Точка не найдена' }); return; }
     res.json(rows[0]);
+    logAudit('store_update', { storeId: rows[0].id, changes: body }).catch(() => {});
   } catch (err) { next(err); }
 });
 

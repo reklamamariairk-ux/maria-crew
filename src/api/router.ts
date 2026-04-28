@@ -12,6 +12,8 @@ import quizRoutes from './routes/quiz';
 import challengeRoutes from './routes/challenges';
 import cardRoutes from './routes/cards';
 import heroRoutes from './routes/heroes';
+import prizeRoutes from './routes/prizes';
+import auditRoutes from './routes/audit';
 
 const router = Router();
 
@@ -33,5 +35,7 @@ router.use('/quiz',        quizRoutes);
 router.use('/challenges',  challengeRoutes);
 router.use('/cards',       cardRoutes);
 router.use('/heroes',      heroRoutes);
+router.use('/prizes',      prizeRoutes);
+router.use('/audit',       auditRoutes);
 
 export default router;

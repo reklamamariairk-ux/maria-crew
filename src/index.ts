@@ -285,6 +285,18 @@ async function main() {
     await bot.api.setChatMenuButton({
       menu_button: { type: 'web_app', text: '🍰 Maria Crew', web_app: { url: webappUrl } },
     }).catch((e: Error) => console.warn('[bot] setChatMenuButton:', e.message));
+
+    // Список команд в выпадающем «/» меню Telegram
+    await bot.api.setMyCommands([
+      { command: 'start',      description: 'Главное меню' },
+      { command: 'me',         description: 'Мой статус: монеты, карточки, серия' },
+      { command: 'collection', description: 'Моя коллекция героев' },
+      { command: 'coins',      description: 'Мои монеты' },
+      { command: 'rating',     description: 'Рейтинг моей точки' },
+      { command: 'top',        description: 'Топ всех точек' },
+      { command: 'store',      description: 'Maria Store — обмен на призы' },
+      { command: 'crew',       description: 'Команда моей точки' },
+    ]).catch((e: Error) => console.warn('[bot] setMyCommands:', e.message));
   } catch (err) {
     // Не падаем — webhook мог быть установлен при прошлом старте
     console.error('[bot] Не удалось установить webhook:', err instanceof Error ? err.message : err);

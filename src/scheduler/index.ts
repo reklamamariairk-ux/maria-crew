@@ -8,6 +8,7 @@ import { remindMetrics } from './jobs/remindMetrics';
 import { remindDailyCoins } from './jobs/remindDailyCoins';
 import { weeklyDigest } from './jobs/weeklyDigest';
 import { remindQuiz } from './jobs/remindQuiz';
+import { remindStreak } from './jobs/remindStreak';
 
 export function initScheduler(bot: Bot<BotContext>): void {
   const sendMessage = async (telegramId: string, html: string): Promise<void> => {
@@ -50,6 +51,12 @@ export function initScheduler(bot: Bot<BotContext>): void {
     await weeklyDigest(publishToChannel);
   }, { timezone: 'Asia/Irkutsk' });
 
+  // ── 3b. Личное напоминание про серию (21:00 ежедневно) ───────────────────
+  cron.schedule('0 21 * * *', async () => {
+    console.log('[scheduler] remindStreak — запуск');
+    await remindStreak(sendMessage);
+  }, { timezone: 'Asia/Irkutsk' });
+
   const serviceUrl = (
     process.env.WEBHOOK_URL ??
     process.env.RENDER_EXTERNAL_URL ??
@@ -86,4 +93,5 @@ export function initScheduler(bot: Bot<BotContext>): void {
   console.log('  • 1-е число месяца 10:00 — напоминание про метрики');
   console.log('  • Пн–Сб 20:00           — напоминание про монеты');
   console.log('  • Пятница 18:00          — еженедельный дайджест в канал');
+  console.log('  • Каждый день 21:00     — личное напоминание про серию');
 }

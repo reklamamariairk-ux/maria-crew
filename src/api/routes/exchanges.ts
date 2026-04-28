@@ -1,6 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { processExchange } from '../../services/exchange.service';
+import { notifyExchangeStatus } from '../../bot/notifications/sender';
+import { logAudit } from '../../services/audit.service';
 import type { ExchangeStatus } from '../../types';
 
 const router = Router();
@@ -48,6 +50,22 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
       notes
     );
     res.json(exchange);
+
+    // Получаем prize.name + employee.id для уведомления (после ответа клиенту)
+    if (status === 'fulfilled' || status === 'rejected') {
+      pool.query<{ employeeId: number; prizeName: string }>(
+        `SELECT se.employee_id AS "employeeId", p.name AS "prizeName"
+         FROM store_exchanges se JOIN prizes p ON p.id = se.prize_id
+         WHERE se.id = $1`,
+        [parseInt(req.params.id, 10)]
+      ).then(({ rows }) => {
+        if (rows[0]) {
+          notifyExchangeStatus(rows[0].employeeId, rows[0].prizeName, status).catch(() => {});
+        }
+      }).catch(() => {});
+      const action = status === 'fulfilled' ? 'exchange_fulfill' : 'exchange_reject';
+      logAudit(action, { exchangeId: parseInt(req.params.id, 10) }).catch(() => {});
+    }
   } catch (err) { next(err); }
 });
 

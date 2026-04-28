@@ -1,7 +1,9 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { getAvailableCardCount } from '../../services/card.service';
-import { getBalance } from '../../services/coin.service';
+import { getBalance, earn } from '../../services/coin.service';
+import { logAudit } from '../../services/audit.service';
+import { notifyCoinAward } from '../../bot/notifications/sender';
 
 const router = Router();
 
@@ -86,6 +88,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
       [name, storeId, role, joinedAt ?? null, username]
     );
     res.status(201).json(rows[0]);
+    logAudit('employee_create', { employeeId: rows[0].id, name, storeId, role, telegramUsername: username }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -110,6 +113,75 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     );
     if (!rows[0]) { res.status(404).json({ error: 'Не найден' }); return; }
     res.json(rows[0]);
+
+    // Аудит
+    if (storeId !== undefined) {
+      logAudit('employee_store_change', { employeeId: rows[0].id, newStoreId: storeId }).catch(() => {});
+    }
+    if (isActive !== undefined) {
+      logAudit(isActive ? 'employee_activate' : 'employee_deactivate', { employeeId: rows[0].id }).catch(() => {});
+    }
+    if (name !== undefined || role !== undefined || username !== undefined) {
+      logAudit('employee_update', { employeeId: rows[0].id, name, role, telegramUsername: username }).catch(() => {});
+    }
+  } catch (err) { next(err); }
+});
+
+// POST /api/employees/bulk-coins — начислить монеты сразу нескольким сотрудникам
+// body: { employeeIds: number[], reason: string, amount?: number, note?: string }
+router.post('/bulk-coins', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { employeeIds, reason, amount, note } = req.body as {
+      employeeIds: number[]; reason: string; amount?: number; note?: string;
+    };
+    if (!Array.isArray(employeeIds) || employeeIds.length === 0) {
+      res.status(400).json({ error: 'employeeIds обязателен' }); return;
+    }
+    if (!reason) { res.status(400).json({ error: 'reason обязателен' }); return; }
+
+    const results = await Promise.all(employeeIds.map(async (employeeId) => {
+      try {
+        if (reason === 'manual' && typeof amount === 'number' && amount < 0) {
+          await pool.query(
+            `INSERT INTO coin_transactions (employee_id, amount, reason, note)
+             VALUES ($1, $2, 'manual', $3)`,
+            [employeeId, amount, note ?? null]
+          );
+          notifyCoinAward(employeeId, amount, 'manual', note).catch(() => {});
+          return { employeeId, ok: true, amount };
+        }
+        const tx = await earn({
+          employeeId, reason: reason as Parameters<typeof earn>[0]['reason'], amount, note,
+        });
+        notifyCoinAward(employeeId, tx.amount, reason, note).catch(() => {});
+        return { employeeId, ok: true, amount: tx.amount };
+      } catch (err) {
+        return { employeeId, ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }));
+
+    const succeeded = results.filter(r => r.ok).length;
+    res.json({ ok: true, processed: results.length, succeeded, results });
+    logAudit('coin_award', { bulk: true, employeeIds, reason, amount, note: note ?? null, succeeded }).catch(() => {});
+  } catch (err) { next(err); }
+});
+
+// POST /api/employees/bulk-active — массовое активировать/деактивировать
+router.post('/bulk-active', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { employeeIds, isActive } = req.body as { employeeIds: number[]; isActive: boolean };
+    if (!Array.isArray(employeeIds) || employeeIds.length === 0) {
+      res.status(400).json({ error: 'employeeIds обязателен' }); return;
+    }
+    if (typeof isActive !== 'boolean') {
+      res.status(400).json({ error: 'isActive обязателен' }); return;
+    }
+    await pool.query(
+      `UPDATE employees SET is_active = $1 WHERE id = ANY($2)`,
+      [isActive, employeeIds]
+    );
+    res.json({ ok: true, count: employeeIds.length });
+    logAudit(isActive ? 'employee_activate' : 'employee_deactivate', { bulk: true, employeeIds }).catch(() => {});
   } catch (err) { next(err); }
 });
 

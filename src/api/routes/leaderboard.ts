@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { getEmployeeLeaderboard, getStoreLeaderboard } from '../../services/rating.service';
+import { logAudit } from '../../services/audit.service';
 
 const router = Router();
 
@@ -71,6 +72,12 @@ router.put('/employees/:employeeId', async (req: Request, res: Response, next: N
     );
 
     res.json({ ok: true });
+    if (mvpScore !== undefined) {
+      logAudit('rating_score_set', { employeeId, year, month, mvpScore }).catch(() => {});
+    }
+    if (isMvp !== undefined) {
+      logAudit('rating_mvp_set', { employeeId, year, month, isMvp }).catch(() => {});
+    }
   } catch (err) { next(err); }
 });
 
@@ -126,6 +133,12 @@ router.put('/stores/:storeId', async (req: Request, res: Response, next: NextFun
     );
 
     res.json({ ok: true });
+    if (totalScore !== undefined) {
+      logAudit('rating_score_set', { storeId, year, month, totalScore }).catch(() => {});
+    }
+    if (isTop !== undefined) {
+      logAudit('rating_top_set', { storeId, year, month, isTop }).catch(() => {});
+    }
   } catch (err) { next(err); }
 });
 

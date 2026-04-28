@@ -1,5 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { pool } from '../../db/pool';
 import { earn, getHistory, getBalance } from '../../services/coin.service';
+import { notifyCoinAward } from '../../bot/notifications/sender';
+import { logAudit } from '../../services/audit.service';
 import type { CoinReason } from '../../types';
 
 const router = Router();
@@ -15,21 +18,30 @@ router.post('/award', async (req: Request, res: Response, next: NextFunction): P
       res.status(400).json({ error: 'employeeId и reason обязательны' }); return;
     }
 
+    let actualAmount: number;
+    let tx: { id?: number };
+
     // Manual может быть отрицательным (списание) — пишем напрямую
     if (reason === 'manual' && typeof amount === 'number' && amount < 0) {
-      const { pool } = await import('../../db/pool');
-      const { rows } = await pool.query(
+      const { rows } = await pool.query<{ id: number }>(
         `INSERT INTO coin_transactions (employee_id, amount, reason, note, created_by)
          VALUES ($1, $2, 'manual', $3, $4)
-         RETURNING *`,
+         RETURNING id`,
         [employeeId, amount, note ?? null, createdBy ?? null]
       );
-      res.status(201).json(rows[0]);
-      return;
+      tx = rows[0];
+      actualAmount = amount;
+      res.status(201).json(tx);
+    } else {
+      const created = await earn({ employeeId, reason, amount, createdBy, note });
+      tx = created;
+      actualAmount = created.amount;
+      res.status(201).json(tx);
     }
 
-    const tx = await earn({ employeeId, reason, amount, createdBy, note });
-    res.status(201).json(tx);
+    // Async: уведомление + аудит — не блокируем ответ
+    notifyCoinAward(employeeId, actualAmount, reason, note).catch(() => {});
+    logAudit('coin_award', { employeeId, amount: actualAmount, reason, note: note ?? null }).catch(() => {});
   } catch (err) { next(err); }
 });
 

@@ -100,6 +100,8 @@ function refreshCurrentTab() {
   if (state.currentTab === 'quiz')        loadQuizQuestions();
   if (state.currentTab === 'cards')       loadCardEmployees();
   if (state.currentTab === 'storesAdmin') loadStoresAdmin();
+  if (state.currentTab === 'prizes')      loadPrizes();
+  if (state.currentTab === 'audit')       loadAudit();
 }
 
 // ── Period ────────────────────────────────────────────────────────────────────
@@ -346,32 +348,59 @@ function renderStoreSelect(empId, currentStoreId) {
   return `<select class="emp-store-select" data-emp-id="${empId}" data-current="${currentStoreId ?? ''}" onchange="changeEmployeeStore(${empId}, this)">${opts}</select>`;
 }
 
+let employeesCache = [];
+let employeeSummaries = {};
+const selectedEmployeeIds = new Set();
+
 async function loadEmployees() {
   const tbody = document.getElementById('employees-tbody');
-  tbody.innerHTML = '<tr><td colspan="10" class="empty">Загрузка...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="11" class="empty">Загрузка...</td></tr>';
+  selectedEmployeeIds.clear();
+  updateBulkBar();
 
   const path = state.storeId ? `/employees?storeId=${state.storeId}` : '/employees';
   const list = await api('GET', path) || [];
+  employeesCache = list;
 
   if (list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="10" class="empty">${state.storeId ? 'Нет сотрудников на этой точке' : 'Нет сотрудников'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" class="empty">${state.storeId ? 'Нет сотрудников на этой точке' : 'Нет сотрудников'}</td></tr>`;
     return;
   }
 
   // Подгружаем сводки параллельно (карточки/монеты/герои)
   const summaries = await Promise.all(list.map(e => api('GET', `/employees/${e.id}/summary`).catch(() => null)));
-  const summaryMap = {};
-  summaries.forEach((sum, i) => { if (sum) summaryMap[list[i].id] = sum; });
+  employeeSummaries = {};
+  summaries.forEach((sum, i) => { if (sum) employeeSummaries[list[i].id] = sum; });
+
+  renderEmployees();
+}
+
+function renderEmployees() {
+  const tbody = document.getElementById('employees-tbody');
+  const search = document.getElementById('emp-search').value.trim().toLowerCase();
+  const list = !search ? employeesCache : employeesCache.filter(e => {
+    const name = (e.name || '').toLowerCase();
+    const username = (e.telegramUsername || '').toLowerCase();
+    const store = (e.storeName || '').toLowerCase();
+    return name.includes(search) || username.includes(search) || store.includes(search);
+  });
+
+  if (list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="11" class="empty">Ничего не найдено</td></tr>';
+    return;
+  }
 
   tbody.innerHTML = list.map(e => {
-    const sum = summaryMap[e.id] || {};
+    const sum = employeeSummaries[e.id] || {};
     const cards   = sum.availableCards ?? '—';
     const coins   = sum.coinBalance    ?? '—';
     const heroes  = sum.uniqueHeroes !== undefined ? `${sum.uniqueHeroes}/12` : '—';
     const tgInfo = e.telegramUsername
       ? '@' + esc(e.telegramUsername)
       : (e.telegramId ? `id ${e.telegramId}` : '—');
+    const checked = selectedEmployeeIds.has(e.id) ? ' checked' : '';
     return `<tr>
+      <td><input type="checkbox" class="emp-row-select" data-emp-id="${e.id}" onchange="toggleEmployeeSelect(${e.id}, this)"${checked}></td>
       <td>${renderEmployeeAvatar(e)}</td>
       <td><strong>${esc(e.name)}</strong></td>
       <td style="color:var(--gray);font-size:13px">${tgInfo}</td>
@@ -388,6 +417,82 @@ async function loadEmployees() {
       </td>
     </tr>`;
   }).join('');
+}
+
+function filterEmployees() { renderEmployees(); }
+
+function toggleEmployeeSelect(id, checkbox) {
+  if (checkbox.checked) selectedEmployeeIds.add(id);
+  else selectedEmployeeIds.delete(id);
+  updateBulkBar();
+}
+
+function toggleSelectAllEmployees(master) {
+  const checkboxes = document.querySelectorAll('.emp-row-select');
+  checkboxes.forEach(cb => {
+    const id = parseInt(cb.dataset.empId, 10);
+    cb.checked = master.checked;
+    if (master.checked) selectedEmployeeIds.add(id);
+    else selectedEmployeeIds.delete(id);
+  });
+  updateBulkBar();
+}
+
+function clearEmpSelection() {
+  selectedEmployeeIds.clear();
+  document.querySelectorAll('.emp-row-select').forEach(cb => cb.checked = false);
+  const master = document.getElementById('emp-select-all');
+  if (master) master.checked = false;
+  updateBulkBar();
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('emp-bulk-bar');
+  if (!bar) return;
+  const n = selectedEmployeeIds.size;
+  document.getElementById('emp-bulk-count').textContent = String(n);
+  bar.classList.toggle('hidden', n === 0);
+}
+
+document.addEventListener('change', (ev) => {
+  if (ev.target?.id === 'bulk-coin-reason') {
+    const isManual = ev.target.value === 'manual';
+    document.getElementById('bulk-coin-amount').style.display = isManual ? 'inline-block' : 'none';
+  }
+});
+
+async function bulkAwardCoins() {
+  if (selectedEmployeeIds.size === 0) return;
+  const reason = document.getElementById('bulk-coin-reason').value;
+  if (!reason) { toast('Выбери причину'); return; }
+  const isManual = reason === 'manual';
+  const amount = isManual ? parseInt(document.getElementById('bulk-coin-amount').value) : undefined;
+  if (isManual && (isNaN(amount) || amount === 0)) { toast('Укажи сумму (можно отрицательную)'); return; }
+
+  const ids = [...selectedEmployeeIds];
+  if (!confirm(`Применить начисление к ${ids.length} сотрудникам?`)) return;
+
+  try {
+    const result = await api('POST', '/employees/bulk-coins', {
+      employeeIds: ids, reason, amount,
+    });
+    toast(`✅ Начислено ${result.succeeded} из ${result.processed}`);
+    clearEmpSelection();
+    loadEmployees();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+async function bulkSetActive(isActive) {
+  if (selectedEmployeeIds.size === 0) return;
+  const ids = [...selectedEmployeeIds];
+  const verb = isActive ? 'активировать' : 'деактивировать';
+  if (!confirm(`${verb[0].toUpperCase() + verb.slice(1)} ${ids.length} сотрудников?`)) return;
+  try {
+    await api('POST', '/employees/bulk-active', { employeeIds: ids, isActive });
+    toast(`✅ ${isActive ? 'Активированы' : 'Деактивированы'}: ${ids.length}`);
+    clearEmpSelection();
+    loadEmployees();
+  } catch (e) { toast('❌ ' + e.message); }
 }
 
 async function changeEmployeeStore(id, selectEl) {
@@ -835,6 +940,155 @@ async function addStore() {
     document.getElementById('new-store-address').value = '';
     loadStoresAdmin();
   } catch (e) { toast('❌ ' + e.message); }
+}
+
+// ── Призы ─────────────────────────────────────────────────────────────────────
+const PRIZE_TYPE_LABELS = {
+  cake:         'Торт/пирог',
+  certificate:  'Сертификат',
+  cash:         'Премия',
+  shift_choice: 'Выбор смен',
+  golden_badge: 'Зол. бейдж',
+  coffee:       'Кофе/десерт',
+  discount:     'Скидка',
+  merch:        'Мерч',
+  break:        'Доп. перерыв',
+};
+
+async function loadPrizes() {
+  const tbody = document.getElementById('prizes-tbody');
+  tbody.innerHTML = '<tr><td colspan="8" class="empty">Загрузка...</td></tr>';
+  const list = await api('GET', '/prizes') || [];
+  if (list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">Призов нет — добавьте первый</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(p => `<tr data-prize-id="${p.id}">
+    <td>${p.id}</td>
+    <td><input type="text" class="prize-name-in" value="${esc(p.name)}" style="width:100%"></td>
+    <td>
+      <select class="prize-type-in" style="width:100%">
+        ${Object.entries(PRIZE_TYPE_LABELS).map(([v, l]) =>
+          `<option value="${v}"${v === p.prizeType ? ' selected' : ''}>${l}</option>`
+        ).join('')}
+      </select>
+    </td>
+    <td><input type="number" class="prize-cards-in" min="0" value="${p.cardsRequired}" style="width:80px;text-align:right"></td>
+    <td><input type="number" class="prize-coins-in" min="0" value="${p.coinsRequired}" style="width:80px;text-align:right"></td>
+    <td><input type="number" class="prize-order-in" value="${p.sortOrder}" style="width:70px;text-align:right"></td>
+    <td>
+      <select class="prize-active-in" style="width:100%">
+        <option value="true"${p.isActive ? ' selected' : ''}>Активен</option>
+        <option value="false"${!p.isActive ? ' selected' : ''}>Скрыт</option>
+      </select>
+    </td>
+    <td>
+      <div class="row-actions">
+        <button class="btn btn-primary" onclick="savePrize(${p.id}, this)">💾</button>
+        <button class="btn btn-danger" onclick="deletePrize(${p.id})">🗑</button>
+      </div>
+    </td>
+  </tr>`).join('');
+}
+
+function showAddPrize() { document.getElementById('add-prize-form').classList.toggle('hidden'); }
+
+async function addPrize() {
+  const name        = document.getElementById('new-prize-name').value.trim();
+  const prizeType   = document.getElementById('new-prize-type').value;
+  const cardsRequired = parseInt(document.getElementById('new-prize-cards').value) || 0;
+  const coinsRequired = parseInt(document.getElementById('new-prize-coins').value) || 0;
+  const sortOrder   = parseInt(document.getElementById('new-prize-order').value) || 100;
+  const description = document.getElementById('new-prize-desc').value.trim();
+  if (!name) { toast('Введите название'); return; }
+  if (cardsRequired === 0 && coinsRequired === 0) { toast('Укажи стоимость в карточках или монетах'); return; }
+  try {
+    await api('POST', '/prizes', { name, prizeType, cardsRequired, coinsRequired, sortOrder, description: description || undefined });
+    toast('✅ Приз добавлен');
+    document.getElementById('add-prize-form').classList.add('hidden');
+    ['new-prize-name','new-prize-cards','new-prize-coins','new-prize-desc'].forEach(id =>
+      document.getElementById(id).value = id === 'new-prize-cards' || id === 'new-prize-coins' ? '0' : '');
+    loadPrizes();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+async function savePrize(id, btn) {
+  const row = document.querySelector(`tr[data-prize-id="${id}"]`);
+  const body = {
+    name: row.querySelector('.prize-name-in').value.trim(),
+    prizeType: row.querySelector('.prize-type-in').value,
+    cardsRequired: parseInt(row.querySelector('.prize-cards-in').value) || 0,
+    coinsRequired: parseInt(row.querySelector('.prize-coins-in').value) || 0,
+    sortOrder: parseInt(row.querySelector('.prize-order-in').value) || 100,
+    isActive: row.querySelector('.prize-active-in').value === 'true',
+  };
+  if (!body.name) { toast('Название не пустое'); return; }
+  btn.disabled = true; btn.textContent = '⏳';
+  try {
+    await api('PUT', `/prizes/${id}`, body);
+    toast('✅ Сохранено');
+  } catch (e) { toast('❌ ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '💾'; }
+}
+
+async function deletePrize(id) {
+  if (!confirm('Удалить приз? Если на него были заявки — приз не удалится, нужно «Скрыть» через переключатель.')) return;
+  try {
+    await api('DELETE', `/prizes/${id}`);
+    toast('Приз удалён');
+    loadPrizes();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+// ── Журнал действий ─────────────────────────────────────────────────────────
+const AUDIT_ACTION_LABELS = {
+  coin_award:               '💰 Монеты',
+  card_grant:               '🃏 Карточка выдана',
+  card_revoke:              '🃏 Карточка удалена',
+  card_spent_toggle:        '🃏 Статус карточки',
+  employee_create:          '👤 Сотрудник создан',
+  employee_update:          '👤 Сотрудник изменён',
+  employee_store_change:    '🏪 Перевод на точку',
+  employee_deactivate:      '👤 Деактивация',
+  employee_activate:        '👤 Активация',
+  metrics_save:             '📊 Метрики',
+  metrics_process:          '⚡ Обработка месяца',
+  rating_score_set:         '🏆 Балл рейтинга',
+  rating_mvp_set:           '🏆 MVP назначен',
+  rating_top_set:           '🏆 ТОП-точка',
+  exchange_fulfill:         '🎁 Приз выдан',
+  exchange_reject:          '🎁 Заявка отклонена',
+  store_create:             '🏪 Точка создана',
+  store_update:             '🏪 Точка изменена',
+  prize_create:             '🎁 Приз создан',
+  prize_update:             '🎁 Приз изменён',
+  prize_delete:             '🎁 Приз удалён',
+  quiz_question_create:     '🧩 Вопрос добавлен',
+  quiz_question_update:     '🧩 Вопрос изменён',
+  quiz_question_delete:     '🧩 Вопрос удалён',
+};
+
+function formatAuditDateTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const date = `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}`;
+  const time = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  return `${date} ${time}`;
+}
+
+async function loadAudit() {
+  const tbody = document.getElementById('audit-tbody');
+  tbody.innerHTML = '<tr><td colspan="3" class="empty">Загрузка...</td></tr>';
+  const log = await api('GET', '/audit?limit=200') || [];
+  if (log.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" class="empty">Журнал пуст</td></tr>';
+    return;
+  }
+  tbody.innerHTML = log.map(row => `<tr>
+    <td style="font-size:12px;color:var(--gray);white-space:nowrap">${formatAuditDateTime(row.createdAt)}</td>
+    <td style="font-size:13px"><strong>${esc(AUDIT_ACTION_LABELS[row.action] || row.action)}</strong></td>
+    <td style="font-size:12px;color:var(--dark);font-family:monospace;word-break:break-all">${esc(JSON.stringify(row.details))}</td>
+  </tr>`).join('');
 }
 
 // ── Старт ─────────────────────────────────────────────────────────────────────

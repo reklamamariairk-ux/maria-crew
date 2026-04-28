@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { upsertMetrics, processMonthAllStores } from '../../services/rating.service';
 import { notifyMvp, notifyTopStore, publishMonthResults } from '../../bot/notifications/sender';
+import { logAudit } from '../../services/audit.service';
 import type { MonthlyMetricsInput } from '../../types';
 
 const router = Router();
@@ -35,6 +36,7 @@ router.post('/batch', async (req: Request, res: Response, next: NextFunction): P
     }
     const saved = await Promise.all(items.map(m => upsertMetrics(m)));
     res.json(saved);
+    logAudit('metrics_save', { count: saved.length, year: items[0]?.year, month: items[0]?.month, storeId: items[0]?.storeId }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -95,6 +97,7 @@ router.post('/process', async (req: Request, res: Response, next: NextFunction):
 
     await publishMonthResults(results, month, year);
     res.json({ ok: true, processed: results.length, results });
+    logAudit('metrics_process', { year, month, storeIds: results.map(r => r.storeId) }).catch(() => {});
   } catch (err) { next(err); }
 });
 

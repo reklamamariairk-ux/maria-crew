@@ -9,6 +9,7 @@ import { handleRating } from './commands/rating';
 import { handleTop } from './commands/top';
 import { handleStore, handleStoreCallback } from './commands/store';
 import { handleCrew } from './commands/crew';
+import { handleMe } from './commands/me';
 import { markBotError, markUpdate } from '../diagnostics';
 
 export function createBot(token: string): Bot<BotContext> {
@@ -46,6 +47,7 @@ export function createBot(token: string): Bot<BotContext> {
   bot.command('top',        handleTop);
   bot.command('store',      handleStore);
   bot.command('crew',       handleCrew);
+  bot.command('me',         handleMe);
 
   // ── Регистрация (обратная совместимость с inline-кнопками выбора точки) ───────
   bot.callbackQuery(/^reg:store:/, handleStoreSelection);

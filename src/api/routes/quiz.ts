@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { listQuestions, createQuestion, updateQuestion, deleteQuestion } from '../../services/quiz.service';
+import { logAudit } from '../../services/audit.service';
 
 const router = Router();
 
@@ -21,20 +22,25 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
     }
     const q = await createQuestion(question, options, correctIndex, category ?? 'product');
     res.status(201).json(q);
+    logAudit('quiz_question_create', { questionId: q.id }).catch(() => {});
   } catch (err) { next(err); }
 });
 
 router.put('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    await updateQuestion(parseInt(req.params.id), req.body);
+    const id = parseInt(req.params.id);
+    await updateQuestion(id, req.body);
     res.json({ ok: true });
+    logAudit('quiz_question_update', { questionId: id, changes: req.body }).catch(() => {});
   } catch (err) { next(err); }
 });
 
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    await deleteQuestion(parseInt(req.params.id));
+    const id = parseInt(req.params.id);
+    await deleteQuestion(id);
     res.json({ ok: true });
+    logAudit('quiz_question_delete', { questionId: id }).catch(() => {});
   } catch (err) { next(err); }
 });
 

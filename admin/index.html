@@ -36,6 +36,8 @@
     <button class="tab-btn"        data-tab="leaderboard" onclick="switchTab('leaderboard')">🏆 Рейтинги</button>
     <button class="tab-btn"        data-tab="quiz"        onclick="switchTab('quiz')">🧩 Квиз</button>
     <button class="tab-btn"        data-tab="storesAdmin" onclick="switchTab('storesAdmin')">🏪 Точки</button>
+    <button class="tab-btn"        data-tab="prizes"     onclick="switchTab('prizes')">🎁 Призы</button>
+    <button class="tab-btn"        data-tab="audit"      onclick="switchTab('audit')">📜 Журнал</button>
   </nav>
 
   <main>
@@ -196,8 +198,10 @@
 
     <!-- ── Сотрудники ─────────────────────────────────── -->
     <div id="tab-employees" class="tab-content hidden">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <p class="section-title" style="margin:0">Сотрудники точки</p>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:12px;flex-wrap:wrap">
+        <div style="display:flex;gap:10px;align-items:center;flex:1;min-width:240px">
+          <input type="text" id="emp-search" placeholder="🔍 Поиск по имени или @username" style="flex:1;max-width:320px;padding:8px 12px;border:1px solid var(--border);border-radius:6px" oninput="filterEmployees()">
+        </div>
         <button class="btn btn-primary" onclick="showAddEmployee()">+ Добавить</button>
       </div>
 
@@ -214,14 +218,35 @@
         <button class="btn btn-ghost" onclick="document.getElementById('add-employee-form').classList.add('hidden')">Отмена</button>
       </div>
 
+      <div id="emp-bulk-bar" class="hidden" style="background:var(--pink-light);border:1px solid var(--pink);border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <span><b id="emp-bulk-count">0</b> выделено</span>
+        <select id="bulk-coin-reason" class="inline" style="width:200px">
+          <option value="">— Начислить монеты: причина —</option>
+          <option value="checklist_day">Чек-лист 100% (+1)</option>
+          <option value="review">Именной отзыв (+3)</option>
+          <option value="cake_order">Торт на заказ (+2)</option>
+          <option value="substitution">Подмена (+5)</option>
+          <option value="mentoring">Наставничество (+10)</option>
+          <option value="idea">Идея (+5)</option>
+          <option value="manual">Вручную (со своей суммой)</option>
+        </select>
+        <input type="number" id="bulk-coin-amount" value="1" style="width:80px;display:none" placeholder="сумма">
+        <button class="btn btn-primary" onclick="bulkAwardCoins()">Начислить</button>
+        <span style="color:var(--gray)">|</span>
+        <button class="btn btn-ghost" onclick="bulkSetActive(true)">Активировать</button>
+        <button class="btn btn-danger" onclick="bulkSetActive(false)">Деактивировать</button>
+        <button class="btn btn-ghost" onclick="clearEmpSelection()" style="margin-left:auto">Снять выделение</button>
+      </div>
+
       <div class="table-wrap">
         <table>
           <thead><tr>
+            <th style="width:32px"><input type="checkbox" id="emp-select-all" onchange="toggleSelectAllEmployees(this)"></th>
             <th style="width:48px"></th>
             <th>Имя</th><th>Telegram</th><th>Точка</th><th>Роль</th><th>Карточек</th><th>Монет</th><th>Героев</th><th>Был в сети</th><th>Действие</th>
           </tr></thead>
           <tbody id="employees-tbody">
-            <tr><td colspan="10" class="empty">Загрузка...</td></tr>
+            <tr><td colspan="11" class="empty">Загрузка...</td></tr>
           </tbody>
         </table>
       </div>
@@ -340,6 +365,82 @@
           </tr></thead>
           <tbody id="stores-admin-tbody">
             <tr><td colspan="5" class="empty">Загрузка...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Призы ──────────────────────────────────── -->
+    <div id="tab-prizes" class="tab-content hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <p class="section-title" style="margin:0">Maria Store — каталог призов</p>
+        <button class="btn btn-primary" onclick="showAddPrize()">+ Добавить приз</button>
+      </div>
+
+      <div id="add-prize-form" class="hidden" style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
+        <label>Название: <input type="text" id="new-prize-name" style="width:100%;margin-top:4px"></label>
+        <label>Тип:
+          <select id="new-prize-type" class="inline" style="width:100%;margin-top:4px">
+            <option value="cake">Торт/пирог</option>
+            <option value="certificate">Сертификат</option>
+            <option value="cash">Денежная премия</option>
+            <option value="shift_choice">Выбор смен</option>
+            <option value="golden_badge">Золотой бейдж</option>
+            <option value="coffee">Кофе/десерт</option>
+            <option value="discount">Скидка</option>
+            <option value="merch">Мерч</option>
+            <option value="break">Доп. перерыв</option>
+          </select>
+        </label>
+        <label>Карточек: <input type="number" id="new-prize-cards" min="0" value="0" style="width:100%;margin-top:4px"></label>
+        <label>Монет: <input type="number" id="new-prize-coins" min="0" value="0" style="width:100%;margin-top:4px"></label>
+        <label>Сорт.: <input type="number" id="new-prize-order" value="100" style="width:100%;margin-top:4px"></label>
+        <label style="grid-column:1/-1">Описание (необязательно):
+          <input type="text" id="new-prize-desc" placeholder="..." style="width:100%;margin-top:4px">
+        </label>
+        <div style="grid-column:1/-1;display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="addPrize()">Создать</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('add-prize-form').classList.add('hidden')">Отмена</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:50px">#</th>
+            <th>Название</th>
+            <th style="width:140px">Тип</th>
+            <th style="width:100px">Карточек</th>
+            <th style="width:100px">Монет</th>
+            <th style="width:80px">Сорт.</th>
+            <th style="width:120px">Статус</th>
+            <th style="width:160px">Действие</th>
+          </tr></thead>
+          <tbody id="prizes-tbody">
+            <tr><td colspan="8" class="empty">Загрузка...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Журнал действий админа ────────────────── -->
+    <div id="tab-audit" class="tab-content hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px;flex-wrap:wrap">
+        <p class="section-title" style="margin:0">Журнал изменений</p>
+        <button class="btn btn-ghost" onclick="loadAudit()">↻ Обновить</button>
+      </div>
+      <p style="font-size:13px;color:var(--gray);margin-bottom:12px">
+        Последние 200 действий в админке: начисления монет, выдача карточек, изменения сотрудников и точек.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:140px">Когда</th>
+            <th style="width:200px">Действие</th>
+            <th>Детали</th>
+          </tr></thead>
+          <tbody id="audit-tbody">
+            <tr><td colspan="3" class="empty">Загрузка...</td></tr>
           </tbody>
         </table>
       </div>

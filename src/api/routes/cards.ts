@@ -1,5 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
+import { notifyCardAward } from '../../bot/notifications/sender';
+import { logAudit } from '../../services/audit.service';
 
 const router = Router();
 
@@ -31,13 +33,19 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
     if (!employeeId || !heroId) { res.status(400).json({ error: 'employeeId и heroId обязательны' }); return; }
 
     const now = new Date();
-    const { rows } = await pool.query(
-      `INSERT INTO employee_cards (employee_id, hero_id, is_mvp, source, year, month)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id`,
+    const { rows } = await pool.query<{ id: number; heroName: string }>(
+      `WITH inserted AS (
+         INSERT INTO employee_cards (employee_id, hero_id, is_mvp, source, year, month)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, hero_id
+       )
+       SELECT i.id, h.name AS "heroName" FROM inserted i JOIN heroes h ON h.id = i.hero_id`,
       [employeeId, heroId, isMvp, source, now.getFullYear(), now.getMonth() + 1]
     );
     res.status(201).json({ id: rows[0].id });
+
+    notifyCardAward(employeeId, rows[0].heroName, source, isMvp).catch(() => {});
+    logAudit('card_grant', { employeeId, heroId, source, isMvp }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -45,9 +53,14 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = parseInt(req.params.id, 10);
-    const { rowCount } = await pool.query(`DELETE FROM employee_cards WHERE id = $1`, [id]);
-    if (!rowCount) { res.status(404).json({ error: 'Карточка не найдена' }); return; }
+    const { rows } = await pool.query<{ employeeId: number; heroId: number }>(
+      `DELETE FROM employee_cards WHERE id = $1
+       RETURNING employee_id AS "employeeId", hero_id AS "heroId"`,
+      [id]
+    );
+    if (!rows[0]) { res.status(404).json({ error: 'Карточка не найдена' }); return; }
     res.json({ ok: true });
+    logAudit('card_revoke', { cardId: id, employeeId: rows[0].employeeId, heroId: rows[0].heroId }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -62,6 +75,7 @@ router.patch('/:id/spent', async (req: Request, res: Response, next: NextFunctio
     );
     if (!rowCount) { res.status(404).json({ error: 'Карточка не найдена' }); return; }
     res.json({ ok: true });
+    logAudit('card_spent_toggle', { cardId: id, isSpent }).catch(() => {});
   } catch (err) { next(err); }
 });
 

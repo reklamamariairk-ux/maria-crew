@@ -1,7 +1,7 @@
 import type { Bot } from 'grammy';
 import { pool } from '../../db/pool';
 import type { BotContext } from '../context';
-import { esc, monthName } from '../helpers';
+import { esc, monthName, coinReasonLabel, cardSourceLabel } from '../helpers';
 import type { ProcessMonthResult } from '../../types';
 
 let _bot: Bot<BotContext> | null = null;
@@ -17,6 +17,78 @@ async function send(telegramId: bigint | string, html: string): Promise<void> {
   } catch {
     // Пользователь заблокировал бота — игнорируем
   }
+}
+
+/** Получает telegram_id сотрудника по его id */
+async function getEmployeeTelegramId(employeeId: number): Promise<string | null> {
+  const { rows } = await pool.query<{ telegramId: string }>(
+    `SELECT telegram_id::text AS "telegramId" FROM employees
+     WHERE id = $1 AND telegram_id IS NOT NULL AND is_active = true`,
+    [employeeId]
+  );
+  return rows[0]?.telegramId ?? null;
+}
+
+/** Уведомление о начислении/списании монет */
+export async function notifyCoinAward(
+  employeeId: number,
+  amount: number,
+  reason: string,
+  note?: string
+): Promise<void> {
+  const tgId = await getEmployeeTelegramId(employeeId);
+  if (!tgId) return;
+  const label = coinReasonLabel(reason);
+  const isPositive = amount > 0;
+  const sign = isPositive ? '+' : '';
+  const emoji = isPositive ? '💰' : '➖';
+  const suffix = note ? `\n<i>${esc(note)}</i>` : '';
+  const text = `${emoji} <b>${sign}${amount} ${coinWord(Math.abs(amount))}</b>\n${esc(label)}${suffix}`;
+  await send(tgId, text);
+}
+
+/** Уведомление о выдаче карточки вручную или за метрики */
+export async function notifyCardAward(
+  employeeId: number,
+  heroName: string,
+  source: string,
+  isMvp: boolean
+): Promise<void> {
+  const tgId = await getEmployeeTelegramId(employeeId);
+  if (!tgId) return;
+  const sourceLabel = cardSourceLabel(source);
+  const mvpTag = isMvp ? ' ⭐' : '';
+  const text =
+    `🃏 <b>Новая карточка${mvpTag}</b>\n` +
+    `Герой: <b>${esc(heroName)}</b>\n` +
+    `За что: ${esc(sourceLabel)}\n\n` +
+    `Открой приложение Maria Crew, чтобы увидеть коллекцию.`;
+  await send(tgId, text);
+}
+
+/** Уведомление о подтверждённой/отклонённой заявке на обмен */
+export async function notifyExchangeStatus(
+  employeeId: number,
+  prizeName: string,
+  status: 'fulfilled' | 'rejected'
+): Promise<void> {
+  const tgId = await getEmployeeTelegramId(employeeId);
+  if (!tgId) return;
+  if (status === 'fulfilled') {
+    const text = `🎁 <b>Приз выдан!</b>\n«${esc(prizeName)}» — забирай у руководителя.`;
+    await send(tgId, text);
+  } else {
+    const text = `❌ <b>Заявка отклонена</b>\nПриз: «${esc(prizeName)}». Карточки/монеты возвращены на баланс.`;
+    await send(tgId, text);
+  }
+}
+
+function coinWord(n: number): string {
+  const abs = Math.abs(n);
+  if (abs % 100 >= 11 && abs % 100 <= 19) return 'монет';
+  if (abs % 10 === 1) return 'монета';
+  if (abs % 10 >= 2 && abs % 10 <= 4) return 'монеты';
+  return 'монет';
 }
 
 /** Уведомляет одного сотрудника о полученных карточках */
