@@ -59,6 +59,10 @@ function setLoadingHint(message) {
   if (el) el.textContent = message;
 }
 
+function renderIcons() {
+  if (window.lucide) lucide.createIcons();
+}
+
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function authMiniApp() {
@@ -336,6 +340,7 @@ function showApp(stats) {
   document.getElementById('header-store').textContent = '🏪 ' + (employee.storeName || '—');
 
   updateHeaderStats(stats);
+  renderIcons(); // header stat-icons + bottom-nav + store-tabs static icons
   prizesCache = null;
   switchTab('collection');
 

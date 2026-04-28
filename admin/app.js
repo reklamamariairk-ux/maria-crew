@@ -9,6 +9,25 @@ const state = {
   currentTab: 'metrics',
 };
 
+// Lucide иконки рендерятся через lucide.createIcons() после каждой вставки HTML.
+function renderIcons() {
+  if (window.lucide) lucide.createIcons();
+}
+
+// Skeleton-плейсхолдер для таблиц
+function skeletonRows(cols, rows = 5) {
+  const cells = '<td><div class="skeleton"></div></td>'.repeat(cols);
+  return Array(rows).fill(0).map(() => `<tr class="skeleton-row">${cells}</tr>`).join('');
+}
+
+function emptyState(icon, text) {
+  return `<div class="empty"><i data-lucide="${icon}"></i><div>${esc(text)}</div></div>`;
+}
+
+function emptyRow(cols, icon, text) {
+  return `<tr><td colspan="${cols}" class="empty"><i data-lucide="${icon}"></i><div>${esc(text)}</div></td></tr>`;
+}
+
 const MONTH_NAMES = ['', 'Январь','Февраль','Март','Апрель','Май','Июнь',
                      'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 const COIN_LABELS = {
@@ -63,7 +82,9 @@ async function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').classList.add('visible');
   updatePeriodLabels();
+  renderIcons();
   await loadStores();
+  refreshCurrentTab();
 }
 
 async function loadStores() {
@@ -84,7 +105,7 @@ function onStoreChange() {
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────
 function switchTab(tab) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
   document.getElementById(`tab-${tab}`).classList.remove('hidden');
   state.currentTab = tab;
@@ -123,13 +144,16 @@ function updatePeriodLabels() {
 
 // ── Метрики ───────────────────────────────────────────────────────────────────
 async function loadMetrics() {
+  const tbody = document.getElementById('metrics-tbody');
   if (!state.storeId) {
-    document.getElementById('metrics-tbody').innerHTML = '<tr><td colspan="5" class="empty">Выберите точку в шапке</td></tr>';
+    tbody.innerHTML = emptyRow(5, 'store', 'Выберите точку в боковой панели');
     document.getElementById('metrics-store-ratings').classList.add('hidden');
+    renderIcons();
     return;
   }
 
   document.getElementById('metrics-store-ratings').classList.remove('hidden');
+  tbody.innerHTML = skeletonRows(5, 5);
 
   const rows = await api('GET', `/metrics?storeId=${state.storeId}&year=${state.year}&month=${state.month}`);
   const employees = await api('GET', `/stores/${state.storeId}/employees`);
@@ -138,9 +162,9 @@ async function loadMetrics() {
   const metricMap = {};
   (rows || []).forEach(r => metricMap[r.employeeId] = r);
 
-  const tbody = document.getElementById('metrics-tbody');
   if (!employees || employees.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty">Нет активных сотрудников</td></tr>';
+    tbody.innerHTML = emptyRow(5, 'users', 'Нет активных сотрудников');
+    renderIcons();
     return;
   }
 
@@ -154,6 +178,7 @@ async function loadMetrics() {
       <td><input type="number" class="m-revenue" min="0" max="300" step="0.1" value="${m.revenuePercent ?? ''}" placeholder="—"></td>
     </tr>`;
   }).join('');
+  renderIcons();
 }
 
 async function saveMetrics() {
@@ -243,25 +268,29 @@ async function loadCoinHistory() {
   const balanceEl = document.getElementById('coins-balance-display');
   if (!id) { balanceEl.textContent = ''; return; }
 
+  const tbody = document.getElementById('coins-history-tbody');
+  tbody.innerHTML = skeletonRows(4, 5);
+
   const [history, balance] = await Promise.all([
     api('GET', `/coins/history/${id}?limit=30`),
     api('GET', `/coins/balance/${id}`),
   ]);
 
-  balanceEl.innerHTML = `Баланс: <strong style="color:var(--pink)">${balance?.balance ?? '?'}</strong> монет`;
+  balanceEl.innerHTML = `Баланс: <strong style="color:var(--pink);font-size:15px">${balance?.balance ?? '?'}</strong> монет`;
 
-  const tbody = document.getElementById('coins-history-tbody');
   if (!history || history.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty">Нет операций</td></tr>'; return;
+    tbody.innerHTML = emptyRow(4, 'coins', 'Нет операций');
+    renderIcons(); return;
   }
   tbody.innerHTML = history.map(t => `<tr>
-    <td>${formatDate(t.createdAt)}</td>
+    <td style="color:var(--muted);font-size:12px">${formatDate(t.createdAt)}</td>
     <td style="color:${t.amount > 0 ? 'var(--green)' : 'var(--red)'};font-weight:600">
       ${t.amount > 0 ? '+' : ''}${t.amount}
     </td>
-    <td>${COIN_LABELS[t.reason] ?? t.reason}</td>
-    <td>${esc(t.note ?? '')}</td>
+    <td style="font-size:13px">${COIN_LABELS[t.reason] ?? t.reason}</td>
+    <td style="color:var(--text-2);font-size:12px">${esc(t.note ?? '')}</td>
   </tr>`).join('');
+  renderIcons();
 }
 
 async function awardCoins() {
@@ -290,28 +319,32 @@ async function loadExchanges() {
   if (status) parts.push(`status=${status}`);
   if (state.storeId) parts.push(`storeId=${state.storeId}`);
   const params = parts.length ? '?' + parts.join('&') : '';
-  const data = await api('GET', `/exchanges${params}`) || [];
 
   const tbody = document.getElementById('exchanges-tbody');
+  tbody.innerHTML = skeletonRows(8, 5);
+  const data = await api('GET', `/exchanges${params}`) || [];
+
   if (data.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty">Нет заявок</td></tr>`; return;
+    tbody.innerHTML = emptyRow(8, 'shopping-bag', 'Нет заявок');
+    renderIcons(); return;
   }
   tbody.innerHTML = data.map(ex => `<tr>
-    <td>${esc(ex.employeeName)}</td>
-    <td>${esc(ex.storeName)}</td>
+    <td><strong>${esc(ex.employeeName)}</strong></td>
+    <td style="color:var(--text-2);font-size:13px">${esc(ex.storeName)}</td>
     <td>${esc(ex.prizeName)}</td>
     <td>${ex.cardsSpent}</td>
     <td>${ex.coinsSpent}</td>
-    <td>${formatDate(ex.createdAt)}</td>
+    <td style="color:var(--muted);font-size:12px">${formatDate(ex.createdAt)}</td>
     <td><span class="badge badge-${ex.status}">${statusLabel(ex.status)}</span></td>
     <td>
       ${ex.status === 'pending' ? `
         <div class="row-actions">
-          <button class="btn btn-success" onclick="updateExchange(${ex.id},'fulfilled')">Выдать</button>
-          <button class="btn btn-danger"  onclick="updateExchange(${ex.id},'rejected')">Откл.</button>
-        </div>` : '—'}
+          <button class="btn btn-success btn-sm" onclick="updateExchange(${ex.id},'fulfilled')"><i data-lucide="check"></i> Выдать</button>
+          <button class="btn btn-danger btn-sm" onclick="updateExchange(${ex.id},'rejected')"><i data-lucide="x"></i> Отклонить</button>
+        </div>` : '<span class="text-muted">—</span>'}
     </td>
   </tr>`).join('');
+  renderIcons();
 }
 
 async function updateExchange(id, status) {
@@ -354,7 +387,7 @@ const selectedEmployeeIds = new Set();
 
 async function loadEmployees() {
   const tbody = document.getElementById('employees-tbody');
-  tbody.innerHTML = '<tr><td colspan="11" class="empty">Загрузка...</td></tr>';
+  tbody.innerHTML = skeletonRows(11, 6);
   selectedEmployeeIds.clear();
   const master = document.getElementById('emp-select-all');
   if (master) master.checked = false;
@@ -365,7 +398,8 @@ async function loadEmployees() {
   employeesCache = list;
 
   if (list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="11" class="empty">${state.storeId ? 'Нет сотрудников на этой точке' : 'Нет сотрудников'}</td></tr>`;
+    tbody.innerHTML = emptyRow(11, 'users', state.storeId ? 'Нет сотрудников на этой точке' : 'Нет сотрудников');
+    renderIcons();
     return;
   }
 
@@ -388,7 +422,8 @@ function renderEmployees() {
   });
 
   if (list.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="11" class="empty">Ничего не найдено</td></tr>';
+    tbody.innerHTML = emptyRow(11, 'search-x', 'Ничего не найдено');
+    renderIcons();
     return;
   }
 
@@ -405,7 +440,7 @@ function renderEmployees() {
       <td><input type="checkbox" class="emp-row-select" data-emp-id="${e.id}" onchange="toggleEmployeeSelect(${e.id}, this)"${checked}></td>
       <td>${renderEmployeeAvatar(e)}</td>
       <td><strong>${esc(e.name)}</strong></td>
-      <td style="color:var(--gray);font-size:13px">${tgInfo}</td>
+      <td style="color:var(--muted);font-size:12px">${tgInfo}</td>
       <td>${renderStoreSelect(e.id, e.storeId)}</td>
       <td>${roleLabel(e.role)}</td>
       <td>${cards}</td>
@@ -414,11 +449,12 @@ function renderEmployees() {
       <td style="font-size:12px">${lastSeenLabel(e.lastSeenAt)}</td>
       <td>
         ${e.isActive
-          ? `<button class="btn btn-ghost" onclick="toggleEmployee(${e.id}, false)">Деактив.</button>`
-          : `<button class="btn btn-ghost" onclick="toggleEmployee(${e.id}, true)">Активировать</button>`}
+          ? `<button class="btn btn-ghost btn-sm" onclick="toggleEmployee(${e.id}, false)"><i data-lucide="user-x"></i> Скрыть</button>`
+          : `<button class="btn btn-ghost btn-sm" onclick="toggleEmployee(${e.id}, true)"><i data-lucide="user-check"></i> Активировать</button>`}
       </td>
     </tr>`;
   }).join('');
+  renderIcons();
 }
 
 function filterEmployees() { renderEmployees(); }
@@ -558,23 +594,23 @@ async function loadLeaderboard() {
   const RANK = ['🥇','🥈','🥉'];
   const empTbody = document.getElementById('lb-employees-tbody');
   if (!state.storeId) {
-    empTbody.innerHTML = '<tr><td colspan="5" class="empty">Выберите точку</td></tr>';
+    empTbody.innerHTML = emptyRow(5, 'store', 'Выберите точку в боковой панели');
   } else if (!empData || empData.length === 0) {
-    empTbody.innerHTML = '<tr><td colspan="5" class="empty">Нет данных за этот период</td></tr>';
+    empTbody.innerHTML = emptyRow(5, 'trophy', 'Нет данных за этот период');
   } else {
     empTbody.innerHTML = empData.map((e, i) => {
       const score = e.mvpScore !== null ? Number(e.mvpScore).toFixed(2) : '';
       return `<tr>
-        <td>${RANK[i] ?? i+1}</td>
-        <td>${esc(e.name)} ${e.isMvp ? '<span class="badge badge-mvp">MVP</span>' : ''}</td>
+        <td><strong>${RANK[i] ?? i+1}</strong></td>
+        <td><strong>${esc(e.name)}</strong>${e.isMvp ? ' <span class="badge badge-mvp"><i data-lucide="star"></i> MVP</span>' : ''}</td>
         <td><input type="number" step="0.01" min="0" max="200" class="lb-score-input"
-            value="${score}" data-employee-id="${e.id ?? ''}" data-emp-id="${e.employeeId}"
+            value="${score}" data-emp-id="${e.employeeId}"
             onchange="saveEmployeeScore(${e.employeeId}, this)"></td>
         <td>${e.cardsCount}</td>
         <td>
           ${e.isMvp
-            ? '<button class="btn btn-ghost" disabled>★ MVP</button>'
-            : `<button class="btn btn-ghost" onclick="setEmployeeMvp(${e.employeeId})">Сделать MVP</button>`}
+            ? '<button class="btn btn-ghost btn-sm" disabled><i data-lucide="star"></i> MVP</button>'
+            : `<button class="btn btn-ghost btn-sm" onclick="setEmployeeMvp(${e.employeeId})"><i data-lucide="star"></i> Сделать MVP</button>`}
         </td>
       </tr>`;
     }).join('');
@@ -582,23 +618,24 @@ async function loadLeaderboard() {
 
   const storeTbody = document.getElementById('lb-stores-tbody');
   if (!storeData || storeData.length === 0) {
-    storeTbody.innerHTML = '<tr><td colspan="4" class="empty">Нет данных</td></tr>';
+    storeTbody.innerHTML = emptyRow(4, 'trophy', 'Нет данных');
   } else {
     storeTbody.innerHTML = storeData.map((s, i) => {
       const score = s.totalScore !== null ? Number(s.totalScore).toFixed(1) : '';
       return `<tr>
-        <td>${RANK[i] ?? i+1}</td>
-        <td>${esc(s.storeName)} ${s.isTop ? '⭐' : ''}</td>
+        <td><strong>${RANK[i] ?? i+1}</strong></td>
+        <td><strong>${esc(s.storeName)}</strong>${s.isTop ? ' <span class="badge badge-mvp"><i data-lucide="crown"></i> ТОП</span>' : ''}</td>
         <td><input type="number" step="0.1" min="0" max="200" class="lb-score-input"
             value="${score}" onchange="saveStoreScore(${s.storeId}, this)"></td>
         <td>
           ${s.isTop
-            ? '<button class="btn btn-ghost" disabled>⭐ ТОП</button>'
-            : `<button class="btn btn-ghost" onclick="setStoreTop(${s.storeId})">Сделать ТОП</button>`}
+            ? '<button class="btn btn-ghost btn-sm" disabled><i data-lucide="crown"></i> ТОП</button>'
+            : `<button class="btn btn-ghost btn-sm" onclick="setStoreTop(${s.storeId})"><i data-lucide="crown"></i> Сделать ТОП</button>`}
         </td>
       </tr>`;
     }).join('');
   }
+  renderIcons();
 }
 
 async function saveEmployeeScore(employeeId, inputEl) {
@@ -680,26 +717,28 @@ const QUIZ_LABELS = ['А','Б','В','Г'];
 const QUIZ_CATS   = { product:'Продукция', service:'Сервис', crew:'Команда' };
 
 async function loadQuizQuestions() {
-  const questions = await api('GET', '/quiz') || [];
   const tbody = document.getElementById('quiz-tbody');
+  tbody.innerHTML = skeletonRows(5, 5);
+  const questions = await api('GET', '/quiz') || [];
   if (!questions.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty">Вопросов нет — добавьте первый</td></tr>';
-    return;
+    tbody.innerHTML = emptyRow(5, 'brain', 'Вопросов нет — добавьте первый');
+    renderIcons(); return;
   }
   tbody.innerHTML = questions.map(q => `<tr>
-    <td>${q.id}</td>
-    <td style="font-size:13px;max-width:300px">${esc(q.question)}</td>
-    <td><span class="badge badge-approved">${QUIZ_CATS[q.category] || q.category}</span></td>
+    <td style="color:var(--muted);font-size:12px">${q.id}</td>
+    <td style="font-size:13px;max-width:480px">${esc(q.question)}</td>
+    <td><span class="badge badge-neutral">${QUIZ_CATS[q.category] || q.category}</span></td>
     <td>${q.isActive
-      ? '<span class="badge badge-approved">Активен</span>'
-      : '<span class="badge badge-rejected">Скрыт</span>'}</td>
+      ? '<span class="badge badge-approved"><i data-lucide="check"></i> Активен</span>'
+      : '<span class="badge badge-neutral"><i data-lucide="eye-off"></i> Скрыт</span>'}</td>
     <td>
       <div class="row-actions">
-        <button class="btn btn-ghost" onclick="toggleQuestion(${q.id},${!q.isActive})">${q.isActive ? 'Скрыть' : 'Показать'}</button>
-        <button class="btn btn-danger" onclick="deleteQuestion(${q.id})">Удалить</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleQuestion(${q.id},${!q.isActive})"><i data-lucide="${q.isActive ? 'eye-off' : 'eye'}"></i> ${q.isActive ? 'Скрыть' : 'Показать'}</button>
+        <button class="btn btn-danger btn-sm btn-icon" onclick="deleteQuestion(${q.id})" title="Удалить"><i data-lucide="trash-2"></i></button>
       </div>
     </td>
   </tr>`).join('');
+  renderIcons();
 }
 
 function showAddQuestion() {
@@ -785,22 +824,39 @@ async function loadCardEmployees() {
 async function loadEmployeeCards() {
   const id = document.getElementById('card-employee').value;
   const wrap = document.getElementById('card-list');
-  if (!id) { wrap.innerHTML = '<div class="empty">Выбери сотрудника</div>'; return; }
+  if (!id) {
+    wrap.innerHTML = emptyState('layers', 'Выбери сотрудника');
+    renderIcons(); return;
+  }
 
-  wrap.innerHTML = '<div class="empty">Загрузка...</div>';
+  wrap.innerHTML = emptyState('loader', 'Загрузка...');
+  renderIcons();
   const cards = await api('GET', `/cards/${id}`) || [];
   if (cards.length === 0) {
-    wrap.innerHTML = '<div class="empty">У сотрудника ещё нет карточек</div>'; return;
+    wrap.innerHTML = emptyState('layers', 'У сотрудника ещё нет карточек');
+    renderIcons(); return;
   }
 
   const available = cards.filter(c => !c.isSpent).length;
   const totalMvp  = cards.filter(c => c.isMvp).length;
 
   wrap.innerHTML = `
-    <div style="display:flex;gap:16px;margin-bottom:12px;font-size:14px">
-      <div>Всего: <strong>${cards.length}</strong></div>
-      <div>Доступно: <strong style="color:var(--green)">${available}</strong></div>
-      <div>MVP: <strong style="color:var(--pink)">${totalMvp}</strong></div>
+    <div class="stat-grid" style="margin-bottom:14px;grid-template-columns:repeat(3,1fr)">
+      <div class="stat-card">
+        <div class="stat-card-icon"><i data-lucide="layers"></i></div>
+        <div class="label">Всего</div>
+        <div class="value">${cards.length}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-icon" style="background:var(--green-bg);color:var(--green)"><i data-lucide="check-circle"></i></div>
+        <div class="label">Доступно</div>
+        <div class="value">${available}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-icon"><i data-lucide="star"></i></div>
+        <div class="label">MVP</div>
+        <div class="value">${totalMvp}</div>
+      </div>
     </div>
     <div class="table-wrap">
       <table>
@@ -809,25 +865,26 @@ async function loadEmployeeCards() {
         </tr></thead>
         <tbody>
           ${cards.map(c => `<tr>
-            <td><strong>${esc(c.heroName)}</strong>${c.heroLimited ? ' <span class="badge badge-mvp">⚡</span>' : ''}</td>
-            <td>${CARD_SOURCE_LABELS[c.source] ?? c.source}</td>
-            <td style="font-size:13px;color:var(--gray)">${c.month}.${c.year}</td>
-            <td>${c.isMvp ? '★' : ''}</td>
+            <td><strong>${esc(c.heroName)}</strong>${c.heroLimited ? ' <span class="badge badge-mvp"><i data-lucide="zap"></i> Лимит</span>' : ''}</td>
+            <td style="font-size:13px;color:var(--text-2)">${CARD_SOURCE_LABELS[c.source] ?? c.source}</td>
+            <td style="font-size:12px;color:var(--muted)">${String(c.month).padStart(2,'0')}.${c.year}</td>
+            <td>${c.isMvp ? '<i data-lucide="star" style="color:var(--pink);width:16px;height:16px"></i>' : ''}</td>
             <td>${c.isSpent
-              ? '<span class="badge badge-rejected">Потрачена</span>'
-              : '<span class="badge badge-approved">Доступна</span>'}</td>
+              ? '<span class="badge badge-neutral"><i data-lucide="circle-slash"></i> Потрачена</span>'
+              : '<span class="badge badge-approved"><i data-lucide="check"></i> Доступна</span>'}</td>
             <td>
               <div class="row-actions">
-                <button class="btn btn-ghost" onclick="toggleCardSpent(${c.id}, ${!c.isSpent})">
-                  ${c.isSpent ? 'Вернуть' : 'Списать'}
+                <button class="btn btn-ghost btn-sm" onclick="toggleCardSpent(${c.id}, ${!c.isSpent})">
+                  <i data-lucide="${c.isSpent ? 'rotate-ccw' : 'minus-circle'}"></i> ${c.isSpent ? 'Вернуть' : 'Списать'}
                 </button>
-                <button class="btn btn-danger" onclick="revokeCard(${c.id})">Удалить</button>
+                <button class="btn btn-danger btn-sm btn-icon" onclick="revokeCard(${c.id})" title="Удалить"><i data-lucide="trash-2"></i></button>
               </div>
             </td>
           </tr>`).join('')}
         </tbody>
       </table>
     </div>`;
+  renderIcons();
 }
 
 async function giveCard() {
@@ -864,15 +921,17 @@ async function toggleCardSpent(id, isSpent) {
 // ── Точки (управление) ──────────────────────────────────────────────────────
 async function loadStoresAdmin() {
   const tbody = document.getElementById('stores-admin-tbody');
-  tbody.innerHTML = '<tr><td colspan="5" class="empty">Загрузка...</td></tr>';
+  tbody.innerHTML = skeletonRows(5, 6);
 
   state.stores = await api('GET', '/stores') || [];
   if (state.stores.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty">Нет точек</td></tr>'; return;
+    tbody.innerHTML = emptyRow(5, 'store', 'Нет точек');
+    renderIcons();
+    return;
   }
 
   tbody.innerHTML = state.stores.map(s => `<tr data-store-id="${s.id}">
-    <td>${s.id}</td>
+    <td style="color:var(--muted);font-size:12px">${s.id}</td>
     <td><input type="text" class="store-name-input" value="${esc(s.name)}" data-original="${esc(s.name)}"></td>
     <td><input type="text" class="store-address-input" value="${esc(s.address ?? '')}" data-original="${esc(s.address ?? '')}"></td>
     <td>
@@ -881,8 +940,9 @@ async function loadStoresAdmin() {
         <option value="false"${!s.isActive ? ' selected' : ''}>Скрыта</option>
       </select>
     </td>
-    <td><button class="btn btn-primary" onclick="saveStoreAdmin(${s.id}, this)">Сохранить</button></td>
+    <td><button class="btn btn-primary btn-sm" onclick="saveStoreAdmin(${s.id}, this)"><i data-lucide="save"></i> Сохранить</button></td>
   </tr>`).join('');
+  renderIcons();
 
   // refresh dropdowns elsewhere that use stores list
   const storeSel = document.getElementById('store-select');
@@ -957,14 +1017,15 @@ const PRIZE_TYPE_LABELS = {
 
 async function loadPrizes() {
   const tbody = document.getElementById('prizes-tbody');
-  tbody.innerHTML = '<tr><td colspan="8" class="empty">Загрузка...</td></tr>';
+  tbody.innerHTML = skeletonRows(8, 5);
   const list = await api('GET', '/prizes') || [];
   if (list.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">Призов нет — добавьте первый</td></tr>';
+    tbody.innerHTML = emptyRow(8, 'gift', 'Призов нет — добавьте первый');
+    renderIcons();
     return;
   }
   tbody.innerHTML = list.map(p => `<tr data-prize-id="${p.id}">
-    <td>${p.id}</td>
+    <td style="color:var(--muted);font-size:12px">${p.id}</td>
     <td><input type="text" class="prize-name-in" value="${esc(p.name)}" style="width:100%"></td>
     <td>
       <select class="prize-type-in" style="width:100%">
@@ -984,11 +1045,12 @@ async function loadPrizes() {
     </td>
     <td>
       <div class="row-actions">
-        <button class="btn btn-primary" onclick="savePrize(${p.id}, this)">💾</button>
-        <button class="btn btn-danger" onclick="deletePrize(${p.id})">🗑</button>
+        <button class="btn btn-primary btn-sm btn-icon" onclick="savePrize(${p.id}, this)" title="Сохранить"><i data-lucide="save"></i></button>
+        <button class="btn btn-danger btn-sm btn-icon" onclick="deletePrize(${p.id})" title="Удалить"><i data-lucide="trash-2"></i></button>
       </div>
     </td>
   </tr>`).join('');
+  renderIcons();
 }
 
 function showAddPrize() { document.getElementById('add-prize-form').classList.toggle('hidden'); }
@@ -1078,17 +1140,19 @@ function formatAuditDateTime(iso) {
 
 async function loadAudit() {
   const tbody = document.getElementById('audit-tbody');
-  tbody.innerHTML = '<tr><td colspan="3" class="empty">Загрузка...</td></tr>';
+  tbody.innerHTML = skeletonRows(3, 8);
   const log = await api('GET', '/audit?limit=200') || [];
   if (log.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="3" class="empty">Журнал пуст</td></tr>';
+    tbody.innerHTML = emptyRow(3, 'file-clock', 'Журнал пуст');
+    renderIcons();
     return;
   }
   tbody.innerHTML = log.map(row => `<tr>
-    <td style="font-size:12px;color:var(--gray);white-space:nowrap">${formatAuditDateTime(row.createdAt)}</td>
+    <td style="font-size:12px;color:var(--muted);white-space:nowrap">${formatAuditDateTime(row.createdAt)}</td>
     <td style="font-size:13px"><strong>${esc(AUDIT_ACTION_LABELS[row.action] || row.action)}</strong></td>
-    <td style="font-size:12px;color:var(--dark);font-family:monospace;word-break:break-all">${esc(JSON.stringify(row.details))}</td>
+    <td style="font-size:12px;color:var(--text-2);font-family:'JetBrains Mono', ui-monospace, Menlo, monospace;word-break:break-all">${esc(JSON.stringify(row.details))}</td>
   </tr>`).join('');
+  renderIcons();
 }
 
 // ── Старт ─────────────────────────────────────────────────────────────────────
