@@ -1,4 +1,5 @@
 import { pool } from '../db/pool';
+import { irkutskDate } from './streak.service';
 
 export interface QuizQuestion {
   id: number;
@@ -9,12 +10,13 @@ export interface QuizQuestion {
 }
 
 export async function getDailyQuestions(employeeId: number): Promise<{ questions: QuizQuestion[]; alreadyDone: boolean }> {
-  const today = new Date().toISOString().split('T')[0];
+  const today = irkutskDate();
 
-  // Check if already answered 5+ questions today
+  // Check if already answered 5+ questions today (по иркутскому дню)
   const { rows: todayAttempts } = await pool.query<{ count: string }>(
     `SELECT COUNT(*) AS count FROM quiz_attempts
-     WHERE employee_id = $1 AND answered_at::date = $2`,
+     WHERE employee_id = $1
+       AND (answered_at AT TIME ZONE 'Asia/Irkutsk')::date = $2::date`,
     [employeeId, today]
   );
   const doneCount = parseInt(todayAttempts[0]?.count ?? '0', 10);

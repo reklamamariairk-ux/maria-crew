@@ -220,7 +220,7 @@
 
       <div id="emp-bulk-bar" class="hidden" style="background:var(--pink-light);border:1px solid var(--pink);border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
         <span><b id="emp-bulk-count">0</b> выделено</span>
-        <select id="bulk-coin-reason" class="inline" style="width:200px">
+        <select id="bulk-coin-reason" class="inline" style="width:200px" onchange="onBulkReasonChange(this)">
           <option value="">— Начислить монеты: причина —</option>
           <option value="checklist_day">Чек-лист 100% (+1)</option>
           <option value="review">Именной отзыв (+3)</option>

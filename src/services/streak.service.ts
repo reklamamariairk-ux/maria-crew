@@ -6,11 +6,18 @@ export interface StreakInfo {
   lastCheckin: string | null;
 }
 
+/** YYYY-MM-DD по Иркутскому времени (UTC+8). Все сотрудники в Иркутске,
+ *  «день» должен меняться в полночь Иркутска, а не UTC. */
+export function irkutskDate(offsetDays = 0): string {
+  const irk = new Date(Date.now() + (8 * 60 * 60 + offsetDays * 24 * 3600) * 1000);
+  return irk.toISOString().slice(0, 10);
+}
+
 export async function getStreak(employeeId: number): Promise<StreakInfo> {
-  const today = new Date().toISOString().split('T')[0];
+  const today = irkutskDate();
 
   const { rows } = await pool.query<{ checkinDate: string; streakDay: number }>(
-    `SELECT checkin_date AS "checkinDate", streak_day AS "streakDay"
+    `SELECT checkin_date::text AS "checkinDate", streak_day AS "streakDay"
      FROM daily_checkins
      WHERE employee_id = $1
      ORDER BY checkin_date DESC
@@ -30,8 +37,8 @@ export async function getStreak(employeeId: number): Promise<StreakInfo> {
 }
 
 export async function doCheckin(employeeId: number): Promise<{ streakDay: number; coinsEarned: number; alreadyCheckedIn: boolean }> {
-  const today = new Date().toISOString().split('T')[0];
-  const yesterday = new Date(Date.now() - 86_400_000).toISOString().split('T')[0];
+  const today = irkutskDate();
+  const yesterday = irkutskDate(-1);
 
   const { rows: existing } = await pool.query<{ id: number }>(
     `SELECT id FROM daily_checkins WHERE employee_id = $1 AND checkin_date = $2`,

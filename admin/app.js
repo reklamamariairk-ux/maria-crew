@@ -356,6 +356,8 @@ async function loadEmployees() {
   const tbody = document.getElementById('employees-tbody');
   tbody.innerHTML = '<tr><td colspan="11" class="empty">Загрузка...</td></tr>';
   selectedEmployeeIds.clear();
+  const master = document.getElementById('emp-select-all');
+  if (master) master.checked = false;
   updateBulkBar();
 
   const path = state.storeId ? `/employees?storeId=${state.storeId}` : '/employees';
@@ -454,12 +456,10 @@ function updateBulkBar() {
   bar.classList.toggle('hidden', n === 0);
 }
 
-document.addEventListener('change', (ev) => {
-  if (ev.target?.id === 'bulk-coin-reason') {
-    const isManual = ev.target.value === 'manual';
-    document.getElementById('bulk-coin-amount').style.display = isManual ? 'inline-block' : 'none';
-  }
-});
+function onBulkReasonChange(selectEl) {
+  const isManual = selectEl.value === 'manual';
+  document.getElementById('bulk-coin-amount').style.display = isManual ? 'inline-block' : 'none';
+}
 
 async function bulkAwardCoins() {
   if (selectedEmployeeIds.size === 0) return;

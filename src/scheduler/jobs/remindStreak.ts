@@ -1,4 +1,5 @@
 import { pool } from '../../db/pool';
+import { irkutskDate } from '../../services/streak.service';
 
 /**
  * Личное напоминание сотрудникам с активной серией: «не теряй её».
@@ -7,10 +8,8 @@ import { pool } from '../../db/pool';
 export async function remindStreak(
   sendMessage: (telegramId: string, html: string) => Promise<void>
 ): Promise<void> {
-  // Иркутское «сегодня» — UTC+8
-  const irkNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
-  const today = irkNow.toISOString().slice(0, 10);
-  const yesterday = new Date(irkNow.getTime() - 86_400_000).toISOString().slice(0, 10);
+  const today = irkutskDate();
+  const yesterday = irkutskDate(-1);
 
   // Кому уведомление: серия > 0 (отмечался вчера), не отмечался сегодня, есть telegram_id
   const { rows } = await pool.query<{

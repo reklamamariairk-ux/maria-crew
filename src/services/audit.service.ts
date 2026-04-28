@@ -51,7 +51,8 @@ export async function getAuditLog(limit = 100): Promise<Array<{
   const { rows } = await pool.query<{
     id: number; action: string; details: Record<string, unknown>; createdAt: string;
   }>(
-    `SELECT id, action, details, created_at::text AS "createdAt"
+    `SELECT id, action, details,
+            to_char(created_at AT TIME ZONE 'Asia/Irkutsk', 'YYYY-MM-DD"T"HH24:MI:SS') AS "createdAt"
      FROM admin_audit_log
      ORDER BY created_at DESC
      LIMIT $1`,
