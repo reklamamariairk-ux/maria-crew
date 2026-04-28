@@ -89,17 +89,39 @@ async function showApp() {
 
 async function loadStores() {
   state.stores = await api('GET', '/stores') || [];
-  const sel = document.getElementById('store-select');
-  sel.innerHTML = '<option value="">— Все точки —</option>';
-  state.stores.forEach(s => {
-    const opt = document.createElement('option');
-    opt.value = s.id; opt.textContent = s.name;
-    sel.appendChild(opt);
+  populateStoreSelectors();
+}
+
+// Заполняет все селекторы точек: основной в сайдбаре + inline-пикеры
+// в Метриках и Рейтингах. Все они синхронизируются с state.storeId.
+function populateStoreSelectors() {
+  const ids = ['store-select', 'metrics-store-picker', 'leaderboard-store-picker'];
+  for (const id of ids) {
+    const sel = document.getElementById(id);
+    if (!sel) continue;
+    const current = state.storeId ? String(state.storeId) : '';
+    sel.innerHTML = '<option value="">— Выбери точку —</option>'
+      + state.stores.map(s => `<option value="${s.id}"${String(s.id) === current ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
+  }
+}
+
+function syncStoreSelectors() {
+  const value = state.storeId ? String(state.storeId) : '';
+  ['store-select', 'metrics-store-picker', 'leaderboard-store-picker'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (sel) sel.value = value;
   });
 }
 
 function onStoreChange() {
   state.storeId = parseInt(document.getElementById('store-select').value) || null;
+  syncStoreSelectors();
+  refreshCurrentTab();
+}
+
+function setStoreFromInline(value) {
+  state.storeId = parseInt(value) || null;
+  syncStoreSelectors();
   refreshCurrentTab();
 }
 
@@ -146,7 +168,7 @@ function updatePeriodLabels() {
 async function loadMetrics() {
   const tbody = document.getElementById('metrics-tbody');
   if (!state.storeId) {
-    tbody.innerHTML = emptyRow(5, 'store', 'Выберите точку в боковой панели');
+    tbody.innerHTML = emptyRow(5, 'store', 'Выбери точку в селекторе сверху или в боковой панели слева');
     document.getElementById('metrics-store-ratings').classList.add('hidden');
     renderIcons();
     return;
@@ -594,7 +616,7 @@ async function loadLeaderboard() {
   const RANK = ['🥇','🥈','🥉'];
   const empTbody = document.getElementById('lb-employees-tbody');
   if (!state.storeId) {
-    empTbody.innerHTML = emptyRow(5, 'store', 'Выберите точку в боковой панели');
+    empTbody.innerHTML = emptyRow(5, 'store', 'Выбери точку в селекторе сверху или в боковой панели');
   } else if (!empData || empData.length === 0) {
     empTbody.innerHTML = emptyRow(5, 'trophy', 'Нет данных за этот период');
   } else {
@@ -944,18 +966,8 @@ async function loadStoresAdmin() {
   </tr>`).join('');
   renderIcons();
 
-  // refresh dropdowns elsewhere that use stores list
-  const storeSel = document.getElementById('store-select');
-  if (storeSel) {
-    const cur = storeSel.value;
-    storeSel.innerHTML = '<option value="">— Все точки —</option>';
-    state.stores.forEach(s => {
-      const opt = document.createElement('option');
-      opt.value = s.id; opt.textContent = s.name;
-      storeSel.appendChild(opt);
-    });
-    storeSel.value = cur;
-  }
+  // Обновляем все селекторы точек (sidebar + inline в Метриках/Рейтингах)
+  populateStoreSelectors();
 }
 
 async function saveStoreAdmin(id, btn) {
@@ -977,14 +989,10 @@ async function saveStoreAdmin(id, btn) {
     nameEl.dataset.original = name;
     addressEl.dataset.original = address;
     activeEl.dataset.original = isActive;
-    // Обновим в state и в верхнем select
+    // Обновим в state и переотрисуем все селекторы
     const s = state.stores.find(x => x.id === id);
     if (s) { s.name = name; s.address = address; s.isActive = isActive; }
-    const topSel = document.getElementById('store-select');
-    if (topSel) {
-      const opt = topSel.querySelector(`option[value="${id}"]`);
-      if (opt) opt.textContent = name;
-    }
+    populateStoreSelectors();
   } catch (e) { toast('❌ ' + e.message); }
   finally { btn.disabled = false; btn.textContent = 'Сохранить'; }
 }

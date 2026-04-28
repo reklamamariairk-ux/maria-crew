@@ -90,6 +90,10 @@
           <p class="page-subtitle">Тайный покупатель, отзывы, чек-лист, выполнение плана за месяц</p>
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <div class="inline-store-picker">
+            <i data-lucide="store"></i>
+            <select id="metrics-store-picker" onchange="setStoreFromInline(this.value)"></select>
+          </div>
           <div class="period-bar" style="margin:0">
             <button onclick="changePeriod(-1)"><i data-lucide="chevron-left"></i></button>
             <span id="period-label">Апрель 2026</span>
@@ -346,11 +350,17 @@
           <h1 class="page-title">Рейтинги</h1>
           <p class="page-subtitle">MVP сотрудников и топ точек — можно править вручную</p>
         </div>
-        <div class="period-bar" style="margin:0">
-          <button onclick="changePeriod(-1)"><i data-lucide="chevron-left"></i></button>
-          <span id="lb-period-label">Апрель 2026</span>
-          <button onclick="changePeriod(1)"><i data-lucide="chevron-right"></i></button>
-          <button onclick="loadLeaderboard()"><i data-lucide="refresh-cw"></i></button>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <div class="inline-store-picker">
+            <i data-lucide="store"></i>
+            <select id="leaderboard-store-picker" onchange="setStoreFromInline(this.value)"></select>
+          </div>
+          <div class="period-bar" style="margin:0">
+            <button onclick="changePeriod(-1)"><i data-lucide="chevron-left"></i></button>
+            <span id="lb-period-label">Апрель 2026</span>
+            <button onclick="changePeriod(1)"><i data-lucide="chevron-right"></i></button>
+            <button onclick="loadLeaderboard()"><i data-lucide="refresh-cw"></i></button>
+          </div>
         </div>
       </div>
 
