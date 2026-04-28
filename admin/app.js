@@ -162,18 +162,27 @@ async function saveMetrics() {
   rows.forEach(row => {
     const id = parseInt(row.dataset.employeeId);
     const val = sel => { const v = row.querySelector(sel).value; return v === '' ? undefined : parseFloat(v); };
+    const mystery   = val('.m-mystery');
+    const reviews   = parseInt(row.querySelector('.m-reviews').value) || 0;
+    const checklist = val('.m-checklist');
+    const revenue   = val('.m-revenue');
+    // Пустую строку не сохраняем (все 4 поля пустые/0)
+    if (mystery === undefined && reviews === 0 && checklist === undefined && revenue === undefined) return;
     batch.push({
       employeeId: id, storeId: state.storeId, year: state.year, month: state.month,
-      mysteryShopperScore: val('.m-mystery'),
-      reviewsCount: parseInt(row.querySelector('.m-reviews').value) || 0,
-      checklistPercent: val('.m-checklist'),
-      revenuePercent: val('.m-revenue'),
+      mysteryShopperScore: mystery,
+      reviewsCount: reviews,
+      checklistPercent: checklist,
+      revenuePercent: revenue,
     });
   });
 
+  if (batch.length === 0) { toast('Нечего сохранять — заполни хотя бы одно поле'); return; }
+
   try {
     await api('POST', '/metrics/batch', batch);
-    toast('✅ Метрики сохранены');
+    toast(`✅ Сохранено: ${batch.length} ${batch.length === 1 ? 'запись' : (batch.length < 5 ? 'записи' : 'записей')}`);
+    loadMetrics();
   } catch (e) { toast('❌ ' + e.message); }
 }
 
