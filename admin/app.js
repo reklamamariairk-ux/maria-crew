@@ -431,29 +431,97 @@ async function loadLeaderboard() {
 
   const RANK = ['🥇','🥈','🥉'];
   const empTbody = document.getElementById('lb-employees-tbody');
-  if (!empData || empData.length === 0) {
-    empTbody.innerHTML = state.storeId
-      ? '<tr><td colspan="4" class="empty">Нет данных за этот период</td></tr>'
-      : '<tr><td colspan="4" class="empty">Выберите точку</td></tr>';
+  if (!state.storeId) {
+    empTbody.innerHTML = '<tr><td colspan="5" class="empty">Выберите точку</td></tr>';
+  } else if (!empData || empData.length === 0) {
+    empTbody.innerHTML = '<tr><td colspan="5" class="empty">Нет данных за этот период</td></tr>';
   } else {
-    empTbody.innerHTML = empData.map((e, i) => `<tr>
-      <td>${RANK[i] ?? i+1}</td>
-      <td>${esc(e.name)} ${e.isMvp ? '<span class="badge badge-mvp">MVP</span>' : ''}</td>
-      <td>${e.mvpScore !== null ? Number(e.mvpScore).toFixed(2) : '—'}</td>
-      <td>${e.cardsCount}</td>
-    </tr>`).join('');
+    empTbody.innerHTML = empData.map((e, i) => {
+      const score = e.mvpScore !== null ? Number(e.mvpScore).toFixed(2) : '';
+      return `<tr>
+        <td>${RANK[i] ?? i+1}</td>
+        <td>${esc(e.name)} ${e.isMvp ? '<span class="badge badge-mvp">MVP</span>' : ''}</td>
+        <td><input type="number" step="0.01" min="0" max="200" class="lb-score-input"
+            value="${score}" data-employee-id="${e.id ?? ''}" data-emp-id="${e.employeeId}"
+            onchange="saveEmployeeScore(${e.employeeId}, this)"></td>
+        <td>${e.cardsCount}</td>
+        <td>
+          ${e.isMvp
+            ? '<button class="btn btn-ghost" disabled>★ MVP</button>'
+            : `<button class="btn btn-ghost" onclick="setEmployeeMvp(${e.employeeId})">Сделать MVP</button>`}
+        </td>
+      </tr>`;
+    }).join('');
   }
 
   const storeTbody = document.getElementById('lb-stores-tbody');
   if (!storeData || storeData.length === 0) {
-    storeTbody.innerHTML = '<tr><td colspan="3" class="empty">Нет данных</td></tr>';
+    storeTbody.innerHTML = '<tr><td colspan="4" class="empty">Нет данных</td></tr>';
   } else {
-    storeTbody.innerHTML = storeData.map((s, i) => `<tr>
-      <td>${RANK[i] ?? i+1}</td>
-      <td>${esc(s.storeName)} ${s.isTop ? '⭐' : ''}</td>
-      <td>${s.totalScore !== null ? Number(s.totalScore).toFixed(1) : '—'}</td>
-    </tr>`).join('');
+    storeTbody.innerHTML = storeData.map((s, i) => {
+      const score = s.totalScore !== null ? Number(s.totalScore).toFixed(1) : '';
+      return `<tr>
+        <td>${RANK[i] ?? i+1}</td>
+        <td>${esc(s.storeName)} ${s.isTop ? '⭐' : ''}</td>
+        <td><input type="number" step="0.1" min="0" max="200" class="lb-score-input"
+            value="${score}" onchange="saveStoreScore(${s.storeId}, this)"></td>
+        <td>
+          ${s.isTop
+            ? '<button class="btn btn-ghost" disabled>⭐ ТОП</button>'
+            : `<button class="btn btn-ghost" onclick="setStoreTop(${s.storeId})">Сделать ТОП</button>`}
+        </td>
+      </tr>`;
+    }).join('');
   }
+}
+
+async function saveEmployeeScore(employeeId, inputEl) {
+  const v = inputEl.value.trim();
+  const mvpScore = v === '' ? null : parseFloat(v);
+  inputEl.disabled = true;
+  try {
+    await api('PUT', `/leaderboard/employees/${employeeId}`, {
+      year: state.year, month: state.month, storeId: state.storeId, mvpScore,
+    });
+    toast('✅ Балл сохранён');
+  } catch (e) { toast('❌ ' + e.message); }
+  finally { inputEl.disabled = false; }
+}
+
+async function setEmployeeMvp(employeeId) {
+  if (!confirm('Сделать сотрудника MVP месяца? С остальных в этой точке статус MVP будет снят.')) return;
+  try {
+    await api('PUT', `/leaderboard/employees/${employeeId}`, {
+      year: state.year, month: state.month, storeId: state.storeId, isMvp: true,
+    });
+    toast('✅ MVP назначен');
+    loadLeaderboard();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+async function saveStoreScore(storeId, inputEl) {
+  const v = inputEl.value.trim();
+  const totalScore = v === '' ? null : parseFloat(v);
+  inputEl.disabled = true;
+  try {
+    await api('PUT', `/leaderboard/stores/${storeId}`, {
+      year: state.year, month: state.month, totalScore,
+    });
+    toast('✅ Балл сохранён, рейтинг точек пересчитан');
+    loadLeaderboard();
+  } catch (e) { toast('❌ ' + e.message); }
+  finally { inputEl.disabled = false; }
+}
+
+async function setStoreTop(storeId) {
+  if (!confirm('Назначить точку ТОПом месяца? Команда получит бонусную карточку. С остальных точек ТОП будет снят.')) return;
+  try {
+    await api('PUT', `/leaderboard/stores/${storeId}`, {
+      year: state.year, month: state.month, isTop: true,
+    });
+    toast('✅ ТОП-точка обновлена');
+    loadLeaderboard();
+  } catch (e) { toast('❌ ' + e.message); }
 }
 
 // ── Утилиты ───────────────────────────────────────────────────────────────────

@@ -192,25 +192,25 @@
         <button class="btn btn-ghost" onclick="loadLeaderboard()" style="margin-left:8px">Обновить</button>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;flex-wrap:wrap">
+      <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:20px;flex-wrap:wrap">
         <div>
-          <p class="section-title">MVP сотрудников</p>
+          <p class="section-title">MVP сотрудников <span style="font-weight:400;color:var(--gray);font-size:12px">(можно редактировать)</span></p>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>#</th><th>Имя</th><th>Баллы</th><th>Карт.</th></tr></thead>
+              <thead><tr><th>#</th><th>Имя</th><th style="width:90px">Баллы</th><th style="width:60px">Карт.</th><th style="width:130px">Действие</th></tr></thead>
               <tbody id="lb-employees-tbody">
-                <tr><td colspan="4" class="empty">—</td></tr>
+                <tr><td colspan="5" class="empty">—</td></tr>
               </tbody>
             </table>
           </div>
         </div>
         <div>
-          <p class="section-title">Рейтинг точек</p>
+          <p class="section-title">Рейтинг точек <span style="font-weight:400;color:var(--gray);font-size:12px">(можно редактировать)</span></p>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>#</th><th>Точка</th><th>Баллы</th></tr></thead>
+              <thead><tr><th>#</th><th>Точка</th><th style="width:90px">Баллы</th><th style="width:130px">Действие</th></tr></thead>
               <tbody id="lb-stores-tbody">
-                <tr><td colspan="3" class="empty">—</td></tr>
+                <tr><td colspan="4" class="empty">—</td></tr>
               </tbody>
             </table>
           </div>

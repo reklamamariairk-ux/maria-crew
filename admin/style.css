@@ -122,3 +122,8 @@ select.inline { width: auto; text-align: left; }
                     max-width: 180px; cursor: pointer; }
 .emp-store-select:disabled { opacity: 0.6; cursor: not-allowed; }
 .emp-store-select:hover { border-color: var(--pink); }
+
+.lb-score-input { width: 80px; padding: 5px 8px; border: 1px solid var(--border);
+                  border-radius: 5px; font-size: 13px; text-align: right; }
+.lb-score-input:focus { border-color: var(--pink); outline: none; }
+.lb-score-input:disabled { opacity: 0.6; }
