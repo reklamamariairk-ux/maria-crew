@@ -39,7 +39,10 @@
     </div>
 
     <nav class="sidebar-nav">
-      <button class="nav-item active" data-tab="metrics" onclick="switchTab('metrics')">
+      <button class="nav-item active" data-tab="dashboard" onclick="switchTab('dashboard')">
+        <i data-lucide="layout-dashboard"></i> Дашборд
+      </button>
+      <button class="nav-item" data-tab="metrics" onclick="switchTab('metrics')">
         <i data-lucide="bar-chart-3"></i> Метрики
       </button>
       <button class="nav-item" data-tab="coins" onclick="switchTab('coins')">
@@ -66,8 +69,20 @@
       <button class="nav-item" data-tab="prizes" onclick="switchTab('prizes')">
         <i data-lucide="gift"></i> Призы
       </button>
+      <button class="nav-item" data-tab="challenges" onclick="switchTab('challenges')">
+        <i data-lucide="flame"></i> Челленджи
+      </button>
+      <button class="nav-item" data-tab="heroes" onclick="switchTab('heroes')">
+        <i data-lucide="image"></i> Герои
+      </button>
       <button class="nav-item" data-tab="audit" onclick="switchTab('audit')">
         <i data-lucide="file-clock"></i> Журнал
+      </button>
+      <button class="nav-item" data-tab="notify" onclick="switchTab('notify')">
+        <i data-lucide="send"></i> Рассылка
+      </button>
+      <button class="nav-item" data-tab="settings" onclick="switchTab('settings')">
+        <i data-lucide="settings"></i> Настройки
       </button>
     </nav>
 
@@ -81,6 +96,60 @@
 
   <!-- Main -->
   <main class="app-main">
+
+    <!-- ── Дашборд ───────────────────────────────────────────────── -->
+    <div id="tab-dashboard" class="tab-content hidden">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Дашборд</h1>
+          <p class="page-subtitle">Сводная статистика системы Maria Crew</p>
+        </div>
+        <button class="btn btn-ghost" onclick="loadDashboard()"><i data-lucide="refresh-cw"></i> Обновить</button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px">
+        <div class="stat-card">
+          <div class="stat-card-icon"><i data-lucide="users"></i></div>
+          <div class="value" id="dash-active-emp-val">—</div>
+          <div class="label">Активных сотрудников</div>
+        </div>
+        <div class="stat-card" id="dash-pending-card">
+          <div class="stat-card-icon"><i data-lucide="shopping-bag"></i></div>
+          <div class="value" id="dash-pending-ex-val">—</div>
+          <div class="label">Ожидают выдачи</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-icon"><i data-lucide="coins"></i></div>
+          <div class="value" id="dash-coins-val">—</div>
+          <div class="label">Монет выдано в этом месяце</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px" class="dashboard-grid">
+        <div class="card card-pad">
+          <p class="section-title"><i data-lucide="trophy" style="width:14px;height:14px"></i> Топ-3 MVP месяца</p>
+          <div id="dash-top3">
+            <p class="text-muted">Нет данных за текущий месяц</p>
+          </div>
+        </div>
+        <div class="card card-pad">
+          <p class="section-title"><i data-lucide="flame" style="width:14px;height:14px"></i> Активные челленджи</p>
+          <div id="dash-challenges">
+            <p class="text-muted">Нет активных челленджей</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card-pad">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <p class="section-title" style="margin:0"><i data-lucide="activity" style="width:14px;height:14px"></i> Вовлечённость (последние 30 дней)</p>
+          <button class="btn btn-ghost btn-sm" onclick="loadEngagement()"><i data-lucide="refresh-cw"></i></button>
+        </div>
+        <div id="engagement-chart" style="min-height:80px">
+          <p class="text-muted">Загрузка...</p>
+        </div>
+      </div>
+    </div>
 
     <!-- ── Метрики ────────────────────────────────────────────────── -->
     <div id="tab-metrics" class="tab-content">
@@ -100,6 +169,7 @@
             <button onclick="changePeriod(1)"><i data-lucide="chevron-right"></i></button>
           </div>
           <button class="btn btn-ghost" onclick="loadMetrics()"><i data-lucide="refresh-cw"></i> Обновить</button>
+          <button class="btn btn-ghost" onclick="exportMetricsCsv()"><i data-lucide="download"></i> CSV</button>
         </div>
       </div>
 
@@ -287,7 +357,10 @@
           <h1 class="page-title">Сотрудники</h1>
           <p class="page-subtitle">Команда: профили, точки, статусы</p>
         </div>
-        <button class="btn btn-primary" onclick="showAddEmployee()"><i data-lucide="user-plus"></i> Добавить</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="exportEmployeesCsv()"><i data-lucide="download"></i> CSV</button>
+          <button class="btn btn-primary" onclick="showAddEmployee()"><i data-lucide="user-plus"></i> Добавить</button>
+        </div>
       </div>
 
       <div class="toolbar">
@@ -366,6 +439,7 @@
             <button onclick="changePeriod(1)"><i data-lucide="chevron-right"></i></button>
             <button onclick="loadLeaderboard()"><i data-lucide="refresh-cw"></i></button>
           </div>
+          <button class="btn btn-ghost" onclick="exportLeaderboardCsv()"><i data-lucide="download"></i> CSV</button>
         </div>
       </div>
 
@@ -402,8 +476,13 @@
           <h1 class="page-title">Квиз</h1>
           <p class="page-subtitle">База вопросов для ежедневного квиза</p>
         </div>
-        <button class="btn btn-primary" onclick="showAddQuestion()"><i data-lucide="plus"></i> Добавить вопрос</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="loadQuizAnalytics()"><i data-lucide="bar-chart-2"></i> Аналитика</button>
+          <button class="btn btn-primary" onclick="showAddQuestion()"><i data-lucide="plus"></i> Добавить вопрос</button>
+        </div>
       </div>
+
+      <div id="quiz-analytics" class="hidden" style="margin-bottom:20px"></div>
 
       <div id="add-question-form" class="hidden card card-pad" style="margin-bottom:16px">
         <p class="section-title">Новый вопрос</p>
@@ -548,12 +627,97 @@
       </div>
     </div>
 
+    <!-- ── Челленджи ────────────────────────────────────────────── -->
+    <div id="tab-challenges" class="tab-content hidden">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Сезонные челленджи</h1>
+          <p class="page-subtitle">Квартальные события с лимитированными карточками-наградами</p>
+        </div>
+        <button class="btn btn-primary" onclick="showAddChallenge()"><i data-lucide="plus"></i> Новый челлендж</button>
+      </div>
+
+      <div id="add-challenge-form" class="hidden card card-pad" style="margin-bottom:16px">
+        <p class="section-title">Новый челлендж</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+          <label>Название <input type="text" id="ch-name" class="input" placeholder="Rookie of Season — Лето 2026"></label>
+          <label>Сезон
+            <select id="ch-season" class="input">
+              <option value="spring">Весна</option>
+              <option value="summer">Лето</option>
+              <option value="autumn">Осень</option>
+              <option value="winter">Зима</option>
+            </select>
+          </label>
+          <label>Год <input type="number" id="ch-year" class="input" value="2026" min="2025" max="2030"></label>
+          <label>Герой (награда)
+            <select id="ch-hero" class="input"><option value="">— без карточки —</option></select>
+          </label>
+          <label>Начало <input type="date" id="ch-start" class="input"></label>
+          <label>Конец <input type="date" id="ch-end" class="input"></label>
+          <label style="grid-column:1/-1">Описание
+            <input type="text" id="ch-desc" class="input" placeholder="Весенний челлендж Maria Crew">
+          </label>
+          <label style="grid-column:1/-1">Условие (для пользователя)
+            <input type="text" id="ch-condition" class="input" placeholder="Набери 7 дней серии И ответь на 15 вопросов квиза">
+          </label>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-primary" onclick="addChallenge()"><i data-lucide="check"></i> Создать</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('add-challenge-form').classList.add('hidden')">Отмена</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:50px">#</th>
+            <th>Название</th>
+            <th style="width:90px">Сезон</th>
+            <th style="width:60px">Год</th>
+            <th style="width:130px">Период</th>
+            <th style="width:120px">Награда</th>
+            <th style="width:90px">Участников</th>
+            <th style="width:100px">Статус</th>
+          </tr></thead>
+          <tbody id="challenges-tbody">
+            <tr><td colspan="8" class="empty">Загрузка...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Герои ─────────────────────────────────────────────────── -->
+    <div id="tab-heroes" class="tab-content hidden">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Герои коллекции</h1>
+          <p class="page-subtitle">16 карточек: 12 основных + 4 сезонных. Можно задать изображение и описание.</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:50px">#</th>
+            <th>Имя</th>
+            <th style="width:100px">Тип</th>
+            <th>Описание</th>
+            <th>URL картинки</th>
+            <th style="width:120px">Действие</th>
+          </tr></thead>
+          <tbody id="heroes-tbody">
+            <tr><td colspan="6" class="empty">Загрузка...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- ── Журнал действий ───────────────────────────────────────── -->
     <div id="tab-audit" class="tab-content hidden">
       <div class="page-head">
         <div>
           <h1 class="page-title">Журнал изменений</h1>
-          <p class="page-subtitle">Последние 200 действий: монеты, карточки, метрики, точки, призы, квиз</p>
+          <p class="page-subtitle">Действия: монеты, карточки, метрики, точки, призы, квиз</p>
         </div>
         <button class="btn btn-ghost" onclick="loadAudit()"><i data-lucide="refresh-cw"></i> Обновить</button>
       </div>
@@ -561,17 +725,135 @@
         <table>
           <thead><tr>
             <th style="width:140px">Когда</th>
-            <th style="width:240px">Действие</th>
+            <th style="width:200px">Действие</th>
+            <th style="width:100px">IP</th>
             <th>Детали</th>
           </tr></thead>
           <tbody id="audit-tbody">
-            <tr><td colspan="3" class="empty">Загрузка...</td></tr>
+            <tr><td colspan="4" class="empty">Загрузка...</td></tr>
           </tbody>
         </table>
+      </div>
+      <div id="audit-pagination" style="display:flex;gap:8px;align-items:center;margin-top:12px;justify-content:center"></div>
+    </div>
+
+    <!-- ── Настройки MVP ─────────────────────────────────────────── -->
+    <div id="tab-settings" class="tab-content hidden">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Настройки</h1>
+          <p class="page-subtitle">Формула расчёта MVP Score — веса компонентов</p>
+        </div>
+        <button class="btn btn-ghost" onclick="loadMvpConfig()"><i data-lucide="refresh-cw"></i> Обновить</button>
+      </div>
+
+      <div class="card card-pad" style="max-width:560px">
+        <p class="section-title">Формула MVP Score сотрудника</p>
+        <p class="text-muted" style="font-size:13px;margin-bottom:16px">
+          MVP Score = (тайный покупатель / 100 × <strong>Вес ТП</strong>) + min(отзывы × <strong>Монет/отзыв</strong>, <strong>Макс. отзывов</strong>) + (чек-лист / 100 × <strong>Вес ЧЛ</strong>) + min(план / 100 × <strong>Вес план</strong>, <strong>Макс. план</strong>)
+        </p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <label>Вес Тайного покупателя (0–100)
+            <input type="number" id="cfg-mystery" class="input" min="0" max="100" step="0.5">
+          </label>
+          <label>Монет за 1 именной отзыв
+            <input type="number" id="cfg-reviews-per-card" class="input" min="0" max="50" step="0.5">
+          </label>
+          <label>Макс. баллов за отзывы
+            <input type="number" id="cfg-reviews-max" class="input" min="0" max="100" step="0.5">
+          </label>
+          <label>Вес Чек-листа (0–100)
+            <input type="number" id="cfg-checklist" class="input" min="0" max="100" step="0.5">
+          </label>
+          <label>Вес Выполнения плана (0–100)
+            <input type="number" id="cfg-revenue-factor" class="input" min="0" max="100" step="0.5">
+          </label>
+          <label>Макс. баллов за план
+            <input type="number" id="cfg-revenue-max" class="input" min="0" max="100" step="0.5">
+          </label>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <button class="btn btn-primary" onclick="saveMvpConfig()"><i data-lucide="save"></i> Сохранить</button>
+          <button class="btn btn-ghost" onclick="loadMvpConfig()"><i data-lucide="rotate-ccw"></i> Сбросить</button>
+        </div>
+        <p id="cfg-last-updated" class="text-muted" style="font-size:12px;margin-top:10px"></p>
+      </div>
+    </div>
+
+    <!-- ── Рассылка ───────────────────────────────────────────────── -->
+    <div id="tab-notify" class="tab-content hidden">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Рассылка</h1>
+          <p class="page-subtitle">Отправка сообщений сотрудникам через Telegram-бота</p>
+        </div>
+      </div>
+
+      <div class="card card-pad" style="max-width:600px">
+        <div class="form-col">
+          <label>Получатели
+            <select id="notify-target" onchange="onNotifyTargetChange()" class="input" style="width:240px">
+              <option value="all">Все активные сотрудники</option>
+              <option value="store">Конкретная точка</option>
+              <option value="employee">Конкретный сотрудник</option>
+            </select>
+          </label>
+          <label id="notify-store-label" class="hidden">Точка
+            <select id="notify-store" class="input" style="width:240px">
+              <option value="">— выбери —</option>
+            </select>
+          </label>
+          <label id="notify-emp-label" class="hidden">Сотрудник
+            <select id="notify-employee" class="input" style="width:240px">
+              <option value="">— выбери —</option>
+            </select>
+          </label>
+          <label>Сообщение
+            <textarea id="notify-message" class="input" rows="4" style="width:100%;resize:vertical" placeholder="Текст сообщения..."></textarea>
+          </label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-primary" onclick="sendNotification()">
+              <i data-lucide="send"></i> Отправить
+            </button>
+            <span id="notify-result" class="text-muted" style="font-size:13px"></span>
+          </div>
+        </div>
       </div>
     </div>
 
   </main>
+</div>
+
+<!-- ── Модалка: Карточка сотрудника ─────────────────────────────────────── -->
+<div id="modal-employee" class="modal-overlay hidden" onclick="if(event.target===this)closeEmployeeModal()">
+  <div class="modal-box" style="max-width:700px;width:95%">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-emp-title">Сотрудник</h2>
+      <button class="modal-close" onclick="closeEmployeeModal()"><i data-lucide="x"></i></button>
+    </div>
+    <div id="modal-emp-body" style="overflow-y:auto;max-height:70vh;padding:16px">
+      <p class="text-muted">Загрузка...</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Модалка: Причина отклонения заявки ───────────────────────────────── -->
+<div id="modal-reject" class="modal-overlay hidden" onclick="if(event.target===this)closeRejectModal()">
+  <div class="modal-box" style="max-width:420px;width:95%">
+    <div class="modal-header">
+      <h2 class="modal-title">Отклонить заявку</h2>
+      <button class="modal-close" onclick="closeRejectModal()"><i data-lucide="x"></i></button>
+    </div>
+    <div style="padding:16px">
+      <label style="display:block;margin-bottom:12px">Причина отклонения (необязательно)
+        <textarea id="reject-notes" class="input" rows="3" style="width:100%;margin-top:6px;resize:vertical" placeholder="Объясни сотруднику причину..."></textarea>
+      </label>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="closeRejectModal()">Отмена</button>
+        <button class="btn btn-danger" onclick="confirmReject()"><i data-lucide="x"></i> Отклонить</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="toast"></div>

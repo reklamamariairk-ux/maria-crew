@@ -6,7 +6,7 @@ const state = {
   month: new Date().getMonth() + 1,
   stores: [],
   employees: [],
-  currentTab: 'metrics',
+  currentTab: 'dashboard',
 };
 
 // Lucide иконки рендерятся через lucide.createIcons() после каждой вставки HTML.
@@ -84,7 +84,7 @@ async function showApp() {
   updatePeriodLabels();
   renderIcons();
   await loadStores();
-  refreshCurrentTab();
+  switchTab('dashboard');
 }
 
 async function loadStores() {
@@ -131,10 +131,17 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
   document.getElementById(`tab-${tab}`).classList.remove('hidden');
   state.currentTab = tab;
+  // Сбрасываем состояние аналитики при переходе со вкладки квиза
+  if (tab !== 'quiz') {
+    quizAnalyticsVisible = false;
+    const qa = document.getElementById('quiz-analytics');
+    if (qa) { qa.classList.add('hidden'); qa.innerHTML = ''; }
+  }
   refreshCurrentTab();
 }
 
 function refreshCurrentTab() {
+  if (state.currentTab === 'dashboard')   loadDashboard();
   if (state.currentTab === 'metrics')     loadMetrics();
   if (state.currentTab === 'coins')       loadCoinEmployees();
   if (state.currentTab === 'exchanges')   loadExchanges();
@@ -145,6 +152,10 @@ function refreshCurrentTab() {
   if (state.currentTab === 'storesAdmin') loadStoresAdmin();
   if (state.currentTab === 'prizes')      loadPrizes();
   if (state.currentTab === 'audit')       loadAudit();
+  if (state.currentTab === 'challenges')  loadChallenges();
+  if (state.currentTab === 'heroes')      loadHeroes();
+  if (state.currentTab === 'settings')    loadMvpConfig();
+  if (state.currentTab === 'notify')      loadNotifyForm();
 }
 
 // ── Period ────────────────────────────────────────────────────────────────────
@@ -369,9 +380,37 @@ async function loadExchanges() {
   renderIcons();
 }
 
-async function updateExchange(id, status) {
+let _pendingRejectId = null;
+
+function updateExchange(id, status) {
+  if (status === 'rejected') {
+    _pendingRejectId = id;
+    document.getElementById('reject-notes').value = '';
+    document.getElementById('modal-reject').classList.remove('hidden');
+    renderIcons();
+    return;
+  }
+  _doUpdateExchange(id, status, null);
+}
+
+function closeRejectModal() {
+  _pendingRejectId = null;
+  document.getElementById('modal-reject').classList.add('hidden');
+}
+
+async function confirmReject() {
+  const notes = document.getElementById('reject-notes').value.trim() || null;
+  const id = _pendingRejectId;
+  closeRejectModal();
+  if (!id) return;
+  await _doUpdateExchange(id, 'rejected', notes);
+}
+
+async function _doUpdateExchange(id, status, notes) {
   try {
-    await api('PUT', `/exchanges/${id}`, { status });
+    const body = { status };
+    if (notes) body.notes = notes;
+    await api('PUT', `/exchanges/${id}`, body);
     toast(status === 'fulfilled' ? '✅ Приз выдан' : '❌ Заявка отклонена');
     loadExchanges();
   } catch (e) { toast('❌ ' + e.message); }
@@ -461,7 +500,7 @@ function renderEmployees() {
     return `<tr>
       <td><input type="checkbox" class="emp-row-select" data-emp-id="${e.id}" onchange="toggleEmployeeSelect(${e.id}, this)"${checked}></td>
       <td>${renderEmployeeAvatar(e)}</td>
-      <td><strong>${esc(e.name)}</strong></td>
+      <td><strong style="cursor:pointer;color:var(--pink)" onclick="showEmployeeModal(${e.id})">${esc(e.name)}</strong></td>
       <td style="color:var(--muted);font-size:12px">${tgInfo}</td>
       <td>${renderStoreSelect(e.id, e.storeId)}</td>
       <td>${roleLabel(e.role)}</td>
@@ -1153,6 +1192,8 @@ const AUDIT_ACTION_LABELS = {
   quiz_question_create:     '🧩 Вопрос добавлен',
   quiz_question_update:     '🧩 Вопрос изменён',
   quiz_question_delete:     '🧩 Вопрос удалён',
+  config_update:            '⚙️ Настройки изменены',
+  hero_update:              '🎨 Герой обновлён',
 };
 
 function formatAuditDateTime(iso) {
@@ -1163,21 +1204,521 @@ function formatAuditDateTime(iso) {
   return `${date} ${time}`;
 }
 
-async function loadAudit() {
+let auditPage = 1;
+const AUDIT_PAGE_SIZE = 50;
+
+async function loadAudit(page) {
+  if (page !== undefined) auditPage = page;
   const tbody = document.getElementById('audit-tbody');
-  tbody.innerHTML = skeletonRows(3, 8);
-  const log = await api('GET', '/audit?limit=200') || [];
-  if (log.length === 0) {
-    tbody.innerHTML = emptyRow(3, 'file-clock', 'Журнал пуст');
+  tbody.innerHTML = skeletonRows(4, 8);
+  const result = await api('GET', `/audit?page=${auditPage}&pageSize=${AUDIT_PAGE_SIZE}`);
+  if (!result || result.total === 0) {
+    tbody.innerHTML = emptyRow(4, 'file-clock', 'Журнал пуст');
     renderIcons();
+    document.getElementById('audit-pagination').innerHTML = '';
     return;
   }
-  tbody.innerHTML = log.map(row => `<tr>
+  tbody.innerHTML = result.data.map(row => `<tr>
     <td style="font-size:12px;color:var(--muted);white-space:nowrap">${formatAuditDateTime(row.createdAt)}</td>
     <td style="font-size:13px"><strong>${esc(AUDIT_ACTION_LABELS[row.action] || row.action)}</strong></td>
+    <td style="font-size:12px;color:var(--muted)">${esc(row.performedBy ?? '—')}</td>
     <td style="font-size:12px;color:var(--text-2);font-family:'JetBrains Mono', ui-monospace, Menlo, monospace;word-break:break-all">${esc(JSON.stringify(row.details))}</td>
   </tr>`).join('');
   renderIcons();
+
+  const pag = document.getElementById('audit-pagination');
+  const { page: p, pages, total } = result;
+  pag.innerHTML = `
+    <button class="btn btn-ghost btn-sm" onclick="loadAudit(${p - 1})" ${p <= 1 ? 'disabled' : ''}>
+      <i data-lucide="chevron-left"></i>
+    </button>
+    <span class="text-muted" style="font-size:13px">Стр. ${p} из ${pages} · ${total} записей</span>
+    <button class="btn btn-ghost btn-sm" onclick="loadAudit(${p + 1})" ${p >= pages ? 'disabled' : ''}>
+      <i data-lucide="chevron-right"></i>
+    </button>`;
+  renderIcons();
+}
+
+// ── Челленджи ─────────────────────────────────────────────────────────────────
+const SEASON_LABELS = { spring: 'Весна', summer: 'Лето', autumn: 'Осень', winter: 'Зима' };
+
+async function loadChallenges() {
+  const tbody = document.getElementById('challenges-tbody');
+  tbody.innerHTML = skeletonRows(8, 4);
+  const list = await api('GET', '/challenges') || [];
+  if (list.length === 0) {
+    tbody.innerHTML = emptyRow(8, 'flame', 'Нет челленджей — создайте первый');
+    renderIcons(); return;
+  }
+  tbody.innerHTML = list.map(ch => {
+    const start = ch.start_date ? ch.start_date.slice(0,10) : '—';
+    const end   = ch.end_date   ? ch.end_date.slice(0,10)   : '—';
+    return `<tr>
+      <td style="color:var(--muted);font-size:12px">${ch.id}</td>
+      <td><strong>${esc(ch.name)}</strong></td>
+      <td>${SEASON_LABELS[ch.season] ?? ch.season}</td>
+      <td>${ch.year}</td>
+      <td style="font-size:12px;color:var(--muted)">${start} — ${end}</td>
+      <td style="font-size:13px">${esc(ch.heroName ?? '—')}</td>
+      <td>${ch.entries ?? 0}</td>
+      <td>${ch.is_active
+        ? '<span class="badge badge-approved">Активен</span>'
+        : '<span class="badge badge-neutral">Неактивен</span>'}</td>
+    </tr>`;
+  }).join('');
+  renderIcons();
+}
+
+async function showAddChallenge() {
+  const form = document.getElementById('add-challenge-form');
+  form.classList.toggle('hidden');
+  if (!form.classList.contains('hidden')) {
+    if (!cardHeroes || !cardHeroes.length) {
+      cardHeroes = await api('GET', '/heroes') || [];
+    }
+    const sel = document.getElementById('ch-hero');
+    sel.innerHTML = '<option value="">— без карточки —</option>';
+    cardHeroes.filter(h => h.isLimited).forEach(h => {
+      const opt = document.createElement('option');
+      opt.value = h.id; opt.textContent = h.name;
+      sel.appendChild(opt);
+    });
+  }
+}
+
+async function addChallenge() {
+  const name = document.getElementById('ch-name').value.trim();
+  const season = document.getElementById('ch-season').value;
+  const year = parseInt(document.getElementById('ch-year').value);
+  const heroId = parseInt(document.getElementById('ch-hero').value) || undefined;
+  const startDate = document.getElementById('ch-start').value;
+  const endDate = document.getElementById('ch-end').value;
+  const description = document.getElementById('ch-desc').value.trim();
+  const conditionDescription = document.getElementById('ch-condition').value.trim();
+
+  if (!name || !season || !year || !startDate || !endDate) {
+    toast('Заполните название, сезон, год, даты'); return;
+  }
+  if (new Date(startDate) >= new Date(endDate)) {
+    toast('Дата начала должна быть раньше даты конца'); return;
+  }
+  try {
+    await api('POST', '/challenges', { name, season, year, heroId, startDate, endDate, description, conditionDescription });
+    toast('✅ Челлендж создан');
+    document.getElementById('add-challenge-form').classList.add('hidden');
+    loadChallenges();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+// ── Герои ─────────────────────────────────────────────────────────────────────
+async function loadHeroes() {
+  const tbody = document.getElementById('heroes-tbody');
+  tbody.innerHTML = skeletonRows(6, 6);
+  const list = await api('GET', '/heroes') || [];
+  if (list.length === 0) {
+    tbody.innerHTML = emptyRow(6, 'image', 'Нет героев');
+    renderIcons(); return;
+  }
+  tbody.innerHTML = list.map(h => `<tr data-hero-id="${h.id}">
+    <td style="color:var(--muted);font-size:12px">${h.id}</td>
+    <td><strong>${esc(h.name)}</strong></td>
+    <td>${h.isLimited ? '<span class="badge badge-mvp">Лимит</span>' : '<span class="badge badge-neutral">Основной</span>'}</td>
+    <td><input type="text" class="hero-desc-input" value="${esc(h.description ?? '')}" placeholder="..." style="width:100%"></td>
+    <td><input type="text" class="hero-img-input" value="${esc(h.imageUrl ?? '')}" placeholder="https://..." style="width:100%"></td>
+    <td><button class="btn btn-primary btn-sm btn-icon" onclick="saveHero(${h.id}, this)" title="Сохранить"><i data-lucide="save"></i></button></td>
+  </tr>`).join('');
+  renderIcons();
+}
+
+async function saveHero(id, btn) {
+  const row = document.querySelector(`tr[data-hero-id="${id}"]`);
+  const description = row.querySelector('.hero-desc-input').value.trim() || null;
+  const imageUrl    = row.querySelector('.hero-img-input').value.trim() || null;
+  btn.disabled = true; btn.textContent = '⏳';
+  try {
+    await api('PATCH', `/heroes/${id}`, { description, imageUrl });
+    toast('✅ Герой обновлён');
+  } catch (e) { toast('❌ ' + e.message); }
+  finally { btn.disabled = false; btn.innerHTML = '<i data-lucide="save"></i>'; renderIcons(); }
+}
+
+// ── Аналитика квиза ──────────────────────────────────────────────────────────
+let quizAnalyticsVisible = false;
+
+async function loadQuizAnalytics() {
+  const wrap = document.getElementById('quiz-analytics');
+  if (quizAnalyticsVisible) {
+    wrap.classList.add('hidden');
+    quizAnalyticsVisible = false;
+    return;
+  }
+  wrap.classList.remove('hidden');
+  quizAnalyticsVisible = true;
+  wrap.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">Загрузка аналитики...</div>';
+
+  const data = await api('GET', '/quiz/analytics');
+  if (!data) { wrap.innerHTML = ''; return; }
+
+  const { summary, hardestQuestions, byCategory } = data;
+  const QUIZ_CATS_LABEL = { product: 'Продукция', service: 'Сервис', crew: 'Команда' };
+
+  wrap.innerHTML = `
+    <div class="card card-pad">
+      <p class="section-title">Статистика квиза</p>
+      <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:18px">
+        <div class="stat-card">
+          <div class="label">Всего попыток</div>
+          <div class="value">${Number(summary.totalAttempts).toLocaleString('ru')}</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Активных участников</div>
+          <div class="value">${summary.uniqueEmployees}</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Средне попыток/день</div>
+          <div class="value">${summary.avgDailyAttempts}</div>
+        </div>
+      </div>
+
+      ${byCategory.length ? `
+      <p class="section-title" style="margin-top:12px">По категориям</p>
+      <div class="table-wrap" style="margin-bottom:18px">
+        <table>
+          <thead><tr><th>Категория</th><th>Попыток</th><th>Верных</th><th>% успеха</th></tr></thead>
+          <tbody>${byCategory.map(c => `<tr>
+            <td>${esc(QUIZ_CATS_LABEL[c.category] ?? c.category)}</td>
+            <td>${Number(c.totalAttempts).toLocaleString('ru')}</td>
+            <td>${Number(c.correctAttempts).toLocaleString('ru')}</td>
+            <td>
+              <span style="color:${c.successRate >= 70 ? 'var(--green)' : c.successRate >= 50 ? 'var(--yellow,#e6a800)' : 'var(--red)'}">
+                ${c.successRate}%
+              </span>
+            </td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>` : ''}
+
+      ${hardestQuestions.length ? `
+      <p class="section-title">Самые сложные вопросы (мин. 5 попыток)</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Вопрос</th>
+            <th style="width:100px">Категория</th>
+            <th style="width:90px">Попыток</th>
+            <th style="width:110px">% ошибок</th>
+          </tr></thead>
+          <tbody>${hardestQuestions.map(q => `<tr>
+            <td style="font-size:13px">${esc(q.question)}</td>
+            <td><span class="badge badge-neutral">${QUIZ_CATS_LABEL[q.category] ?? q.category}</span></td>
+            <td>${q.totalAttempts}</td>
+            <td style="color:var(--red);font-weight:600">${q.errorRate}%</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>` : '<p class="text-muted">Недостаточно данных (нужно мин. 5 попыток на вопрос)</p>'}
+    </div>`;
+  renderIcons();
+}
+
+// ── Настройки MVP ─────────────────────────────────────────────────────────────
+async function loadMvpConfig() {
+  const cfg = await api('GET', '/config/mvp');
+  if (!cfg) return;
+  document.getElementById('cfg-mystery').value         = cfg.mysteryShopperWeight;
+  document.getElementById('cfg-reviews-per-card').value = cfg.reviewsPerCard;
+  document.getElementById('cfg-reviews-max').value     = cfg.reviewsMax;
+  document.getElementById('cfg-checklist').value       = cfg.checklistWeight;
+  document.getElementById('cfg-revenue-factor').value  = cfg.revenueWeightFactor;
+  document.getElementById('cfg-revenue-max').value     = cfg.revenueMax;
+  const upd = document.getElementById('cfg-last-updated');
+  if (upd && cfg.updatedAt) {
+    upd.textContent = `Последнее изменение: ${formatAuditDateTime(cfg.updatedAt)}`;
+  }
+}
+
+async function saveMvpConfig() {
+  const body = {
+    mysteryShopperWeight: parseFloat(document.getElementById('cfg-mystery').value),
+    reviewsPerCard:       parseFloat(document.getElementById('cfg-reviews-per-card').value),
+    reviewsMax:           parseFloat(document.getElementById('cfg-reviews-max').value),
+    checklistWeight:      parseFloat(document.getElementById('cfg-checklist').value),
+    revenueWeightFactor:  parseFloat(document.getElementById('cfg-revenue-factor').value),
+    revenueMax:           parseFloat(document.getElementById('cfg-revenue-max').value),
+  };
+  if (Object.values(body).some(v => isNaN(v) || v < 0 || v > 100)) {
+    toast('Все значения должны быть от 0 до 100'); return;
+  }
+  try {
+    await api('PUT', '/config/mvp', body);
+    toast('✅ Настройки сохранены');
+    loadMvpConfig();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+// ── Дашборд ───────────────────────────────────────────────────────────────────
+const SEASON_LABELS_DASH = { spring: 'Весна', summer: 'Лето', autumn: 'Осень', winter: 'Зима' };
+
+async function loadDashboard() {
+  const data = await api('GET', '/dashboard');
+  if (!data) return;
+
+  document.getElementById('dash-active-emp-val').textContent = data.activeEmployees;
+  document.getElementById('dash-coins-val').textContent = data.coinsIssuedThisMonth;
+
+  const pendingEl = document.getElementById('dash-pending-ex-val');
+  const pendingCard = document.getElementById('dash-pending-card');
+  pendingEl.textContent = data.pendingExchanges;
+  pendingCard.classList.toggle('has-pending', data.pendingExchanges > 0);
+
+  // Top-3 MVP
+  const top3El = document.getElementById('dash-top3');
+  if (data.top3Mvp && data.top3Mvp.length > 0) {
+    const medals = ['🥇', '🥈', '🥉'];
+    top3El.innerHTML = data.top3Mvp.map((e, i) =>
+      `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:20px">${medals[i] ?? ''}</span>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:14px">${esc(e.name)}</div>
+          <div style="font-size:12px;color:var(--text-3)">${esc(e.storeName)}</div>
+        </div>
+        <div style="font-weight:700;color:var(--pink)">${e.mvpScore} б.</div>
+      </div>`
+    ).join('');
+  } else {
+    top3El.innerHTML = '<p class="text-muted">Нет данных за текущий месяц</p>';
+  }
+
+  // Active challenges
+  const challEl = document.getElementById('dash-challenges');
+  if (data.activeChallenges && data.activeChallenges.length > 0) {
+    challEl.innerHTML = data.activeChallenges.map(c => {
+      const pct = c.completionPercent;
+      const label = `${SEASON_LABELS_DASH[c.season] ?? c.season} ${c.year}`;
+      return `<div style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+          <span style="font-size:13px;font-weight:600">${esc(c.name)}</span>
+          <span style="font-size:12px;color:var(--text-3)">${label} · ${c.completedCount}/${c.totalCount ?? '?'} (${pct}%)</span>
+        </div>
+        <div style="background:var(--border);border-radius:999px;height:6px">
+          <div style="background:var(--pink);border-radius:999px;height:6px;width:${pct}%;transition:width .4s"></div>
+        </div>
+      </div>`;
+    }).join('');
+  } else {
+    challEl.innerHTML = '<p class="text-muted">Нет активных челленджей</p>';
+  }
+
+  renderIcons();
+  loadEngagement();
+}
+
+async function loadEngagement() {
+  const data = await api('GET', '/employees/engagement?days=30');
+  const el = document.getElementById('engagement-chart');
+  if (!el) return;
+  if (!data || data.length === 0) {
+    el.innerHTML = '<p class="text-muted" style="font-size:13px">Нет данных о чек-инах за последние 30 дней</p>';
+    return;
+  }
+  const maxVal = Math.max(...data.map(d => d.uniqueUsers), 1);
+  const bars = data.map(d => {
+    const h = Math.max(2, Math.round(d.uniqueUsers / maxVal * 60));
+    const shortDate = d.date.slice(5); // MM-DD
+    return `<div class="eng-bar-wrap" title="${d.date}: ${d.uniqueUsers} чел.">
+      <div class="eng-bar" style="height:${h}px"></div>
+      <div class="eng-date">${shortDate}</div>
+    </div>`;
+  }).join('');
+  el.innerHTML = `<div class="eng-chart">${bars}</div>`;
+}
+
+// ── Рассылка ──────────────────────────────────────────────────────────────────
+async function loadNotifyForm() {
+  // Заполняем выпадалки точек и сотрудников
+  const storesSel = document.getElementById('notify-store');
+  storesSel.innerHTML = '<option value="">— выбери —</option>'
+    + (state.stores || []).map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+
+  const empsSel = document.getElementById('notify-employee');
+  if (empsSel.options.length <= 1) {
+    const emps = await api('GET', '/employees') || [];
+    empsSel.innerHTML = '<option value="">— выбери —</option>'
+      + emps.map(e => `<option value="${e.id}">${esc(e.name)}${e.storeName ? ` — ${esc(e.storeName)}` : ''}</option>`).join('');
+  }
+}
+
+function onNotifyTargetChange() {
+  const target = document.getElementById('notify-target').value;
+  document.getElementById('notify-store-label').classList.toggle('hidden', target !== 'store');
+  document.getElementById('notify-emp-label').classList.toggle('hidden', target !== 'employee');
+}
+
+async function sendNotification() {
+  const message = document.getElementById('notify-message').value.trim();
+  const target  = document.getElementById('notify-target').value;
+  const storeId = parseInt(document.getElementById('notify-store').value) || undefined;
+  const employeeId = parseInt(document.getElementById('notify-employee').value) || undefined;
+
+  if (!message) { toast('Введи текст сообщения'); return; }
+  if (target === 'store' && !storeId) { toast('Выбери точку'); return; }
+  if (target === 'employee' && !employeeId) { toast('Выбери сотрудника'); return; }
+
+  const resultEl = document.getElementById('notify-result');
+  resultEl.textContent = 'Отправка...';
+  resultEl.className = 'text-muted';
+
+  try {
+    const res = await api('POST', '/notify', { message, target, storeId, employeeId });
+    if (res) {
+      resultEl.textContent = `✅ Отправлено: ${res.sent}, не доставлено: ${res.failed}`;
+      resultEl.className = 'notify-result-ok';
+      if (res.warning) { resultEl.textContent += ` (${res.warning})`; }
+      document.getElementById('notify-message').value = '';
+    }
+  } catch (e) {
+    resultEl.textContent = '❌ ' + e.message;
+    resultEl.className = 'notify-result-err';
+  }
+}
+
+// ── Карточка сотрудника (модалка) ─────────────────────────────────────────────
+async function showEmployeeModal(id) {
+  const modal = document.getElementById('modal-employee');
+  const body  = document.getElementById('modal-emp-body');
+  const title = document.getElementById('modal-emp-title');
+  title.textContent = 'Загрузка...';
+  body.innerHTML = '<p class="text-muted">Загрузка...</p>';
+  modal.classList.remove('hidden');
+  renderIcons();
+
+  const [summary, coinHistory, exchanges] = await Promise.all([
+    api('GET', `/employees/${id}/summary`),
+    api('GET', `/coins/history/${id}?limit=15`),
+    api('GET', `/exchanges?employeeId=${id}`),
+  ]);
+
+  if (!summary) { body.innerHTML = '<p class="text-muted">Ошибка загрузки</p>'; return; }
+
+  title.textContent = summary.name;
+
+  const roleLabel = { employee: 'Сотрудник', manager: 'Менеджер', admin: 'Администратор' };
+  const lastSeen  = summary.lastSeenAt ? formatDate(summary.lastSeenAt) : 'Не заходил';
+
+  body.innerHTML = `
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px">
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:13px;color:var(--text-2);margin-bottom:4px">Точка</div>
+        <div style="font-weight:600">${esc(summary.storeName ?? '—')}</div>
+      </div>
+      <div>
+        <div style="font-size:13px;color:var(--text-2);margin-bottom:4px">Роль</div>
+        <div>${roleLabel[summary.role] ?? summary.role}</div>
+      </div>
+      <div>
+        <div style="font-size:13px;color:var(--text-2);margin-bottom:4px">Монет</div>
+        <div style="font-weight:700;color:var(--pink)">${summary.coinBalance}</div>
+      </div>
+      <div>
+        <div style="font-size:13px;color:var(--text-2);margin-bottom:4px">Карточек</div>
+        <div style="font-weight:700">${summary.availableCards}</div>
+      </div>
+      <div>
+        <div style="font-size:13px;color:var(--text-2);margin-bottom:4px">Героев</div>
+        <div>${summary.uniqueHeroes}/12</div>
+      </div>
+      <div>
+        <div style="font-size:13px;color:var(--text-2);margin-bottom:4px">Последний вход</div>
+        <div style="font-size:13px">${lastSeen}</div>
+      </div>
+    </div>
+
+    <p class="section-title">Последние монеты</p>
+    ${(coinHistory && coinHistory.length > 0)
+      ? `<table style="width:100%;font-size:13px;margin-bottom:16px">
+           <thead><tr><th>Дата</th><th>Сумма</th><th>Причина</th><th>Примечание</th></tr></thead>
+           <tbody>${coinHistory.map(t => `<tr>
+             <td style="color:var(--text-2)">${formatDate(t.createdAt)}</td>
+             <td style="font-weight:600;color:${t.amount > 0 ? 'var(--green,#22c55e)' : 'var(--red,#ef4444)'}">${t.amount > 0 ? '+' : ''}${t.amount}</td>
+             <td>${esc(COIN_LABELS[t.reason] ?? t.reason)}</td>
+             <td style="color:var(--text-3)">${esc(t.note ?? '')}</td>
+           </tr>`).join('')}</tbody>
+         </table>`
+      : '<p class="text-muted" style="margin-bottom:16px">Нет транзакций</p>'}
+
+    <p class="section-title">Заявки на обмен</p>
+    ${(exchanges && exchanges.length > 0)
+      ? `<table style="width:100%;font-size:13px">
+           <thead><tr><th>Дата</th><th>Приз</th><th>Карт.</th><th>Монет</th><th>Статус</th></tr></thead>
+           <tbody>${exchanges.map(ex => `<tr>
+             <td style="color:var(--text-2)">${formatDate(ex.createdAt)}</td>
+             <td>${esc(ex.prizeName ?? '—')}</td>
+             <td>${ex.cardsSpent}</td>
+             <td>${ex.coinsSpent}</td>
+             <td><span class="badge badge-${ex.status}">${statusLabel(ex.status)}</span></td>
+           </tr>`).join('')}</tbody>
+         </table>`
+      : '<p class="text-muted">Нет заявок</p>'}
+  `;
+  renderIcons();
+}
+
+function closeEmployeeModal() {
+  document.getElementById('modal-employee').classList.add('hidden');
+}
+
+// ── CSV Экспорт ───────────────────────────────────────────────────────────────
+function downloadCsv(filename, headers, rows) {
+  const escape = v => {
+    const s = String(v ?? '');
+    return s.includes(',') || s.includes('"') || s.includes('\n')
+      ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [headers.map(escape).join(','), ...rows.map(r => r.map(escape).join(','))];
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function exportEmployeesCsv() {
+  const emps = await api('GET', '/employees') || [];
+  downloadCsv(
+    `сотрудники_${new Date().toISOString().slice(0,10)}.csv`,
+    ['ID','Имя','Точка','Роль','Активен','Монеты (требует запроса)','Telegram'],
+    emps.map(e => [e.id, e.name, e.storeName ?? '', e.role, e.isActive ? 'Да' : 'Нет', '', e.telegramUsername ?? ''])
+  );
+}
+
+async function exportMetricsCsv() {
+  if (!state.storeId) { toast('Выберите точку'); return; }
+  const [rows, employees] = await Promise.all([
+    api('GET', `/metrics?storeId=${state.storeId}&year=${state.year}&month=${state.month}`),
+    api('GET', `/stores/${state.storeId}/employees`),
+  ]);
+  const metricMap = {};
+  (rows || []).forEach(r => { metricMap[r.employeeId] = r; });
+  const emps = (employees || []).filter(e => e.isActive);
+  downloadCsv(
+    `метрики_${state.year}_${state.month}.csv`,
+    ['Сотрудник','Тайный покупатель (0-100)','Отзывы','Чек-лист (%)','Выполнение плана (%)','MVP Score','MVP'],
+    emps.map(e => {
+      const m = metricMap[e.id] || {};
+      return [e.name, m.mysteryShopperScore ?? '', m.reviewsCount ?? 0, m.checklistPercent ?? '', m.revenuePercent ?? '', m.mvpScore ?? '', m.isMvp ? 'Да' : ''];
+    })
+  );
+}
+
+async function exportLeaderboardCsv() {
+  const params = state.storeId ? `?storeId=${state.storeId}&year=${state.year}&month=${state.month}` : `?year=${state.year}&month=${state.month}`;
+  const data = await api('GET', `/leaderboard${params}`);
+  if (!data) return;
+  const emps = data.employees || data || [];
+  downloadCsv(
+    `рейтинг_${state.year}_${state.month}.csv`,
+    ['Место','Сотрудник','Точка','MVP Score','MVP','Карточек','Монет'],
+    emps.map((e, i) => [i+1, e.name ?? e.employeeName, e.storeName ?? '', e.mvpScore ?? '', e.isMvp ? 'Да' : '', e.cardsCount ?? '', e.coinsBalance ?? ''])
+  );
 }
 
 // ── Старт ─────────────────────────────────────────────────────────────────────

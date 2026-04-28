@@ -70,7 +70,8 @@ export async function notifyCardAward(
 export async function notifyExchangeStatus(
   employeeId: number,
   prizeName: string,
-  status: 'fulfilled' | 'rejected'
+  status: 'fulfilled' | 'rejected',
+  notes?: string
 ): Promise<void> {
   const tgId = await getEmployeeTelegramId(employeeId);
   if (!tgId) return;
@@ -78,7 +79,8 @@ export async function notifyExchangeStatus(
     const text = `🎁 <b>Приз выдан!</b>\n«${esc(prizeName)}» — забирай у руководителя.`;
     await send(tgId, text);
   } else {
-    const text = `❌ <b>Заявка отклонена</b>\nПриз: «${esc(prizeName)}». Карточки/монеты возвращены на баланс.`;
+    const reason = notes ? `\n<i>Причина: ${esc(notes)}</i>` : '';
+    const text = `❌ <b>Заявка отклонена</b>\nПриз: «${esc(prizeName)}». Карточки/монеты возвращены на баланс.${reason}`;
     await send(tgId, text);
   }
 }
@@ -163,6 +165,20 @@ export async function notifyTopStore(
     `Вы лучшие! 🎉`;
 
   await Promise.allSettled(rows.map(r => send(r.telegramId, text)));
+}
+
+/** Массовая рассылка произвольного сообщения списку telegram_id */
+export async function sendBroadcast(
+  telegramIds: string[],
+  message: string
+): Promise<{ sent: number; failed: number }> {
+  if (!_bot) return { sent: 0, failed: telegramIds.length };
+  const results = await Promise.allSettled(
+    telegramIds.map(tgId => _bot!.api.sendMessage(tgId, message))
+  );
+  const sent   = results.filter(r => r.status === 'fulfilled').length;
+  const failed = results.filter(r => r.status === 'rejected').length;
+  return { sent, failed };
 }
 
 /**

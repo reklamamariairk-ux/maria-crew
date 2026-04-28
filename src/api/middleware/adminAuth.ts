@@ -11,9 +11,16 @@ function getEffectiveSecret(): string {
 
 export const effectiveAdminSecret = getEffectiveSecret();
 
+const secretBuffer = Buffer.from(`Bearer ${effectiveAdminSecret}`);
+
 export function adminAuth(req: Request, res: Response, next: NextFunction): void {
-  const auth = req.headers.authorization;
-  if (auth !== `Bearer ${effectiveAdminSecret}`) {
+  const auth = req.headers.authorization ?? '';
+  const authBuffer = Buffer.from(auth);
+  // Timing-safe comparison prevents timing oracle attacks
+  const match =
+    authBuffer.length === secretBuffer.length &&
+    crypto.timingSafeEqual(authBuffer, secretBuffer);
+  if (!match) {
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }

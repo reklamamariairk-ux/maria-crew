@@ -583,3 +583,56 @@ table select {
   -webkit-appearance: none;
   min-width: 130px;
 }
+
+/* ── Modal overlay ───────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,.45); backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+}
+.modal-overlay.hidden { display: none; }
+.modal-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: 0 24px 48px rgba(0,0,0,.18);
+  display: flex; flex-direction: column;
+  max-height: 90vh; overflow: hidden;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-title { font-size: 15px; font-weight: 600; color: var(--text); margin: 0; }
+.modal-close {
+  background: none; border: none; cursor: pointer;
+  padding: 4px; border-radius: var(--r-sm);
+  color: var(--text-3);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-close:hover { background: var(--border); color: var(--text); }
+
+/* ── Form column layout ──────────────────────────────────────────────── */
+.form-col { display: flex; flex-direction: column; gap: 12px; }
+.form-col label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--text-2); font-weight: 500; }
+.form-col textarea.input { font-family: inherit; font-size: 14px; }
+
+/* ── Engagement chart bars ───────────────────────────────────────────── */
+.eng-chart { display: flex; align-items: flex-end; gap: 3px; height: 70px; padding-top: 4px; }
+.eng-bar-wrap { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 0; }
+.eng-bar { background: var(--pink); border-radius: 3px 3px 0 0; width: 100%; min-height: 2px; transition: opacity .15s; }
+.eng-bar:hover { opacity: .75; }
+.eng-date { font-size: 9px; color: var(--text-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+
+/* ── Dashboard pending badge ─────────────────────────────────────────── */
+#dash-pending-card.has-pending .stat-card-icon { background: var(--red-50, #fee2e2); color: var(--red, #ef4444); }
+
+/* ── Dashboard grid responsive ──────────────────────────────────────── */
+.dashboard-grid { grid-template-columns: 1fr 1fr; }
+@media (max-width: 720px) { .dashboard-grid { grid-template-columns: 1fr; } }
+
+/* ── Notification form ───────────────────────────────────────────────── */
+.notify-result-ok  { color: var(--green, #22c55e); font-weight: 600; }
+.notify-result-err { color: var(--red, #ef4444); font-weight: 600; }

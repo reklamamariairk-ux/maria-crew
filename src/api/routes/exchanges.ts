@@ -10,16 +10,22 @@ const router = Router();
 // GET /api/exchanges?status=pending&storeId=
 router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { status, storeId } = req.query as { status?: string; storeId?: string };
+    const { status, storeId, employeeId } = req.query as { status?: string; storeId?: string; employeeId?: string };
     const conditions: string[] = [];
     const params: (string | number)[] = [];
 
-    if (status)  { params.push(status);  conditions.push(`se.status = $${params.length}`); }
-    if (storeId) { params.push(storeId); conditions.push(`e.store_id = $${params.length}`); }
+    if (status)     { params.push(status);     conditions.push(`se.status = $${params.length}`); }
+    if (storeId)    { params.push(storeId);    conditions.push(`e.store_id = $${params.length}`); }
+    if (employeeId) { params.push(employeeId); conditions.push(`se.employee_id = $${params.length}`); }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const { rows } = await pool.query(
-      `SELECT se.*, e.name AS "employeeName", s.name AS "storeName",
+      `SELECT se.id, se.employee_id AS "employeeId", se.prize_id AS "prizeId",
+              se.cards_spent AS "cardsSpent", se.coins_spent AS "coinsSpent",
+              se.card_ids AS "cardIds", se.status, se.notes,
+              se.processed_by AS "processedBy", se.created_at AS "createdAt",
+              se.processed_at AS "processedAt",
+              e.name AS "employeeName", s.name AS "storeName",
               p.name AS "prizeName", p.prize_type AS "prizeType"
        FROM store_exchanges se
        JOIN employees e ON e.id = se.employee_id
@@ -60,7 +66,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
         [parseInt(req.params.id, 10)]
       ).then(({ rows }) => {
         if (rows[0]) {
-          notifyExchangeStatus(rows[0].employeeId, rows[0].prizeName, status).catch(() => {});
+          notifyExchangeStatus(rows[0].employeeId, rows[0].prizeName, status, notes).catch(() => {});
         }
       }).catch(() => {});
       const action = status === 'fulfilled' ? 'exchange_fulfill' : 'exchange_reject';

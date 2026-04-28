@@ -1,0 +1,102 @@
+import { pool } from '../db/pool';
+
+export interface MvpConfig {
+  id: number;
+  mysteryShopperWeight: number;
+  reviewsPerCard: number;
+  reviewsMax: number;
+  checklistWeight: number;
+  revenueWeightFactor: number;
+  revenueMax: number;
+  updatedAt: Date;
+}
+
+let cached: MvpConfig | null = null;
+let cacheTime = 0;
+const CACHE_TTL_MS = 60_000;
+
+const DEFAULT_CONFIG: MvpConfig = {
+  id: 1,
+  mysteryShopperWeight: 30,
+  reviewsPerCard: 5,
+  reviewsMax: 25,
+  checklistWeight: 25,
+  revenueWeightFactor: 20,
+  revenueMax: 25,
+  updatedAt: new Date(),
+};
+
+export async function getMvpConfig(): Promise<MvpConfig> {
+  const now = Date.now();
+  if (cached && now - cacheTime < CACHE_TTL_MS) return cached;
+
+  try {
+    const { rows } = await pool.query<{
+      id: number;
+      mystery_shopper_weight: string;
+      reviews_per_card: string;
+      reviews_max: string;
+      checklist_weight: string;
+      revenue_weight_factor: string;
+      revenue_max: string;
+      updated_at: Date;
+    }>(`SELECT * FROM mvp_config ORDER BY id LIMIT 1`);
+
+    if (!rows[0]) return DEFAULT_CONFIG;
+
+    const r = rows[0];
+    cached = {
+      id: r.id,
+      mysteryShopperWeight: parseFloat(r.mystery_shopper_weight),
+      reviewsPerCard: parseFloat(r.reviews_per_card),
+      reviewsMax: parseFloat(r.reviews_max),
+      checklistWeight: parseFloat(r.checklist_weight),
+      revenueWeightFactor: parseFloat(r.revenue_weight_factor),
+      revenueMax: parseFloat(r.revenue_max),
+      updatedAt: r.updated_at,
+    };
+    cacheTime = now;
+    return cached;
+  } catch {
+    return DEFAULT_CONFIG;
+  }
+}
+
+export async function updateMvpConfig(
+  data: Partial<Omit<MvpConfig, 'id' | 'updatedAt'>>
+): Promise<MvpConfig> {
+  cached = null;
+  const fields: string[] = [];
+  const vals: number[] = [];
+
+  const map: Record<string, keyof typeof data> = {
+    mystery_shopper_weight: 'mysteryShopperWeight',
+    reviews_per_card:       'reviewsPerCard',
+    reviews_max:            'reviewsMax',
+    checklist_weight:       'checklistWeight',
+    revenue_weight_factor:  'revenueWeightFactor',
+    revenue_max:            'revenueMax',
+  };
+
+  for (const [col, key] of Object.entries(map)) {
+    const val = data[key];
+    if (val !== undefined) {
+      vals.push(Number(val));
+      fields.push(`${col} = $${vals.length}`);
+    }
+  }
+
+  if (fields.length === 0) return getMvpConfig();
+
+  fields.push(`updated_at = NOW()`);
+  await pool.query(
+    `UPDATE mvp_config SET ${fields.join(', ')} WHERE id = 1`,
+    vals
+  );
+
+  return getMvpConfig();
+}
+
+export function invalidateCache(): void {
+  cached = null;
+}

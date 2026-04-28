@@ -7,11 +7,13 @@ import { notifyCoinAward } from '../../bot/notifications/sender';
 
 const router = Router();
 
-// GET /api/employees?storeId=&recent=1
+// GET /api/employees?storeId=&recent=1&page=1&pageSize=50
+// Если page указан — возвращает {data, total, page, pages}; иначе — массив (backward compat)
 router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const storeId = req.query.storeId ? parseInt(String(req.query.storeId), 10) : null;
     const recentOnly = String(req.query.recent ?? '') === '1';
+    const usePagination = req.query.page !== undefined;
 
     const params: (number | string)[] = [];
     const wheres: string[] = [];
@@ -23,8 +25,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
       ? `ORDER BY e.last_seen_at DESC NULLS LAST, e.id DESC`
       : `ORDER BY (e.last_seen_at IS NULL), e.last_seen_at DESC, e.name`;
 
-    const { rows } = await pool.query(
-      `SELECT e.id, e.name, e.role,
+    const base = `SELECT e.id, e.name, e.role,
               e.is_active         AS "isActive",
               e.joined_at         AS "joinedAt",
               e.telegram_id       AS "telegramId",
@@ -36,10 +37,45 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
        FROM employees e
        LEFT JOIN stores s ON s.id = e.store_id
        ${where}
-       ${order}`,
-      params
+       ${order}`;
+
+    if (usePagination) {
+      const pageSize = Math.min(parseInt(String(req.query.pageSize ?? '50'), 10) || 50, 200);
+      const page = Math.max(parseInt(String(req.query.page), 10) || 1, 1);
+      const offset = (page - 1) * pageSize;
+
+      const [rows, countResult] = await Promise.all([
+        pool.query(`${base} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, [...params, pageSize, offset]),
+        pool.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count FROM employees e ${where}`,
+          params
+        ),
+      ]);
+
+      const total = parseInt(countResult.rows[0].count, 10);
+      res.json({ data: rows.rows, total, page, pages: Math.ceil(total / pageSize) });
+    } else {
+      const { rows } = await pool.query(`${base}`, params);
+      res.json(rows);
+    }
+  } catch (err) { next(err); }
+});
+
+// GET /api/employees/engagement?days=30 — уникальных чек-инов по дням
+router.get('/engagement', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const days = Math.min(Math.max(parseInt(String(req.query.days ?? '30'), 10) || 30, 1), 90);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const { rows } = await pool.query<{ date: string; uniqueUsers: string }>(
+      `SELECT checkin_date::text AS date, COUNT(DISTINCT employee_id)::text AS "uniqueUsers"
+       FROM daily_checkins
+       WHERE checkin_date >= $1
+       GROUP BY checkin_date
+       ORDER BY checkin_date ASC`,
+      [cutoff.toISOString().slice(0, 10)]
     );
-    res.json(rows);
+    res.json(rows.map(r => ({ date: r.date, uniqueUsers: parseInt(r.uniqueUsers, 10) })));
   } catch (err) { next(err); }
 });
 

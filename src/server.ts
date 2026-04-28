@@ -10,6 +10,8 @@ import { getDiagnostics, markBotError, markWebhookHit } from './diagnostics';
 
 export function createServer(bot: Bot<BotContext>, webhookSecret: string): express.Application {
   const app = express();
+  // Render/Railway используют reverse proxy — доверяем первому hop для req.ip
+  app.set('trust proxy', 1);
   const telegramWebhook = webhookCallback(bot, 'express', {
     onTimeout: 'return',
     timeoutMilliseconds: 25000,

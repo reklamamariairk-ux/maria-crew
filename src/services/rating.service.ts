@@ -1,5 +1,6 @@
 import { pool } from '../db/pool';
 import { calcCardAwards, awardCards, awardTeamBonus } from './card.service';
+import { getMvpConfig, type MvpConfig } from './mvpConfig.service';
 import type {
   EmployeeRanking,
   MonthlyMetrics,
@@ -11,23 +12,23 @@ import type {
 // ─── Формулы (чистые функции) ────────────────────────────────────────────────
 
 /**
- * Рейтинг сотрудника (MVP Score), максимум ~105 баллов.
- *
- * Тайный покупатель  30%  score/100*30
- * Именные отзывы     25%  min(count*5, 25)
- * Чек-лист           25%  percent/100*25
- * Выполнение плана   20%  min(percent/100*20, 25)
+ * Рейтинг сотрудника (MVP Score).
+ * Веса берутся из БД (mvp_config); дефолт: тайный 30%, отзывы 25%, чек-лист 25%, план 20%.
  */
-export function calcMvpScore(m: {
-  mysteryShopperScore: number | null;
-  reviewsCount: number;
-  checklistPercent: number | null;
-  revenuePercent: number | null;
-}): number {
-  const mystery   = m.mysteryShopperScore !== null ? (m.mysteryShopperScore / 100) * 30 : 0;
-  const reviews   = Math.min(m.reviewsCount * 5, 25);
-  const checklist = m.checklistPercent !== null ? (m.checklistPercent / 100) * 25 : 0;
-  const revenue   = m.revenuePercent !== null ? Math.min((m.revenuePercent / 100) * 20, 25) : 0;
+export function calcMvpScore(
+  m: {
+    mysteryShopperScore: number | null;
+    reviewsCount: number;
+    checklistPercent: number | null;
+    revenuePercent: number | null;
+  },
+  cfg?: Pick<MvpConfig, 'mysteryShopperWeight' | 'reviewsPerCard' | 'reviewsMax' | 'checklistWeight' | 'revenueWeightFactor' | 'revenueMax'>
+): number {
+  const w = cfg ?? { mysteryShopperWeight: 30, reviewsPerCard: 5, reviewsMax: 25, checklistWeight: 25, revenueWeightFactor: 20, revenueMax: 25 };
+  const mystery   = m.mysteryShopperScore !== null ? (m.mysteryShopperScore / 100) * w.mysteryShopperWeight : 0;
+  const reviews   = Math.min(m.reviewsCount * w.reviewsPerCard, w.reviewsMax);
+  const checklist = m.checklistPercent !== null ? (m.checklistPercent / 100) * w.checklistWeight : 0;
+  const revenue   = m.revenuePercent !== null ? Math.min((m.revenuePercent / 100) * w.revenueWeightFactor, w.revenueMax) : 0;
   return Math.round((mystery + reviews + checklist + revenue) * 100) / 100;
 }
 
@@ -111,9 +112,10 @@ export async function processMonthForStore(
   const metrics = await getStoreMetrics(storeId, year, month);
   if (metrics.length === 0) return [];
 
+  const cfg = await getMvpConfig();
   const scored = metrics.map(m => ({
     ...m,
-    computedScore: calcMvpScore(m),
+    computedScore: calcMvpScore(m, cfg),
   }));
 
   const maxScore = Math.max(...scored.map(s => s.computedScore));
