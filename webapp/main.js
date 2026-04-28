@@ -171,6 +171,10 @@ function escapeAttr(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function escapeHtml(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 function setAvatar(name) {
   const el = document.getElementById('avatar-text');
   if (!el) return;
@@ -405,7 +409,7 @@ async function loadChallengeBanner() {
         <div class="challenge-card challenge-done">
           <div class="challenge-icon">${icon}</div>
           <div class="challenge-body">
-            <div class="challenge-name">${challenge.name}</div>
+            <div class="challenge-name">${escapeHtml(challenge.name)}</div>
             <div class="challenge-cond" style="color:var(--green);font-weight:700">✅ Челлендж выполнен! ${challenge.cardAwarded ? 'Карточка выдана.' : 'Ожидай карточку от руководителя.'}</div>
           </div>
         </div>`;
@@ -417,10 +421,10 @@ async function loadChallengeBanner() {
         <div class="challenge-icon">${icon}</div>
         <div class="challenge-body">
           <div class="challenge-label">Сезонный челлендж</div>
-          <div class="challenge-name">${challenge.name}</div>
-          <div class="challenge-cond">${challenge.conditionDescription}</div>
+          <div class="challenge-name">${escapeHtml(challenge.name)}</div>
+          <div class="challenge-cond">${escapeHtml(challenge.conditionDescription)}</div>
           <div class="challenge-footer">
-            <span class="challenge-reward">🃏 Лимитная карточка «${challenge.heroName}»</span>
+            <span class="challenge-reward">🃏 Лимитная карточка «${escapeHtml(challenge.heroName)}»</span>
             <span class="challenge-days">${challenge.daysLeft} ${plural(challenge.daysLeft,'день','дня','дней')}</span>
           </div>
         </div>
@@ -485,7 +489,7 @@ async function loadCollection() {
       const badge = isMvp
         ? '<div class="hero-badge">★</div>'
         : isOwned ? '<div class="hero-badge green">✓</div>' : '';
-      return `<div class="${cls}">${badge}<div class="hero-icon">${icon}</div><div class="hero-name">${h.name}</div></div>`;
+      return `<div class="${cls}">${badge}<div class="hero-icon">${icon}</div><div class="hero-name">${escapeHtml(h.name)}</div></div>`;
     };
 
     let html = mainHeroes.map(renderCard).join('');
@@ -633,15 +637,15 @@ function showQuizQuestion(container) {
     <div class="quiz-card">
       <div class="quiz-header">
         <span class="quiz-progress-text">Вопрос ${n} из ${total}</span>
-        <span class="quiz-category">${catLabel}</span>
+        <span class="quiz-category">${escapeHtml(catLabel)}</span>
       </div>
       <div class="quiz-bar-wrap"><div class="quiz-bar-fill" style="width:${pct}%"></div></div>
-      <div class="quiz-question">${q.question}</div>
+      <div class="quiz-question">${escapeHtml(q.question)}</div>
       <div class="quiz-options">
         ${q.options.map((opt, i) => `
           <button class="quiz-option" onclick="answerQuiz(${q.id},${i},this)" data-index="${i}">
             <span class="quiz-option-label">${QUIZ_LABELS[i]}</span>
-            <span>${opt}</span>
+            <span>${escapeHtml(opt)}</span>
           </button>`).join('')}
       </div>
     </div>`;
@@ -730,10 +734,13 @@ async function loadRating() {
     const MEDALS = ['🥇','🥈','🥉'];
     document.getElementById('rating-list').innerHTML = ranking.map((r, i) => {
       const isMe = r.employeeId === employee.id;
+      const score = r.mvpScore !== null && r.mvpScore !== undefined
+        ? `${Number(r.mvpScore).toFixed(1)} очков`
+        : 'нет оценки';
       return `<div class="lb-item${isMe ? ' lb-me' : ''}">
         <div class="lb-rank">${MEDALS[i] || (i + 1)}</div>
-        <div class="lb-name">${r.name}${r.isMvp ? ' <span class="lb-mvp">MVP</span>' : ''}</div>
-        <div class="lb-score">${r.mvpScore ?? 0} очков</div>
+        <div class="lb-name">${escapeHtml(r.name)}${r.isMvp ? ' <span class="lb-mvp">MVP</span>' : ''}</div>
+        <div class="lb-score">${score}</div>
       </div>`;
     }).join('');
   } catch (err) {
@@ -779,7 +786,7 @@ function renderPrizes() {
     goalEl.innerHTML = `
       <div class="goal-card">
         <div class="goal-card-title">🎯 До следующего приза</div>
-        <div class="goal-card-prize">${nextPrize.name}</div>
+        <div class="goal-card-prize">${escapeHtml(nextPrize.name)}</div>
         <div class="goal-bar-wrap"><div class="goal-bar-fill" style="width:${pct}%"></div></div>
         <div class="goal-card-sub">${balance} / ${cost} ${unit} — ещё <strong>${need}</strong></div>
       </div>`;
@@ -806,7 +813,7 @@ function renderPrizes() {
     const need      = cost - balance;
     return `<div class="prize-item${canAfford ? ' can-afford' : ''}">
       <div style="flex:1;min-width:0">
-        <div class="prize-name">${p.name}</div>
+        <div class="prize-name">${escapeHtml(p.name)}</div>
         <div class="prize-cost">${cost} ${unit}</div>
         ${!canAfford ? `<div class="prize-need">ещё ${need} ${unit}</div>` : ''}
       </div>

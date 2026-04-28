@@ -637,16 +637,6 @@ const CARD_SOURCE_LABELS = {
   seasonal:        'Сезонный челлендж',
   manual:          'Вручную (руководитель)',
 };
-const CARD_SOURCES = [
-  { value: 'manual',          label: 'Вручную' },
-  { value: 'mystery_shopper', label: 'Тайный покупатель' },
-  { value: 'review',          label: 'Именной отзыв' },
-  { value: 'checklist',       label: 'Чек-лист 100%' },
-  { value: 'plan',            label: 'Выполнение плана' },
-  { value: 'mvp',             label: 'MVP месяца' },
-  { value: 'team_bonus',      label: 'Бонус ТОП-точки' },
-  { value: 'seasonal',        label: 'Сезонный челлендж' },
-];
 
 let cardHeroes = null;
 

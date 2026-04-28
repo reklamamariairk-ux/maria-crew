@@ -48,8 +48,9 @@ export async function getActiveChallenge(employeeId: number): Promise<ActiveChal
 
   const ch = rows[0];
 
-  const { rows: entryRows } = await pool.query<{ completed_at: string; card_awarded: boolean }>(
-    `SELECT completed_at::text, card_awarded FROM seasonal_challenge_entries
+  const { rows: entryRows } = await pool.query<{ completedAt: string; cardAwarded: boolean }>(
+    `SELECT completed_at::text AS "completedAt", card_awarded AS "cardAwarded"
+     FROM seasonal_challenge_entries
      WHERE challenge_id = $1 AND employee_id = $2`,
     [ch.id, employeeId]
   );
@@ -62,7 +63,7 @@ export async function getActiveChallenge(employeeId: number): Promise<ActiveChal
     ...ch,
     daysLeft,
     completed: !!entry,
-    cardAwarded: entry?.card_awarded ?? false,
+    cardAwarded: entry?.cardAwarded ?? false,
   };
 }
 
@@ -75,19 +76,19 @@ export async function checkAndCompleteChallenge(employeeId: number, challengeId:
 
   // Check: streak >= 7 AND total correct quiz answers >= 15
   const [streakRows, quizRows] = await Promise.all([
-    pool.query<{ max_streak: string }>(
-      `SELECT MAX(streak_day) AS max_streak FROM daily_checkins WHERE employee_id = $1`,
+    pool.query<{ maxStreak: string }>(
+      `SELECT MAX(streak_day) AS "maxStreak" FROM daily_checkins WHERE employee_id = $1`,
       [employeeId]
     ),
-    pool.query<{ correct_count: string }>(
-      `SELECT COUNT(*) AS correct_count FROM quiz_attempts
+    pool.query<{ correctCount: string }>(
+      `SELECT COUNT(*) AS "correctCount" FROM quiz_attempts
        WHERE employee_id = $1 AND is_correct = true`,
       [employeeId]
     ),
   ]);
 
-  const maxStreak = parseInt(streakRows.rows[0]?.max_streak ?? '0', 10);
-  const correctAnswers = parseInt(quizRows.rows[0]?.correct_count ?? '0', 10);
+  const maxStreak = parseInt(streakRows.rows[0]?.maxStreak ?? '0', 10);
+  const correctAnswers = parseInt(quizRows.rows[0]?.correctCount ?? '0', 10);
 
   if (maxStreak < 7 || correctAnswers < 15) return false;
 
@@ -102,11 +103,11 @@ export async function checkAndCompleteChallenge(employeeId: number, challengeId:
 }
 
 export async function awardChallengeCard(employeeId: number, challengeId: number): Promise<boolean> {
-  const { rows: ch } = await pool.query<{ hero_id: number }>(
-    `SELECT hero_id FROM seasonal_challenges WHERE id = $1`,
+  const { rows: ch } = await pool.query<{ heroId: number }>(
+    `SELECT hero_id AS "heroId" FROM seasonal_challenges WHERE id = $1`,
     [challengeId]
   );
-  if (!ch[0]?.hero_id) return false;
+  if (!ch[0]?.heroId) return false;
 
   const now = new Date();
 
@@ -114,7 +115,7 @@ export async function awardChallengeCard(employeeId: number, challengeId: number
     `INSERT INTO employee_cards (employee_id, hero_id, source, year, month)
      VALUES ($1, $2, 'seasonal', $3, $4)
      ON CONFLICT DO NOTHING`,
-    [employeeId, ch[0].hero_id, now.getFullYear(), now.getMonth() + 1]
+    [employeeId, ch[0].heroId, now.getFullYear(), now.getMonth() + 1]
   );
 
   await pool.query(

@@ -2,6 +2,7 @@ import { Bot, session, BotError } from 'grammy';
 import type { BotContext, SessionData } from './context';
 import { authMiddleware } from './middleware/auth';
 import { handleStart, handleStoreSelection, mainMenuKeyboard } from './commands/start';
+import { esc } from './helpers';
 import { handleCollection } from './commands/collection';
 import { handleCoins } from './commands/coins';
 import { handleRating } from './commands/rating';
@@ -76,7 +77,7 @@ export function createBot(token: string): Bot<BotContext> {
   });
   bot.callbackQuery('menu:main', async ctx => {
     if (!ctx.employee) { await ctx.answerCallbackQuery(); return; }
-    const text = `👋 Привет, <b>${ctx.employee.name}</b>! Выбери раздел:`;
+    const text = `👋 Привет, <b>${esc(ctx.employee.name)}</b>! Выбери раздел:`;
     try {
       await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: mainMenuKeyboard() });
     } catch {

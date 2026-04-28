@@ -184,14 +184,33 @@ export async function processMonthAllStores(
     const metrics   = await getStoreMetrics(store.id, year, month);
     const extra     = storeRatingScores.get(store.id);
 
+    // Если для точки не передана рейтинговая часть, читаем её из БД и сохраняем —
+    // иначе одиночная обработка одной точки обнулила бы данные других.
+    let avgRatingScoreVal: number | null = null;
+    let revenuePercentVal: number | null = null;
+    if (extra) {
+      avgRatingScoreVal = extra.avgRatingScore;
+      revenuePercentVal = extra.revenuePercent;
+    } else {
+      const { rows: existing } = await pool.query<{
+        avgRatingScore: number | null; revenuePercent: number | null;
+      }>(
+        `SELECT avg_rating_score AS "avgRatingScore", revenue_percent AS "revenuePercent"
+         FROM store_monthly_stats WHERE store_id = $1 AND year = $2 AND month = $3`,
+        [store.id, year, month]
+      );
+      avgRatingScoreVal = existing[0]?.avgRatingScore ?? null;
+      revenuePercentVal = existing[0]?.revenuePercent ?? null;
+    }
+
     const avgMystery   = numAvg(metrics.map(m => m.mysteryShopperScore));
     const avgChecklist = numAvg(metrics.map(m => m.checklistPercent));
 
     const storeScore = calcStoreScore({
       avgMysteryShoper: avgMystery,
-      avgRatingScore:   extra?.avgRatingScore ?? null,
+      avgRatingScore:   avgRatingScoreVal,
       avgChecklist,
-      revenuePercent:   extra?.revenuePercent ?? null,
+      revenuePercent:   revenuePercentVal,
     });
 
     await pool.query(
@@ -205,8 +224,8 @@ export async function processMonthAllStores(
          avg_checklist       = EXCLUDED.avg_checklist,
          revenue_percent     = EXCLUDED.revenue_percent,
          total_score         = EXCLUDED.total_score`,
-      [store.id, year, month, avgMystery, extra?.avgRatingScore ?? null,
-       avgChecklist, extra?.revenuePercent ?? null, storeScore]
+      [store.id, year, month, avgMystery, avgRatingScoreVal,
+       avgChecklist, revenuePercentVal, storeScore]
     );
 
     storeResults.push({ storeId: store.id, storeName: store.name, employees, storeScore });
