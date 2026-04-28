@@ -35,4 +35,38 @@ router.get('/:id/stats/:year/:month', async (req: Request, res: Response, next: 
   } catch (err) { next(err); }
 });
 
+// POST /api/stores — создать точку
+router.post('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { name, address } = req.body as { name: string; address?: string };
+    if (!name || !name.trim()) { res.status(400).json({ error: 'name обязателен' }); return; }
+    const { rows } = await pool.query(
+      `INSERT INTO stores (name, address) VALUES ($1, $2)
+       RETURNING id, name, address, is_active AS "isActive"`,
+      [name.trim(), address?.trim() || null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// PUT /api/stores/:id — обновить точку
+router.put('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { name, address, isActive } = req.body as {
+      name?: string; address?: string | null; isActive?: boolean;
+    };
+    const { rows } = await pool.query(
+      `UPDATE stores SET
+         name      = COALESCE($1, name),
+         address   = COALESCE($2, address),
+         is_active = COALESCE($3, is_active)
+       WHERE id = $4
+       RETURNING id, name, address, is_active AS "isActive"`,
+      [name ?? null, address ?? null, isActive ?? null, req.params.id]
+    );
+    if (!rows[0]) { res.status(404).json({ error: 'Точка не найдена' }); return; }
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
 export default router;

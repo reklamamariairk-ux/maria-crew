@@ -98,6 +98,8 @@ function refreshCurrentTab() {
   if (state.currentTab === 'employees')   loadEmployees();
   if (state.currentTab === 'leaderboard') loadLeaderboard();
   if (state.currentTab === 'quiz')        loadQuizQuestions();
+  if (state.currentTab === 'cards')       loadCardEmployees();
+  if (state.currentTab === 'storesAdmin') loadStoresAdmin();
 }
 
 // ── Period ────────────────────────────────────────────────────────────────────
@@ -200,18 +202,21 @@ async function processMonth() {
 
 // ── Монеты ────────────────────────────────────────────────────────────────────
 async function loadCoinEmployees() {
-  if (!state.storeId) return;
-  const emps = await api('GET', `/stores/${state.storeId}/employees`) || [];
+  // Список сотрудников: либо точки, либо все
+  const path = state.storeId ? `/employees?storeId=${state.storeId}` : '/employees';
+  const emps = await api('GET', path) || [];
   state.employees = emps.filter(e => e.isActive);
 
   document.getElementById('coins-history-tbody').innerHTML =
     '<tr><td colspan="4" class="empty">Выберите сотрудника</td></tr>';
+  document.getElementById('coins-balance-display').textContent = '';
 
   const sel = document.getElementById('coin-employee');
   sel.innerHTML = '<option value="">— выбери —</option>';
   state.employees.forEach(e => {
     const opt = document.createElement('option');
-    opt.value = e.id; opt.textContent = e.name;
+    opt.value = e.id;
+    opt.textContent = state.storeId ? e.name : `${e.name} — ${e.storeName ?? ''}`;
     sel.appendChild(opt);
   });
   sel.onchange = loadCoinHistory;
@@ -224,12 +229,18 @@ async function loadCoinEmployees() {
 
 async function loadCoinHistory() {
   const id = document.getElementById('coin-employee').value;
-  if (!id) return;
-  const history = await api('GET', `/coins/history/${id}?limit=15`) || [];
-  const balance = await api('GET', `/coins/balance/${id}`);
+  const balanceEl = document.getElementById('coins-balance-display');
+  if (!id) { balanceEl.textContent = ''; return; }
+
+  const [history, balance] = await Promise.all([
+    api('GET', `/coins/history/${id}?limit=30`),
+    api('GET', `/coins/balance/${id}`),
+  ]);
+
+  balanceEl.innerHTML = `Баланс: <strong style="color:var(--pink)">${balance?.balance ?? '?'}</strong> монет`;
 
   const tbody = document.getElementById('coins-history-tbody');
-  if (history.length === 0) {
+  if (!history || history.length === 0) {
     tbody.innerHTML = '<tr><td colspan="4" class="empty">Нет операций</td></tr>'; return;
   }
   tbody.innerHTML = history.map(t => `<tr>
@@ -240,8 +251,6 @@ async function loadCoinHistory() {
     <td>${COIN_LABELS[t.reason] ?? t.reason}</td>
     <td>${esc(t.note ?? '')}</td>
   </tr>`).join('');
-
-  toast(`Баланс: ${balance?.balance ?? '?'} монет`);
 }
 
 async function awardCoins() {
@@ -252,10 +261,13 @@ async function awardCoins() {
   const amount = isManual ? parseInt(document.getElementById('coin-amount').value) : undefined;
 
   if (!employeeId) { toast('Выберите сотрудника'); return; }
+  if (isManual && (isNaN(amount) || amount === 0)) { toast('Укажи сумму (можно с минусом для списания)'); return; }
 
   try {
     await api('POST', '/coins/award', { employeeId, reason, amount, note: note || undefined });
-    toast('✅ Монеты начислены');
+    toast(amount && amount < 0 ? '✅ Монеты списаны' : '✅ Монеты начислены');
+    document.getElementById('coin-note').value = '';
+    if (isManual) document.getElementById('coin-amount').value = '1';
     loadCoinHistory();
   } catch (e) { toast('❌ ' + e.message); }
 }
@@ -611,6 +623,218 @@ async function deleteQuestion(id) {
     await api('DELETE', `/quiz/${id}`);
     toast('Вопрос удалён');
     loadQuizQuestions();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+// ── Карточки ─────────────────────────────────────────────────────────────────
+const CARD_SOURCE_LABELS = {
+  mystery_shopper: 'Тайный покупатель',
+  review:          'Именной отзыв',
+  checklist:       'Чек-лист 100%',
+  plan:            'Выполнение плана',
+  mvp:             'MVP месяца',
+  team_bonus:      'Бонус ТОП-точки',
+  seasonal:        'Сезонный челлендж',
+  manual:          'Вручную (руководитель)',
+};
+const CARD_SOURCES = [
+  { value: 'manual',          label: 'Вручную' },
+  { value: 'mystery_shopper', label: 'Тайный покупатель' },
+  { value: 'review',          label: 'Именной отзыв' },
+  { value: 'checklist',       label: 'Чек-лист 100%' },
+  { value: 'plan',            label: 'Выполнение плана' },
+  { value: 'mvp',             label: 'MVP месяца' },
+  { value: 'team_bonus',      label: 'Бонус ТОП-точки' },
+  { value: 'seasonal',        label: 'Сезонный челлендж' },
+];
+
+let cardHeroes = null;
+
+async function loadCardEmployees() {
+  const path = state.storeId ? `/employees?storeId=${state.storeId}` : '/employees';
+  const [emps, heroes] = await Promise.all([
+    api('GET', path),
+    cardHeroes ? Promise.resolve(cardHeroes) : api('GET', '/heroes'),
+  ]);
+  cardHeroes = heroes || [];
+  state.employees = (emps || []).filter(e => e.isActive);
+
+  const sel = document.getElementById('card-employee');
+  sel.innerHTML = '<option value="">— выбери —</option>';
+  state.employees.forEach(e => {
+    const opt = document.createElement('option');
+    opt.value = e.id;
+    opt.textContent = state.storeId ? e.name : `${e.name} — ${e.storeName ?? ''}`;
+    sel.appendChild(opt);
+  });
+  sel.onchange = loadEmployeeCards;
+
+  const heroSel = document.getElementById('card-hero');
+  heroSel.innerHTML = cardHeroes.map(h =>
+    `<option value="${h.id}">${esc(h.name)}${h.isLimited ? ' ⚡ лимитная' : ''}</option>`
+  ).join('');
+
+  document.getElementById('card-list').innerHTML =
+    '<div class="empty">Выбери сотрудника, чтобы увидеть его карточки</div>';
+}
+
+async function loadEmployeeCards() {
+  const id = document.getElementById('card-employee').value;
+  const wrap = document.getElementById('card-list');
+  if (!id) { wrap.innerHTML = '<div class="empty">Выбери сотрудника</div>'; return; }
+
+  wrap.innerHTML = '<div class="empty">Загрузка...</div>';
+  const cards = await api('GET', `/cards/${id}`) || [];
+  if (cards.length === 0) {
+    wrap.innerHTML = '<div class="empty">У сотрудника ещё нет карточек</div>'; return;
+  }
+
+  const available = cards.filter(c => !c.isSpent).length;
+  const totalMvp  = cards.filter(c => c.isMvp).length;
+
+  wrap.innerHTML = `
+    <div style="display:flex;gap:16px;margin-bottom:12px;font-size:14px">
+      <div>Всего: <strong>${cards.length}</strong></div>
+      <div>Доступно: <strong style="color:var(--green)">${available}</strong></div>
+      <div>MVP: <strong style="color:var(--pink)">${totalMvp}</strong></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Герой</th><th>Источник</th><th>Период</th><th>MVP</th><th>Статус</th><th>Действия</th>
+        </tr></thead>
+        <tbody>
+          ${cards.map(c => `<tr>
+            <td><strong>${esc(c.heroName)}</strong>${c.heroLimited ? ' <span class="badge badge-mvp">⚡</span>' : ''}</td>
+            <td>${CARD_SOURCE_LABELS[c.source] ?? c.source}</td>
+            <td style="font-size:13px;color:var(--gray)">${c.month}.${c.year}</td>
+            <td>${c.isMvp ? '★' : ''}</td>
+            <td>${c.isSpent
+              ? '<span class="badge badge-rejected">Потрачена</span>'
+              : '<span class="badge badge-approved">Доступна</span>'}</td>
+            <td>
+              <div class="row-actions">
+                <button class="btn btn-ghost" onclick="toggleCardSpent(${c.id}, ${!c.isSpent})">
+                  ${c.isSpent ? 'Вернуть' : 'Списать'}
+                </button>
+                <button class="btn btn-danger" onclick="revokeCard(${c.id})">Удалить</button>
+              </div>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+async function giveCard() {
+  const employeeId = parseInt(document.getElementById('card-employee').value);
+  const heroId     = parseInt(document.getElementById('card-hero').value);
+  const source     = document.getElementById('card-source').value;
+  const isMvp      = document.getElementById('card-mvp').checked;
+  if (!employeeId) { toast('Выбери сотрудника'); return; }
+  if (!heroId)     { toast('Выбери героя'); return; }
+  try {
+    await api('POST', '/cards', { employeeId, heroId, isMvp, source });
+    toast('✅ Карточка выдана');
+    document.getElementById('card-mvp').checked = false;
+    loadEmployeeCards();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+async function revokeCard(id) {
+  if (!confirm('Удалить эту карточку? Действие нельзя отменить.')) return;
+  try {
+    await api('DELETE', `/cards/${id}`);
+    toast('Карточка удалена');
+    loadEmployeeCards();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+async function toggleCardSpent(id, isSpent) {
+  try {
+    await api('PATCH', `/cards/${id}/spent`, { isSpent });
+    loadEmployeeCards();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+// ── Точки (управление) ──────────────────────────────────────────────────────
+async function loadStoresAdmin() {
+  const tbody = document.getElementById('stores-admin-tbody');
+  tbody.innerHTML = '<tr><td colspan="5" class="empty">Загрузка...</td></tr>';
+
+  state.stores = await api('GET', '/stores') || [];
+  if (state.stores.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">Нет точек</td></tr>'; return;
+  }
+
+  tbody.innerHTML = state.stores.map(s => `<tr data-store-id="${s.id}">
+    <td>${s.id}</td>
+    <td><input type="text" class="store-name-input" value="${esc(s.name)}" data-original="${esc(s.name)}"></td>
+    <td><input type="text" class="store-address-input" value="${esc(s.address ?? '')}" data-original="${esc(s.address ?? '')}"></td>
+    <td>
+      <select class="store-active-select" data-original="${s.isActive}">
+        <option value="true"${s.isActive ? ' selected' : ''}>Активна</option>
+        <option value="false"${!s.isActive ? ' selected' : ''}>Скрыта</option>
+      </select>
+    </td>
+    <td><button class="btn btn-primary" onclick="saveStoreAdmin(${s.id}, this)">Сохранить</button></td>
+  </tr>`).join('');
+
+  // refresh dropdowns elsewhere that use stores list
+  const storeSel = document.getElementById('store-select');
+  if (storeSel) {
+    const cur = storeSel.value;
+    storeSel.innerHTML = '<option value="">— Все точки —</option>';
+    state.stores.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id; opt.textContent = s.name;
+      storeSel.appendChild(opt);
+    });
+    storeSel.value = cur;
+  }
+}
+
+async function saveStoreAdmin(id, btn) {
+  const row = document.querySelector(`tr[data-store-id="${id}"]`);
+  const nameEl    = row.querySelector('.store-name-input');
+  const addressEl = row.querySelector('.store-address-input');
+  const activeEl  = row.querySelector('.store-active-select');
+
+  const name = nameEl.value.trim();
+  const address = addressEl.value.trim();
+  const isActive = activeEl.value === 'true';
+
+  if (!name) { toast('Название не может быть пустым'); return; }
+
+  btn.disabled = true; btn.textContent = '⏳';
+  try {
+    await api('PUT', `/stores/${id}`, { name, address: address || null, isActive });
+    toast('✅ Точка обновлена');
+    nameEl.dataset.original = name;
+    addressEl.dataset.original = address;
+    activeEl.dataset.original = isActive;
+    // Обновим в state и в верхнем select
+    const s = state.stores.find(x => x.id === id);
+    if (s) { s.name = name; s.address = address; s.isActive = isActive; }
+    const topSel = document.getElementById('store-select');
+    if (topSel) {
+      const opt = topSel.querySelector(`option[value="${id}"]`);
+      if (opt) opt.textContent = name;
+    }
+  } catch (e) { toast('❌ ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = 'Сохранить'; }
+}
+
+async function addStore() {
+  const name = document.getElementById('new-store-name').value.trim();
+  const address = document.getElementById('new-store-address').value.trim();
+  if (!name) { toast('Введите название точки'); return; }
+  try {
+    await api('POST', '/stores', { name, address: address || undefined });
+    toast('✅ Точка создана');
+    document.getElementById('new-store-name').value = '';
+    document.getElementById('new-store-address').value = '';
+    loadStoresAdmin();
   } catch (e) { toast('❌ ' + e.message); }
 }
 

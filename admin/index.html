@@ -30,10 +30,12 @@
   <nav>
     <button class="tab-btn active" data-tab="metrics"    onclick="switchTab('metrics')">📊 Метрики</button>
     <button class="tab-btn"        data-tab="coins"      onclick="switchTab('coins')">💰 Монеты</button>
+    <button class="tab-btn"        data-tab="cards"      onclick="switchTab('cards')">🃏 Карточки</button>
     <button class="tab-btn"        data-tab="exchanges"  onclick="switchTab('exchanges')">🛍 Заявки</button>
     <button class="tab-btn"        data-tab="employees"  onclick="switchTab('employees')">👤 Сотрудники</button>
     <button class="tab-btn"        data-tab="leaderboard" onclick="switchTab('leaderboard')">🏆 Рейтинги</button>
     <button class="tab-btn"        data-tab="quiz"        onclick="switchTab('quiz')">🧩 Квиз</button>
+    <button class="tab-btn"        data-tab="storesAdmin" onclick="switchTab('storesAdmin')">🏪 Точки</button>
   </nav>
 
   <main>
@@ -86,34 +88,40 @@
 
     <!-- ── Монеты ───────────────────────────────────── -->
     <div id="tab-coins" class="tab-content hidden">
-      <p class="section-title">Начислить монеты</p>
-      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px">
+      <p class="section-title">Начислить / списать монеты</p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">
         <label>Сотрудник:
-          <select id="coin-employee" class="inline" style="width:200px;margin-left:6px">
+          <select id="coin-employee" class="inline" style="width:240px;margin-left:6px">
             <option value="">— выбери —</option>
           </select>
         </label>
         <label>Причина:
-          <select id="coin-reason" class="inline" style="width:180px;margin-left:6px">
+          <select id="coin-reason" class="inline" style="width:200px;margin-left:6px">
             <option value="checklist_day">Чек-лист 100% за день (+1)</option>
             <option value="review">Именной отзыв гостя (+3)</option>
             <option value="cake_order">Торт на заказ (+2)</option>
             <option value="substitution">Подмена коллеги (+5)</option>
             <option value="mentoring">Наставничество (+10)</option>
             <option value="idea">Идея внедрена (+5)</option>
-            <option value="manual">Вручную (указать сумму)</option>
+            <option value="manual">Вручную (своя сумма / минус)</option>
           </select>
         </label>
         <label id="manual-amount-label" class="hidden">Сумма:
-          <input type="number" id="coin-amount" min="1" value="1" style="width:70px;margin-left:6px">
+          <input type="number" id="coin-amount" value="1" style="width:80px;margin-left:6px">
         </label>
         <label>Примечание:
-          <input type="text" id="coin-note" placeholder="необязательно" style="width:160px;margin-left:6px">
+          <input type="text" id="coin-note" placeholder="необязательно" style="width:200px;margin-left:6px">
         </label>
-        <button class="btn btn-primary" onclick="awardCoins()">Начислить</button>
+        <button class="btn btn-primary" onclick="awardCoins()">Применить</button>
       </div>
+      <p style="font-size:12px;color:var(--gray);margin-bottom:18px">
+        Подсказка: для списания выбери «Вручную» и введи отрицательную сумму (например, −5).
+      </p>
 
-      <p class="section-title">История монет сотрудника</p>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <p class="section-title" style="margin:0">История монет сотрудника</p>
+        <span id="coins-balance-display" style="font-size:14px"></span>
+      </div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Дата</th><th>Сумма</th><th>Причина</th><th>Примечание</th></tr></thead>
@@ -121,6 +129,42 @@
             <tr><td colspan="4" class="empty">Выберите сотрудника</td></tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- ── Карточки ──────────────────────────────────── -->
+    <div id="tab-cards" class="tab-content hidden">
+      <p class="section-title">Выдать карточку героя</p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:18px">
+        <label>Сотрудник:
+          <select id="card-employee" class="inline" style="width:240px;margin-left:6px">
+            <option value="">— выбери —</option>
+          </select>
+        </label>
+        <label>Герой:
+          <select id="card-hero" class="inline" style="width:220px;margin-left:6px"></select>
+        </label>
+        <label>Источник:
+          <select id="card-source" class="inline" style="width:170px;margin-left:6px">
+            <option value="manual">Вручную</option>
+            <option value="mystery_shopper">Тайный покупатель</option>
+            <option value="review">Именной отзыв</option>
+            <option value="checklist">Чек-лист 100%</option>
+            <option value="plan">Выполнение плана</option>
+            <option value="mvp">MVP месяца</option>
+            <option value="team_bonus">Бонус ТОП-точки</option>
+            <option value="seasonal">Сезонный челлендж</option>
+          </select>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-weight:500">
+          <input type="checkbox" id="card-mvp" style="width:auto"> MVP-карточка
+        </label>
+        <button class="btn btn-primary" onclick="giveCard()">Выдать</button>
+      </div>
+
+      <p class="section-title">Карточки сотрудника</p>
+      <div id="card-list">
+        <div class="empty">Выбери сотрудника, чтобы увидеть его карточки</div>
       </div>
     </div>
 
@@ -267,6 +311,34 @@
             <th style="width:120px">Действие</th>
           </tr></thead>
           <tbody id="quiz-tbody">
+            <tr><td colspan="5" class="empty">Загрузка...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Точки ──────────────────────────────────── -->
+    <div id="tab-storesAdmin" class="tab-content hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <p class="section-title" style="margin:0">Кондитерские</p>
+      </div>
+
+      <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <label>Название: <input type="text" id="new-store-name" placeholder="Лермонтова 81/5" style="width:200px;margin-left:6px"></label>
+        <label>Адрес: <input type="text" id="new-store-address" placeholder="ул. Лермонтова, 81/5" style="width:280px;margin-left:6px"></label>
+        <button class="btn btn-primary" onclick="addStore()">+ Добавить точку</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:50px">#</th>
+            <th>Название</th>
+            <th>Адрес</th>
+            <th style="width:120px">Статус</th>
+            <th style="width:120px">Действие</th>
+          </tr></thead>
+          <tbody id="stores-admin-tbody">
             <tr><td colspan="5" class="empty">Загрузка...</td></tr>
           </tbody>
         </table>

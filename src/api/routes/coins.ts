@@ -14,6 +14,20 @@ router.post('/award', async (req: Request, res: Response, next: NextFunction): P
     if (!employeeId || !reason) {
       res.status(400).json({ error: 'employeeId и reason обязательны' }); return;
     }
+
+    // Manual может быть отрицательным (списание) — пишем напрямую
+    if (reason === 'manual' && typeof amount === 'number' && amount < 0) {
+      const { pool } = await import('../../db/pool');
+      const { rows } = await pool.query(
+        `INSERT INTO coin_transactions (employee_id, amount, reason, note, created_by)
+         VALUES ($1, $2, 'manual', $3, $4)
+         RETURNING *`,
+        [employeeId, amount, note ?? null, createdBy ?? null]
+      );
+      res.status(201).json(rows[0]);
+      return;
+    }
+
     const tx = await earn({ employeeId, reason, amount, createdBy, note });
     res.status(201).json(tx);
   } catch (err) { next(err); }

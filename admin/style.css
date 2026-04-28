@@ -127,3 +127,11 @@ select.inline { width: auto; text-align: left; }
                   border-radius: 5px; font-size: 13px; text-align: right; }
 .lb-score-input:focus { border-color: var(--pink); outline: none; }
 .lb-score-input:disabled { opacity: 0.6; }
+
+.store-name-input, .store-address-input {
+  width: 100%; padding: 6px 10px; border: 1px solid var(--border);
+  border-radius: 5px; font-size: 13px; text-align: left;
+}
+.store-name-input:focus, .store-address-input:focus { border-color: var(--pink); outline: none; }
+.store-active-select { padding: 5px 8px; border: 1px solid var(--border);
+                       border-radius: 5px; font-size: 13px; background: var(--white); }

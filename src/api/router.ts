@@ -10,6 +10,8 @@ import exchangeRoutes  from './routes/exchanges';
 import leaderboardRoutes from './routes/leaderboard';
 import quizRoutes from './routes/quiz';
 import challengeRoutes from './routes/challenges';
+import cardRoutes from './routes/cards';
+import heroRoutes from './routes/heroes';
 
 const router = Router();
 
@@ -29,5 +31,7 @@ router.use('/exchanges',   exchangeRoutes);
 router.use('/leaderboard', leaderboardRoutes);
 router.use('/quiz',        quizRoutes);
 router.use('/challenges',  challengeRoutes);
+router.use('/cards',       cardRoutes);
+router.use('/heroes',      heroRoutes);
 
 export default router;
