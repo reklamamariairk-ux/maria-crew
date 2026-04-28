@@ -5,13 +5,53 @@ import { getBalance } from '../../services/coin.service';
 
 const router = Router();
 
+// GET /api/employees?storeId=&recent=1
+router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const storeId = req.query.storeId ? parseInt(String(req.query.storeId), 10) : null;
+    const recentOnly = String(req.query.recent ?? '') === '1';
+
+    const params: (number | string)[] = [];
+    const wheres: string[] = [];
+    if (storeId) { params.push(storeId); wheres.push(`e.store_id = $${params.length}`); }
+    if (recentOnly) { wheres.push(`e.last_seen_at IS NOT NULL`); }
+
+    const where = wheres.length ? `WHERE ${wheres.join(' AND ')}` : '';
+    const order = recentOnly
+      ? `ORDER BY e.last_seen_at DESC NULLS LAST, e.id DESC`
+      : `ORDER BY (e.last_seen_at IS NULL), e.last_seen_at DESC, e.name`;
+
+    const { rows } = await pool.query(
+      `SELECT e.id, e.name, e.role,
+              e.is_active         AS "isActive",
+              e.joined_at         AS "joinedAt",
+              e.telegram_id       AS "telegramId",
+              e.telegram_username AS "telegramUsername",
+              e.telegram_photo_url AS "telegramPhotoUrl",
+              e.last_seen_at      AS "lastSeenAt",
+              e.store_id          AS "storeId",
+              s.name              AS "storeName"
+       FROM employees e
+       LEFT JOIN stores s ON s.id = e.store_id
+       ${where}
+       ${order}`,
+      params
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
 // GET /api/employees/:id/summary
 router.get('/:id/summary', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = parseInt(req.params.id, 10);
     const { rows } = await pool.query(
-      `SELECT e.*, s.name AS "storeName" FROM employees e
-       JOIN stores s ON s.id = e.store_id WHERE e.id = $1`,
+      `SELECT e.id, e.name, e.role, e.is_active AS "isActive", e.joined_at AS "joinedAt",
+              e.telegram_id AS "telegramId", e.telegram_username AS "telegramUsername",
+              e.telegram_photo_url AS "telegramPhotoUrl", e.last_seen_at AS "lastSeenAt",
+              e.store_id AS "storeId", s.name AS "storeName"
+       FROM employees e JOIN stores s ON s.id = e.store_id
+       WHERE e.id = $1`,
       [id]
     );
     if (!rows[0]) { res.status(404).json({ error: 'Не найден' }); return; }

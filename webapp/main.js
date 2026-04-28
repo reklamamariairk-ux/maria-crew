@@ -162,8 +162,25 @@ function initTelegramContext() {
   tg = webApp;
   initData = tg.initData || '';
   hasTelegramUser = Boolean(tg.initDataUnsafe && tg.initDataUnsafe.user);
+  tgUser = (tg.initDataUnsafe && tg.initDataUnsafe.user) || null;
   try { tg.ready(); } catch {}
   try { tg.expand(); } catch {}
+}
+
+function escapeAttr(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function setAvatar(name) {
+  const el = document.getElementById('avatar-text');
+  if (!el) return;
+  const letter = (name || '?')[0].toUpperCase();
+  const photoUrl = (employee && employee.telegramPhotoUrl) || (tgUser && tgUser.photo_url) || '';
+  if (photoUrl) {
+    el.innerHTML = `<img src="${escapeAttr(photoUrl)}" alt="" referrerpolicy="no-referrer" onerror="this.parentNode.textContent='${escapeAttr(letter)}'">`;
+  } else {
+    el.textContent = letter;
+  }
 }
 
 function showToast(msg) {
@@ -217,7 +234,8 @@ async function init() {
   try {
     setLoadingHint('Подключаемся к Maria Crew...');
     const data = await authMiniApp();
-    tgUser = data.user || null;
+    // Не перетираем tgUser из initDataUnsafe — там лежит photo_url. Серверный user меньше.
+    if (!tgUser && data.user) tgUser = data.user;
 
     if (data.employee && data.stats) {
       employee = { ...data.employee, ...data.stats };
@@ -306,7 +324,7 @@ function showApp(stats) {
   document.getElementById('app').style.display = 'block';
 
   const name = employee.name || '?';
-  document.getElementById('avatar-text').textContent = name[0].toUpperCase();
+  setAvatar(name);
   document.getElementById('header-name').textContent = name;
   document.getElementById('header-store').textContent = '🏪 ' + (employee.storeName || '—');
 

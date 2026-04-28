@@ -33,11 +33,17 @@ function validateInitData(initData: string): Record<string, string> | null {
   return computed === hash ? Object.fromEntries(params.entries()) : null;
 }
 
-function parseTgUser(data: Record<string, string>): { id: number; username?: string; firstName: string } | null {
+function parseTgUser(data: Record<string, string>): { id: number; username?: string; firstName: string; lastName?: string; photoUrl?: string } | null {
   try {
     const u = JSON.parse(data.user ?? 'null');
     if (!u?.id) return null;
-    return { id: u.id, username: u.username?.toLowerCase(), firstName: u.first_name ?? 'Сотрудник' };
+    return {
+      id: u.id,
+      username: u.username?.toLowerCase(),
+      firstName: u.first_name ?? 'Сотрудник',
+      lastName: u.last_name,
+      photoUrl: u.photo_url,
+    };
   } catch { return null; }
 }
 
@@ -48,6 +54,7 @@ type Employee = {
   storeName: string;
   telegramId: number;
   telegramUsername?: string;
+  telegramPhotoUrl?: string;
   role: string;
 };
 
@@ -79,7 +86,8 @@ async function withDbRetry<T>(label: string, fn: () => Promise<T>, attempts = 2)
 async function getEmployee(telegramId: number): Promise<Employee | null> {
   const { rows } = await withDbRetry('getEmployee', () => pool.query<Employee>(
     `SELECT e.id, e.name, e.store_id AS "storeId", s.name AS "storeName",
-            e.telegram_id AS "telegramId", e.telegram_username AS "telegramUsername", e.role
+            e.telegram_id AS "telegramId", e.telegram_username AS "telegramUsername",
+            e.telegram_photo_url AS "telegramPhotoUrl", e.role
      FROM employees e JOIN stores s ON s.id = e.store_id
      WHERE e.telegram_id = $1 AND e.is_active = true`,
     [telegramId]
@@ -87,7 +95,25 @@ async function getEmployee(telegramId: number): Promise<Employee | null> {
   return rows[0] ?? null;
 }
 
-async function requireAuth(req: Request, res: Response): Promise<{ user: { id: number; username?: string; firstName: string }; employee: Employee } | null> {
+async function touchLastSeen(employeeId: number, photoUrl?: string): Promise<void> {
+  try {
+    if (photoUrl) {
+      await pool.query(
+        `UPDATE employees SET last_seen_at = NOW(), telegram_photo_url = $2 WHERE id = $1`,
+        [employeeId, photoUrl]
+      );
+    } else {
+      await pool.query(
+        `UPDATE employees SET last_seen_at = NOW() WHERE id = $1`,
+        [employeeId]
+      );
+    }
+  } catch (err) {
+    console.error('[webapp] touchLastSeen failed:', err instanceof Error ? err.message : err);
+  }
+}
+
+async function requireAuth(req: Request, res: Response): Promise<{ user: { id: number; username?: string; firstName: string; lastName?: string; photoUrl?: string }; employee: Employee } | null> {
   const raw = req.headers.authorization ?? '';
   const initData = raw.startsWith('tma ') ? raw.slice(4) : raw;
 
@@ -165,7 +191,13 @@ router.post('/auth', async (req: Request, res: Response, next: NextFunction): Pr
     let stats: Awaited<ReturnType<typeof getStats>> | null = null;
     try {
       employee = await getEmployee(user.id);
-      if (employee) stats = await getStats(employee.id);
+      if (employee) {
+        await touchLastSeen(employee.id, user.photoUrl);
+        if (user.photoUrl && employee.telegramPhotoUrl !== user.photoUrl) {
+          employee.telegramPhotoUrl = user.photoUrl;
+        }
+        stats = await getStats(employee.id);
+      }
     } catch (err) {
       console.error('[webapp] auth: employee preload failed:', err instanceof Error ? err.message : err);
     }
@@ -213,27 +245,34 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
     let employee = await getEmployee(user.id);
     if (!employee && user.username) {
       const { rows } = await withDbRetry('register-link-by-username', () => pool.query<{ id: number }>(
-        `UPDATE employees SET telegram_id = $1, store_id = $2
+        `UPDATE employees SET telegram_id = $1, store_id = $2, telegram_photo_url = $4
          WHERE LOWER(telegram_username) = $3 AND telegram_id IS NULL AND is_active = true
          RETURNING id`,
-        [user.id, storeId, user.username]
+        [user.id, storeId, user.username, user.photoUrl ?? null]
       ));
       if (rows[0]) employee = await getEmployee(user.id);
     }
 
     if (!employee) {
-      const name = user.firstName;
+      const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Сотрудник';
       const { rows } = await withDbRetry('register-insert-employee', () => pool.query<{ id: number }>(
-        `INSERT INTO employees (telegram_id, telegram_username, name, store_id, joined_at)
-         VALUES ($1, $2, $3, $4, CURRENT_DATE)
-         ON CONFLICT (telegram_id) DO UPDATE SET store_id = EXCLUDED.store_id
+        `INSERT INTO employees (telegram_id, telegram_username, telegram_photo_url, name, store_id, joined_at)
+         VALUES ($1, $2, $3, $4, $5, CURRENT_DATE)
+         ON CONFLICT (telegram_id) DO UPDATE SET
+           store_id = EXCLUDED.store_id,
+           telegram_photo_url = COALESCE(EXCLUDED.telegram_photo_url, employees.telegram_photo_url)
          RETURNING id`,
-        [user.id, user.username ?? null, name, storeId]
+        [user.id, user.username ?? null, user.photoUrl ?? null, fullName, storeId]
       ));
       employee = await getEmployee(user.id);
     }
 
     if (!employee) { res.status(500).json({ error: 'Ошибка регистрации' }); return; }
+
+    await touchLastSeen(employee.id, user.photoUrl);
+    if (user.photoUrl && employee.telegramPhotoUrl !== user.photoUrl) {
+      employee.telegramPhotoUrl = user.photoUrl;
+    }
 
     const stats = await getStats(employee.id);
     res.json({ employee, stats });
@@ -246,6 +285,7 @@ router.get('/me', async (req: Request, res: Response, next: NextFunction): Promi
     markWebappAuth('me:start');
     const auth = await requireAuth(req, res);
     if (!auth) return;
+    await touchLastSeen(auth.employee.id, auth.user.photoUrl);
     const stats = await getStats(auth.employee.id);
     markWebappAuth('me:ok', { userId: auth.user.id, employeeId: auth.employee.id });
     res.json({ ...auth.employee, ...stats });

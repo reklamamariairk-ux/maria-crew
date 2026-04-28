@@ -300,33 +300,65 @@ async function updateExchange(id, status) {
 }
 
 // ── Сотрудники ────────────────────────────────────────────────────────────────
+function renderEmployeeAvatar(s) {
+  if (s.telegramPhotoUrl) {
+    return `<img src="${esc(s.telegramPhotoUrl)}" alt="" class="emp-avatar" referrerpolicy="no-referrer" onerror="this.outerHTML='<span class=\\'emp-avatar emp-avatar-fallback\\'>${esc((s.name || '?')[0].toUpperCase())}</span>'">`;
+  }
+  const letter = (s.name || '?')[0].toUpperCase();
+  return `<span class="emp-avatar emp-avatar-fallback">${esc(letter)}</span>`;
+}
+
+function lastSeenLabel(iso) {
+  if (!iso) return '<span style="color:var(--gray)">не входил</span>';
+  const d = new Date(iso);
+  const diffMin = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (diffMin < 2)    return '<span style="color:var(--green);font-weight:700">сейчас</span>';
+  if (diffMin < 60)   return `${diffMin} мин назад`;
+  if (diffMin < 1440) return `${Math.floor(diffMin / 60)} ч назад`;
+  return formatDate(iso);
+}
+
 async function loadEmployees() {
-  if (!state.storeId) {
-    document.getElementById('employees-tbody').innerHTML = '<tr><td colspan="8" class="empty">Выберите точку</td></tr>';
+  const tbody = document.getElementById('employees-tbody');
+  tbody.innerHTML = '<tr><td colspan="9" class="empty">Загрузка...</td></tr>';
+
+  const path = state.storeId ? `/employees?storeId=${state.storeId}` : '/employees';
+  const list = await api('GET', path) || [];
+
+  if (list.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">${state.storeId ? 'Нет сотрудников на этой точке' : 'Нет сотрудников'}</td></tr>`;
     return;
   }
-  const emps = await api('GET', `/stores/${state.storeId}/employees`) || [];
 
-  const summaries = await Promise.all(emps.map(e => api('GET', `/employees/${e.id}/summary`)));
+  // Подгружаем сводки параллельно (карточки/монеты/герои)
+  const summaries = await Promise.all(list.map(e => api('GET', `/employees/${e.id}/summary`).catch(() => null)));
+  const summaryMap = {};
+  summaries.forEach((sum, i) => { if (sum) summaryMap[list[i].id] = sum; });
 
-  const tbody = document.getElementById('employees-tbody');
-  if (emps.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">Нет сотрудников</td></tr>'; return;
-  }
-  tbody.innerHTML = summaries.filter(Boolean).map(s => `<tr>
-    <td><strong>${esc(s.name)}</strong></td>
-    <td style="color:var(--gray);font-size:13px">${s.telegramUsername ? '@' + esc(s.telegramUsername) : '—'}</td>
-    <td>${roleLabel(s.role)}</td>
-    <td>${s.availableCards}</td>
-    <td>${s.coinBalance}</td>
-    <td>${s.uniqueHeroes}/12</td>
-    <td>${s.isActive ? '<span class="badge badge-approved">Активен</span>' : '<span class="badge badge-rejected">Неактивен</span>'}</td>
-    <td>
-      ${s.isActive
-        ? `<button class="btn btn-ghost" onclick="toggleEmployee(${s.id}, false)">Деактив.</button>`
-        : `<button class="btn btn-ghost" onclick="toggleEmployee(${s.id}, true)">Активировать</button>`}
-    </td>
-  </tr>`).join('');
+  tbody.innerHTML = list.map(e => {
+    const sum = summaryMap[e.id] || {};
+    const cards   = sum.availableCards ?? '—';
+    const coins   = sum.coinBalance    ?? '—';
+    const heroes  = sum.uniqueHeroes !== undefined ? `${sum.uniqueHeroes}/12` : '—';
+    const tgInfo = e.telegramUsername
+      ? '@' + esc(e.telegramUsername)
+      : (e.telegramId ? `id ${e.telegramId}` : '—');
+    return `<tr>
+      <td>${renderEmployeeAvatar(e)}</td>
+      <td><strong>${esc(e.name)}</strong>${state.storeId ? '' : `<div style="color:var(--gray);font-size:12px">${esc(e.storeName)}</div>`}</td>
+      <td style="color:var(--gray);font-size:13px">${tgInfo}</td>
+      <td>${roleLabel(e.role)}</td>
+      <td>${cards}</td>
+      <td>${coins}</td>
+      <td>${heroes}</td>
+      <td style="font-size:12px">${lastSeenLabel(e.lastSeenAt)}</td>
+      <td>
+        ${e.isActive
+          ? `<button class="btn btn-ghost" onclick="toggleEmployee(${e.id}, false)">Деактив.</button>`
+          : `<button class="btn btn-ghost" onclick="toggleEmployee(${e.id}, true)">Активировать</button>`}
+      </td>
+    </tr>`;
+  }).join('');
 }
 
 function showAddEmployee() {

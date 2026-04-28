@@ -108,3 +108,11 @@ select.inline { width: auto; text-align: left; }
 .empty { text-align: center; color: var(--gray); padding: 40px; }
 .hidden { display: none !important; }
 .mt16 { margin-top: 16px; }
+
+/* ── Employee avatars ── */
+.emp-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
+              display: inline-flex; align-items: center; justify-content: center;
+              background: var(--pink-light); color: var(--pink);
+              font-weight: 700; font-size: 14px; flex-shrink: 0; }
+.emp-avatar-fallback { background: linear-gradient(135deg, var(--pink), #ff6fbb);
+                       color: #fff; }
