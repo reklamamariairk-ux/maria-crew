@@ -179,7 +179,7 @@ async function saveMetrics() {
 
 async function processMonth() {
   if (!state.storeId) { toast('Выберите точку'); return; }
-  if (!confirm(`Обработать ${MONTH_NAMES[state.month]} ${state.year}?\n\nБудут рассчитаны MVP и начислены карточки. Сотрудники получат уведомления.`)) return;
+  if (!confirm(`Обработать ${MONTH_NAMES[state.month]} ${state.year}?\n\n⚠️ Внимание: автообработка ПЕРЕЗАПИШЕТ MVP-баллы и статус MVP, выставленные вручную во вкладке «Рейтинги», на значения, рассчитанные по метрикам.\n\nЕсли ты ставил баллы вручную — нажми «Отмена» и не запускай автообработку (карточки за метрики и MVP можно выдать вручную во вкладке «Карточки»).\n\nПродолжить автообработку?`)) return;
 
   const avgRatingScore = parseFloat(document.getElementById('store-rating-score').value) || 0;
   const revenuePercent = parseFloat(document.getElementById('store-revenue-percent').value) || 0;

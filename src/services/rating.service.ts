@@ -247,7 +247,9 @@ export async function processMonthAllStores(
 
 // ─── Запросы рейтингов ───────────────────────────────────────────────────────
 
-/** Рейтинг сотрудников одной точки за месяц */
+/** Рейтинг сотрудников одной точки за месяц.
+ *  Показываем всех активных сотрудников точки — даже если по ним ещё нет записи
+ *  в monthly_metrics. Это позволяет админу выставлять баллы вручную с нуля. */
 export async function getEmployeeLeaderboard(
   storeId: number,
   year: number,
@@ -255,43 +257,42 @@ export async function getEmployeeLeaderboard(
 ): Promise<EmployeeRanking[]> {
   const { rows } = await pool.query<EmployeeRanking>(
     `SELECT
-       mm.employee_id                                              AS "employeeId",
+       e.id                                              AS "employeeId",
        e.name,
-       mm.mvp_score                                               AS "mvpScore",
-       mm.is_mvp                                                  AS "isMvp",
-       COUNT(ec.id) FILTER (WHERE ec.is_spent = false)            AS "cardsCount",
-       COALESCE((
-         SELECT SUM(ct.amount) FROM coin_transactions ct
-         WHERE ct.employee_id = mm.employee_id
-       ), 0)                                                       AS "coinsBalance"
-     FROM monthly_metrics mm
-     JOIN employees e ON e.id = mm.employee_id
-     LEFT JOIN employee_cards ec ON ec.employee_id = mm.employee_id
-     WHERE mm.store_id = $1 AND mm.year = $2 AND mm.month = $3
-       AND e.is_active = true
-     GROUP BY mm.employee_id, e.name, mm.mvp_score, mm.is_mvp
-     ORDER BY mm.mvp_score DESC NULLS LAST`,
+       mm.mvp_score                                      AS "mvpScore",
+       COALESCE(mm.is_mvp, false)                        AS "isMvp",
+       (SELECT COUNT(*) FROM employee_cards ec
+          WHERE ec.employee_id = e.id AND ec.is_spent = false) AS "cardsCount",
+       COALESCE((SELECT SUM(amount) FROM coin_transactions ct
+          WHERE ct.employee_id = e.id), 0)              AS "coinsBalance"
+     FROM employees e
+     LEFT JOIN monthly_metrics mm
+       ON mm.employee_id = e.id AND mm.year = $2 AND mm.month = $3
+     WHERE e.store_id = $1 AND e.is_active = true
+     ORDER BY mm.mvp_score DESC NULLS LAST, e.name`,
     [storeId, year, month]
   );
   return rows;
 }
 
-/** Рейтинг всех точек за месяц */
+/** Рейтинг всех точек за месяц. Возвращает все активные точки,
+ *  даже без записи в store_monthly_stats — админ сможет ввести балл вручную. */
 export async function getStoreLeaderboard(
   year: number,
   month: number
 ): Promise<StoreRanking[]> {
   const { rows } = await pool.query<StoreRanking>(
     `SELECT
-       sms.store_id   AS "storeId",
-       s.name         AS "storeName",
-       sms.total_score AS "totalScore",
-       sms.rank,
-       sms.is_top     AS "isTop"
-     FROM store_monthly_stats sms
-     JOIN stores s ON s.id = sms.store_id
-     WHERE sms.year = $1 AND sms.month = $2
-     ORDER BY sms.rank ASC NULLS LAST`,
+       s.id                            AS "storeId",
+       s.name                          AS "storeName",
+       sms.total_score                 AS "totalScore",
+       sms.rank                        AS "rank",
+       COALESCE(sms.is_top, false)     AS "isTop"
+     FROM stores s
+     LEFT JOIN store_monthly_stats sms
+       ON sms.store_id = s.id AND sms.year = $1 AND sms.month = $2
+     WHERE s.is_active = true
+     ORDER BY sms.rank ASC NULLS LAST, s.name`,
     [year, month]
   );
   return rows;
