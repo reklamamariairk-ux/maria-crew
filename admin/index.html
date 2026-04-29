@@ -720,9 +720,41 @@
       <div class="page-head">
         <div>
           <h1 class="page-title">Герои коллекции</h1>
-          <p class="page-subtitle">16 карточек: 12 основных + 4 сезонных. Можно задать изображение и описание.</p>
+          <p class="page-subtitle">Карточки героев: основные и сезонные лимитки.</p>
+        </div>
+        <button class="btn btn-primary" onclick="document.getElementById('add-hero-form').classList.toggle('hidden')">
+          <i data-lucide="plus"></i> Добавить героя
+        </button>
+      </div>
+
+      <div id="add-hero-form" class="hidden card card-pad" style="margin-bottom:16px">
+        <p class="section-title">Новый герой</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+          <label>Имя <input type="text" id="new-hero-name" class="input" placeholder="Медовик"></label>
+          <label>Описание <input type="text" id="new-hero-desc" class="input" placeholder="Хранитель традиций"></label>
+          <label>Сортировка <input type="number" id="new-hero-order" class="input" value="0" min="0"></label>
+          <label>Тип
+            <select id="new-hero-type" class="input" onchange="document.getElementById('new-hero-season-wrap').style.display=this.value==='limited'?'block':'none'">
+              <option value="main">Основной</option>
+              <option value="limited">Лимитный (сезонный)</option>
+            </select>
+          </label>
+          <label id="new-hero-season-wrap" style="display:none">Сезон
+            <select id="new-hero-season" class="input">
+              <option value="spring">Весна</option>
+              <option value="summer">Лето</option>
+              <option value="autumn">Осень</option>
+              <option value="winter">Зима</option>
+            </select>
+          </label>
+          <input type="hidden" id="new-hero-limited">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-primary" onclick="addHero()"><i data-lucide="check"></i> Создать</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('add-hero-form').classList.add('hidden')">Отмена</button>
         </div>
       </div>
+
       <div class="table-wrap">
         <table>
           <thead><tr>
@@ -731,10 +763,10 @@
             <th style="width:100px">Тип</th>
             <th>Описание</th>
             <th>URL картинки</th>
-            <th style="width:120px">Действие</th>
+            <th style="width:140px">Действие</th>
           </tr></thead>
           <tbody id="heroes-tbody">
-            <tr><td colspan="6" class="empty">Загрузка...</td></tr>
+            <tr><td colspan="7" class="empty">Загрузка...</td></tr>
           </tbody>
         </table>
       </div>

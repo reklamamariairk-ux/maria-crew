@@ -17,6 +17,49 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
   } catch (err) { next(err); }
 });
 
+// POST /api/heroes — создать нового героя
+router.post('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { name, description, imageUrl, isLimited, season, sortOrder } = req.body as {
+      name: string; description?: string; imageUrl?: string;
+      isLimited?: boolean; season?: string; sortOrder?: number;
+    };
+    if (!name?.trim()) { res.status(400).json({ error: 'Имя обязательно' }); return; }
+
+    const { rows } = await pool.query(
+      `INSERT INTO heroes (name, description, image_url, is_limited, season, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, name, description, image_url AS "imageUrl",
+                 is_limited AS "isLimited", season, sort_order AS "sortOrder"`,
+      [name.trim(), description ?? null, imageUrl ?? null,
+       isLimited ?? false, season ?? null, sortOrder ?? 0]
+    );
+    res.status(201).json(rows[0]);
+    logAudit('hero_create', { heroId: rows[0].id, name }, req.ip).catch(() => {});
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/heroes/:id — удалить героя (только если нет карточек у сотрудников)
+router.delete('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Неверный id' }); return; }
+
+    const { rows: cards } = await pool.query(
+      `SELECT id FROM employee_cards WHERE hero_id = $1 LIMIT 1`, [id]
+    );
+    if (cards[0]) {
+      res.status(409).json({ error: 'Нельзя удалить: у сотрудников есть карточки этого героя' });
+      return;
+    }
+
+    const { rowCount } = await pool.query(`DELETE FROM heroes WHERE id = $1`, [id]);
+    if (!rowCount) { res.status(404).json({ error: 'Герой не найден' }); return; }
+    res.json({ ok: true });
+    logAudit('hero_delete', { heroId: id }, req.ip).catch(() => {});
+  } catch (err) { next(err); }
+});
+
 // PATCH /api/heroes/:id — обновить имя, описание и/или image_url
 router.patch('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {

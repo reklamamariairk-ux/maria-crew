@@ -1407,10 +1407,10 @@ async function addChallenge() {
 // ── Герои ─────────────────────────────────────────────────────────────────────
 async function loadHeroes() {
   const tbody = document.getElementById('heroes-tbody');
-  tbody.innerHTML = skeletonRows(6, 6);
+  tbody.innerHTML = skeletonRows(7, 6);
   const list = await api('GET', '/heroes') || [];
   if (list.length === 0) {
-    tbody.innerHTML = emptyRow(6, 'image', 'Нет героев');
+    tbody.innerHTML = emptyRow(7, 'image', 'Нет героев');
     renderIcons(); return;
   }
   tbody.innerHTML = list.map(h => `<tr data-hero-id="${h.id}">
@@ -1424,7 +1424,10 @@ async function loadHeroes() {
         ${state.cloudinary.enabled ? `<button class="btn btn-ghost btn-sm btn-icon" onclick="uploadHeroImage(${h.id})" title="Загрузить фото"><i data-lucide="upload"></i></button>` : ''}
       </div>
     </td>
-    <td><button class="btn btn-primary btn-sm btn-icon" onclick="saveHero(${h.id}, this)" title="Сохранить"><i data-lucide="save"></i></button></td>
+    <td style="display:flex;gap:4px">
+      <button class="btn btn-primary btn-sm btn-icon" onclick="saveHero(${h.id}, this)" title="Сохранить"><i data-lucide="save"></i></button>
+      <button class="btn btn-danger btn-sm btn-icon" onclick="deleteHero(${h.id})" title="Удалить"><i data-lucide="trash-2"></i></button>
+    </td>
   </tr>`).join('');
   renderIcons();
 }
@@ -1441,6 +1444,35 @@ async function saveHero(id, btn) {
     toast('✅ Герой обновлён');
   } catch (e) { toast('❌ ' + e.message); }
   finally { btn.disabled = false; btn.innerHTML = '<i data-lucide="save"></i>'; renderIcons(); }
+}
+
+async function deleteHero(id) {
+  if (!confirm('Удалить этого героя? Это действие нельзя отменить.')) return;
+  try {
+    await api('DELETE', `/heroes/${id}`);
+    toast('Герой удалён');
+    loadHeroes();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+async function addHero() {
+  const name        = document.getElementById('new-hero-name').value.trim();
+  const description = document.getElementById('new-hero-desc').value.trim() || null;
+  const isLimited   = document.getElementById('new-hero-type').value === 'limited';
+  const season      = isLimited ? (document.getElementById('new-hero-season').value || null) : null;
+  const sortOrder   = parseInt(document.getElementById('new-hero-order').value, 10) || 0;
+  if (!name) { toast('Введи имя героя'); return; }
+  try {
+    await api('POST', '/heroes', { name, description, isLimited, season, sortOrder });
+    toast('✅ Герой добавлен');
+    document.getElementById('add-hero-form').classList.add('hidden');
+    document.getElementById('new-hero-name').value = '';
+    document.getElementById('new-hero-desc').value = '';
+    document.getElementById('new-hero-type').value = 'main';
+    document.getElementById('new-hero-season-wrap').style.display = 'none';
+    document.getElementById('new-hero-order').value = '0';
+    loadHeroes();
+  } catch (e) { toast('❌ ' + e.message); }
 }
 
 function uploadHeroImage(heroId) {
