@@ -43,7 +43,7 @@ export async function doCheckin(employeeId: number): Promise<{ streakDay: number
 
   const { rows: prev } = await pool.query<{ streakDay: number }>(
     `SELECT streak_day AS "streakDay" FROM daily_checkins
-     WHERE employee_id = $1 AND checkin_date = $2`,
+     WHERE employee_id = $1 AND checkin_date = $2::date`,
     [employeeId, yesterday]
   );
 
@@ -65,7 +65,7 @@ export async function doCheckin(employeeId: number): Promise<{ streakDay: number
 
   if (!inserted[0]) {
     const { rows: todayRow } = await pool.query<{ streakDay: number }>(
-      `SELECT streak_day AS "streakDay" FROM daily_checkins WHERE employee_id = $1 AND checkin_date = $2`,
+      `SELECT streak_day AS "streakDay" FROM daily_checkins WHERE employee_id = $1 AND checkin_date = $2::date`,
       [employeeId, today]
     );
     return { streakDay: todayRow[0]?.streakDay ?? 0, coinsEarned: 0, alreadyCheckedIn: true };

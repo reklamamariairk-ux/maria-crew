@@ -38,8 +38,8 @@ export async function getActiveChallenge(employeeId: number): Promise<ActiveChal
      FROM seasonal_challenges sc
      LEFT JOIN heroes h ON h.id = sc.hero_id
      WHERE sc.is_active = true
-       AND sc.start_date <= $1
-       AND sc.end_date >= $1
+       AND sc.start_date <= $1::date
+       AND sc.end_date >= $1::date
      ORDER BY sc.start_date DESC
      LIMIT 1`,
     [today]

@@ -12,7 +12,7 @@ async function getOrCreateDailySession(employeeId: number): Promise<number[]> {
   const { rows: existing } = await pool.query<{ questionIds: number[] }>(
     `SELECT question_ids AS "questionIds"
      FROM quiz_sessions
-     WHERE employee_id = $1 AND quiz_date = $2`,
+     WHERE employee_id = $1 AND quiz_date = $2::date`,
     [employeeId, today]
   );
   if (existing[0]) return existing[0].questionIds;
@@ -55,7 +55,7 @@ async function getOrCreateDailySession(employeeId: number): Promise<number[]> {
   // Читаем финальное значение (на случай гонки)
   const { rows: final } = await pool.query<{ questionIds: number[] }>(
     `SELECT question_ids AS "questionIds"
-     FROM quiz_sessions WHERE employee_id = $1 AND quiz_date = $2`,
+     FROM quiz_sessions WHERE employee_id = $1 AND quiz_date = $2::date`,
     [employeeId, today]
   );
   return final[0]?.questionIds ?? questionIds;
