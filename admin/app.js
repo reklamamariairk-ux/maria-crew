@@ -1671,7 +1671,7 @@ async function loadDashboard() {
       </div>`
     ).join('');
   } else {
-    top3El.innerHTML = '<p class="text-muted">Пока нет рассчитанных MVP. Заполни метрики и нажми «Обработать месяц».</p>';
+    top3El.innerHTML = '<p class="text-muted">Заполни метрики во вкладке «Метрики» — топ-3 появится автоматически.</p>';
   }
 
   // Active challenges

@@ -1,5 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
+import { getMvpConfig } from '../../services/mvpConfig.service';
+import { calcMvpScore } from '../../services/rating.service';
 
 const router = Router();
 
@@ -17,23 +19,33 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
       pool.query<{ count: string }>(
         `SELECT COUNT(*)::text AS count FROM store_exchanges WHERE status = 'pending'`
       ),
-      pool.query<{ id: number; name: string; storeName: string; mvpScore: string; year: number; month: number }>(
+      // Берём метрики свежайшего месяца и считаем MVP «на лету», чтобы
+      // дашборд обновлялся сразу после ввода метрик, без «Обработать месяц».
+      pool.query<{
+        id: number; name: string; storeName: string; year: number; month: number;
+        mysteryShopperScore: string | null; reviewsCount: number;
+        checklistPercent: string | null; revenuePercent: string | null;
+      }>(
         `WITH latest AS (
            SELECT year, month FROM monthly_metrics
-           WHERE mvp_score IS NOT NULL
+           WHERE mystery_shopper_score IS NOT NULL
+              OR reviews_count > 0
+              OR checklist_percent IS NOT NULL
+              OR revenue_percent IS NOT NULL
            ORDER BY year DESC, month DESC
            LIMIT 1
          )
          SELECT e.id, e.name, s.name AS "storeName",
-                ROUND(mm.mvp_score, 2)::text AS "mvpScore",
-                mm.year, mm.month
+                mm.year, mm.month,
+                mm.mystery_shopper_score::text AS "mysteryShopperScore",
+                COALESCE(mm.reviews_count, 0) AS "reviewsCount",
+                mm.checklist_percent::text     AS "checklistPercent",
+                mm.revenue_percent::text       AS "revenuePercent"
          FROM monthly_metrics mm
          JOIN employees e ON e.id = mm.employee_id
          JOIN stores s ON s.id = e.store_id
          JOIN latest l ON l.year = mm.year AND l.month = mm.month
-         WHERE mm.mvp_score IS NOT NULL
-         ORDER BY mm.mvp_score DESC NULLS LAST
-         LIMIT 3`
+         WHERE e.is_active = true`
       ),
       pool.query<{ total: string }>(
         `SELECT COALESCE(SUM(amount), 0)::text AS total
@@ -57,17 +69,30 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
 
     const totalActiveEmps = parseInt(empResult.rows[0].count, 10);
 
-    const mvpPeriod = top3Result.rows[0]
-      ? { year: top3Result.rows[0].year, month: top3Result.rows[0].month }
+    // Расчёт MVP «на лету» из текущих метрик (без необходимости «Обработать месяц»)
+    const cfg = await getMvpConfig();
+    const scored = top3Result.rows.map(r => {
+      const score = calcMvpScore({
+        mysteryShopperScore: r.mysteryShopperScore !== null ? parseFloat(r.mysteryShopperScore) : null,
+        reviewsCount: Number(r.reviewsCount) || 0,
+        checklistPercent: r.checklistPercent !== null ? parseFloat(r.checklistPercent) : null,
+        revenuePercent: r.revenuePercent !== null ? parseFloat(r.revenuePercent) : null,
+      }, cfg);
+      return { id: r.id, name: r.name, storeName: r.storeName, mvpScore: score, year: r.year, month: r.month };
+    });
+    const top3Mvp = scored
+      .filter(s => s.mvpScore > 0)
+      .sort((a, b) => b.mvpScore - a.mvpScore)
+      .slice(0, 3);
+
+    const mvpPeriod = top3Mvp[0]
+      ? { year: top3Mvp[0].year, month: top3Mvp[0].month }
       : null;
 
     res.json({
       activeEmployees: totalActiveEmps,
       pendingExchanges: parseInt(pendingResult.rows[0].count, 10),
-      top3Mvp: top3Result.rows.map(r => ({
-        id: r.id, name: r.name, storeName: r.storeName,
-        mvpScore: parseFloat(r.mvpScore),
-      })),
+      top3Mvp: top3Mvp.map(({ year: _y, month: _m, ...rest }) => rest),
       mvpPeriod,
       coinsIssuedThisMonth: parseInt(coinsResult.rows[0].total, 10),
       activeChallenges: challengeResult.rows.map(c => ({
