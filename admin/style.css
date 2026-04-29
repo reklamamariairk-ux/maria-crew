@@ -114,19 +114,22 @@ aside.sidebar {
 }
 .sidebar-brand {
   display: flex; align-items: center; gap: 10px;
-  padding: 22px 22px 18px;
+  padding: 18px 20px 16px;
+  border-bottom: 1px solid var(--border-soft);
 }
-.sidebar-brand-logo {
-  width: 32px; height: 32px;
-  border-radius: var(--r-md);
-  background: linear-gradient(135deg, var(--pink), #ff6680);
-  display: flex; align-items: center; justify-content: center;
-  color: #fff; font-weight: 800; font-size: 14px;
-  box-shadow: var(--shadow-sm);
+.sidebar-logo {
+  height: 34px;
+  object-fit: contain;
+  object-position: left center;
+  flex-shrink: 0;
 }
-.sidebar-brand-text { display: flex; flex-direction: column; line-height: 1.1; }
-.sidebar-brand-text strong { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
-.sidebar-brand-text span { font-size: 11px; color: var(--text-3); font-weight: 500; }
+.sidebar-brand-badge {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--pink);
+  background: var(--pink-50); border: 1px solid var(--pink-100);
+  border-radius: 4px; padding: 2px 6px;
+  white-space: nowrap;
+}
 
 .sidebar-store {
   margin: 0 16px 16px;
@@ -631,8 +634,202 @@ table select {
 
 /* ── Dashboard grid responsive ──────────────────────────────────────── */
 .dashboard-grid { grid-template-columns: 1fr 1fr; }
-@media (max-width: 720px) { .dashboard-grid { grid-template-columns: 1fr; } }
 
 /* ── Notification form ───────────────────────────────────────────────── */
 .notify-result-ok  { color: var(--green, #22c55e); font-weight: 600; }
 .notify-result-err { color: var(--red, #ef4444); font-weight: 600; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   MOBILE — hidden elements on desktop
+   ══════════════════════════════════════════════════════════════════════ */
+.mobile-header    { display: none; }
+.sidebar-overlay  { display: none; }
+.sidebar-close-btn { display: none; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   MOBILE BREAKPOINT ≤ 768px
+   ══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* ── App layout: single column, header on top ── */
+  #app.visible {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Mobile top header ── */
+  .mobile-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    min-height: 54px;
+  }
+  .mobile-menu-btn {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: var(--r-md);
+    color: var(--text);
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s;
+  }
+  .mobile-menu-btn:hover { background: var(--bg); }
+  .mobile-menu-btn svg   { width: 22px; height: 22px; }
+  .mobile-logo {
+    height: 28px;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+  .mobile-store-sel {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  /* ── Sidebar becomes a fixed drawer ── */
+  aside.sidebar {
+    position: fixed;
+    top: 0; left: 0;
+    width: 280px;
+    height: 100%;
+    z-index: 300;
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: var(--shadow-lg);
+    overflow-y: auto;
+  }
+  aside.sidebar.open {
+    transform: translateX(0);
+  }
+
+  /* ── Backdrop overlay ── */
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 200;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s;
+  }
+  .sidebar-overlay.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* ── Close button inside sidebar ── */
+  .sidebar-close-btn {
+    display: flex;
+    align-items: center; justify-content: center;
+    margin-left: auto;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--r-md);
+    color: var(--text-3);
+    flex-shrink: 0;
+  }
+  .sidebar-close-btn:hover { background: var(--bg); color: var(--text); }
+  .sidebar-close-btn svg { width: 18px; height: 18px; }
+
+  /* ── Main content: full width ── */
+  .app-main {
+    width: 100%;
+    padding: 16px 14px;
+  }
+
+  /* ── Page header: stack vertically ── */
+  .page-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .page-head > *:last-child {
+    align-self: stretch;
+  }
+  .page-head .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* ── Stat cards: single column ── */
+  .dashboard-grid { grid-template-columns: 1fr; }
+  [style*="repeat(auto-fit"] {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+  }
+
+  /* ── Tables: horizontal scroll ── */
+  .table-wrap,
+  .card .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 -14px;
+    padding: 0 14px;
+  }
+  table {
+    min-width: 600px;
+  }
+
+  /* ── Cards and sections ── */
+  .card-pad { padding: 14px; }
+  .section-title { font-size: 13px; }
+
+  /* ── Form rows: wrap on mobile ── */
+  .form-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .form-row label,
+  .form-row input,
+  .form-row select {
+    width: 100% !important;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .form-row .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* ── Bulk action bar ── */
+  .bulk-bar {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px 14px;
+  }
+
+  /* ── Modals: full screen on mobile ── */
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .modal-box {
+    width: 100%;
+    max-width: 100%;
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  /* ── Login screen ── */
+  #login-screen { padding: 32px 20px; }
+  #login-screen input,
+  #login-screen button { width: 100%; max-width: 320px; }
+}

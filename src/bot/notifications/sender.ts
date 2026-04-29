@@ -167,6 +167,63 @@ export async function notifyTopStore(
   await Promise.allSettled(rows.map(r => send(r.telegramId, text)));
 }
 
+/** Уведомляет менеджеров точки и всех админов о новой заявке на обмен */
+export async function notifyAdminNewExchange(
+  employeeId: number,
+  exchangeId: number
+): Promise<void> {
+  const { rows } = await pool.query<{
+    employeeName: string;
+    storeName: string;
+    storeId: number;
+    prizeName: string;
+    cardsSpent: number;
+    coinsSpent: number;
+  }>(
+    `SELECT
+       e.name           AS "employeeName",
+       s.name           AS "storeName",
+       e.store_id       AS "storeId",
+       p.name           AS "prizeName",
+       se.cards_spent   AS "cardsSpent",
+       se.coins_spent   AS "coinsSpent"
+     FROM store_exchanges se
+     JOIN employees e  ON e.id  = se.employee_id
+     JOIN stores    s  ON s.id  = e.store_id
+     JOIN prizes    p  ON p.id  = se.prize_id
+     WHERE se.id = $1`,
+    [exchangeId]
+  );
+  if (!rows[0]) return;
+
+  const { employeeName, storeName, storeId, prizeName, cardsSpent, coinsSpent } = rows[0];
+
+  const costParts: string[] = [];
+  if (cardsSpent > 0) costParts.push(`${cardsSpent} карт.`);
+  if (coinsSpent  > 0) costParts.push(`${coinsSpent} монет`);
+  const cost = costParts.length ? ` (${costParts.join(' / ')})` : '';
+
+  const text =
+    `🔔 <b>Новая заявка на приз</b>\n` +
+    `Сотрудник: <b>${esc(employeeName)}</b>\n` +
+    `Точка: ${esc(storeName)}\n` +
+    `Приз: «${esc(prizeName)}»${cost}`;
+
+  const { rows: admins } = await pool.query<{ telegramId: string }>(
+    `SELECT DISTINCT telegram_id::text AS "telegramId"
+     FROM employees
+     WHERE is_active = true
+       AND telegram_id IS NOT NULL
+       AND (
+         (store_id = $1 AND role = 'manager')
+         OR role = 'admin'
+       )`,
+    [storeId]
+  );
+
+  await Promise.allSettled(admins.map(a => send(a.telegramId, text)));
+}
+
 /** Массовая рассылка произвольного сообщения списку telegram_id */
 export async function sendBroadcast(
   telegramIds: string[],

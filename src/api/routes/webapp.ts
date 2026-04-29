@@ -7,6 +7,7 @@ import { getStreak, doCheckin } from '../../services/streak.service';
 import { getActiveChallenge, checkAndCompleteChallenge } from '../../services/challenge.service';
 import { getAvailableCardCount } from '../../services/card.service';
 import { getPrizes, requestExchange } from '../../services/exchange.service';
+import { notifyAdminNewExchange } from '../../bot/notifications/sender';
 import { getEmployeeLeaderboard } from '../../services/rating.service';
 import { markWebappAuth } from '../../diagnostics';
 
@@ -449,6 +450,7 @@ router.post('/exchange', async (req: Request, res: Response, next: NextFunction)
 
     const exchange = await requestExchange(auth.employee.id, prizeId);
     res.status(201).json(exchange);
+    notifyAdminNewExchange(auth.employee.id, exchange.id).catch(() => {});
   } catch (err) { next(err); }
 });
 

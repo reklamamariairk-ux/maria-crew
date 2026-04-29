@@ -31,9 +31,24 @@ function emptyRow(cols, icon, text) {
 const MONTH_NAMES = ['', 'Январь','Февраль','Март','Апрель','Май','Июнь',
                      'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 const COIN_LABELS = {
-  checklist_day:'Чек-лист 100%', review:'Именной отзыв', cake_order:'Торт на заказ',
-  substitution:'Подмена коллеги', mentoring:'Наставничество', idea:'Идея внедрена',
-  spend:'Обмен в Store', manual:'Вручную', quiz:'Квиз', checkin:'Ежедневный вход',
+  // Начисления
+  checklist_day:       'Чек-лист 100%',
+  review:              'Именной отзыв',
+  cake_order:          'Торт на заказ',
+  substitution:        'Подмена коллеги',
+  mentoring:           'Наставничество',
+  idea:                'Идея внедрена',
+  training_meeting:    'Собрание по обучению',
+  knowledge_applied:   'Применение знаний',
+  quiz:                'Квиз',
+  checkin:             'Вход в приложение',
+  // Списания
+  bad_review:          'Отрицательный отзыв',
+  dirty_store:         'Нарушение стандартов чистоты',
+  training_resistance: 'Сопротивление обучению',
+  // Служебные
+  spend:               'Обмен в Store',
+  manual:              'Вручную',
 };
 
 // ── API ──────────────────────────────────────────────────────────────────────
@@ -103,11 +118,25 @@ function populateStoreSelectors() {
     sel.innerHTML = '<option value="">— Выбери точку —</option>'
       + state.stores.map(s => `<option value="${s.id}"${String(s.id) === current ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
   }
+  // Селектор точки в форме добавления сотрудника
+  const newEmpStore = document.getElementById('new-emp-store');
+  if (newEmpStore) {
+    newEmpStore.innerHTML = '<option value="">— Выбери точку —</option>'
+      + state.stores.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  }
+
+  // Мобильный селектор точки в хедере
+  const mobileStoreSel = document.getElementById('mobile-store-select');
+  if (mobileStoreSel) {
+    const current = state.storeId ? String(state.storeId) : '';
+    mobileStoreSel.innerHTML = '<option value="">— Все точки —</option>'
+      + state.stores.map(s => `<option value="${s.id}"${String(s.id) === current ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
+  }
 }
 
 function syncStoreSelectors() {
   const value = state.storeId ? String(state.storeId) : '';
-  ['store-select', 'metrics-store-picker', 'leaderboard-store-picker'].forEach(id => {
+  ['store-select', 'metrics-store-picker', 'leaderboard-store-picker', 'mobile-store-select'].forEach(id => {
     const sel = document.getElementById(id);
     if (sel) sel.value = value;
   });
@@ -117,6 +146,27 @@ function onStoreChange() {
   state.storeId = parseInt(document.getElementById('store-select').value) || null;
   syncStoreSelectors();
   refreshCurrentTab();
+}
+
+function onMobileStoreChange() {
+  state.storeId = parseInt(document.getElementById('mobile-store-select').value) || null;
+  syncStoreSelectors();
+  refreshCurrentTab();
+}
+
+// ── Mobile sidebar drawer ──────────────────────────────────────────────────
+
+function openSidebar() {
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebar-overlay').classList.add('visible');
+  document.body.style.overflow = 'hidden';
+  renderIcons();
+}
+
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('visible');
+  document.body.style.overflow = '';
 }
 
 function setStoreFromInline(value) {
@@ -131,6 +181,7 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
   document.getElementById(`tab-${tab}`).classList.remove('hidden');
   state.currentTab = tab;
+  closeSidebar();
   // Сбрасываем состояние аналитики при переходе со вкладки квиза
   if (tab !== 'quiz') {
     quizAnalyticsVisible = false;
@@ -435,6 +486,34 @@ function lastSeenLabel(iso) {
   return formatDate(iso);
 }
 
+function renderRoleSelect(empId, currentRole) {
+  const roles = [
+    { value: 'employee', label: 'Сотрудник' },
+    { value: 'manager',  label: 'Руководитель' },
+  ];
+  const opts = roles.map(r =>
+    `<option value="${r.value}"${r.value === currentRole ? ' selected' : ''}>${r.label}</option>`
+  ).join('');
+  return `<select class="emp-role-select" data-current="${currentRole}" onchange="changeEmployeeRole(${empId}, this)">${opts}</select>`;
+}
+
+async function changeEmployeeRole(id, selectEl) {
+  const newRole = selectEl.value;
+  const oldRole = selectEl.dataset.current;
+  if (newRole === oldRole) return;
+  selectEl.disabled = true;
+  try {
+    await api('PUT', `/employees/${id}`, { role: newRole });
+    selectEl.dataset.current = newRole;
+    toast(`✅ Роль изменена`);
+  } catch (e) {
+    selectEl.value = oldRole;
+    toast('❌ ' + e.message);
+  } finally {
+    selectEl.disabled = false;
+  }
+}
+
 function renderStoreSelect(empId, currentStoreId) {
   const opts = state.stores.map(s =>
     `<option value="${s.id}"${s.id === currentStoreId ? ' selected' : ''}>${esc(s.name)}</option>`
@@ -503,7 +582,7 @@ function renderEmployees() {
       <td><strong style="cursor:pointer;color:var(--pink)" onclick="showEmployeeModal(${e.id})">${esc(e.name)}</strong></td>
       <td style="color:var(--muted);font-size:12px">${tgInfo}</td>
       <td>${renderStoreSelect(e.id, e.storeId)}</td>
-      <td>${roleLabel(e.role)}</td>
+      <td>${renderRoleSelect(e.id, e.role)}</td>
       <td>${cards}</td>
       <td>${coins}</td>
       <td>${heroes}</td>
@@ -558,6 +637,8 @@ function onBulkReasonChange(selectEl) {
   document.getElementById('bulk-coin-amount').style.display = isManual ? 'inline-block' : 'none';
 }
 
+const DEDUCTION_REASONS = new Set(['bad_review', 'dirty_store', 'training_resistance']);
+
 async function bulkAwardCoins() {
   if (selectedEmployeeIds.size === 0) return;
   const reason = document.getElementById('bulk-coin-reason').value;
@@ -567,13 +648,17 @@ async function bulkAwardCoins() {
   if (isManual && (isNaN(amount) || amount === 0)) { toast('Укажи сумму (можно отрицательную)'); return; }
 
   const ids = [...selectedEmployeeIds];
-  if (!confirm(`Применить начисление к ${ids.length} сотрудникам?`)) return;
+  const label = COIN_LABELS[reason] || reason;
+  const isDeduction = DEDUCTION_REASONS.has(reason) || (isManual && amount < 0);
+  const verb = isDeduction ? 'Списать монеты' : 'Начислить монеты';
+  if (!confirm(`${verb} (${label}) для ${ids.length} сотрудников?`)) return;
 
   try {
     const result = await api('POST', '/employees/bulk-coins', {
       employeeIds: ids, reason, amount,
     });
-    toast(`✅ Начислено ${result.succeeded} из ${result.processed}`);
+    const action = isDeduction ? 'Списано' : 'Начислено';
+    toast(`✅ ${action} ${result.succeeded} из ${result.processed}`);
     clearEmpSelection();
     loadEmployees();
   } catch (e) { toast('❌ ' + e.message); }
@@ -623,13 +708,16 @@ async function addEmployee() {
   const name = document.getElementById('new-emp-name').value.trim();
   const role = document.getElementById('new-emp-role').value;
   const telegramUsername = document.getElementById('new-emp-username').value.trim();
-  if (!name || !state.storeId) { toast('Введите имя и выберите точку'); return; }
+  const storeId = parseInt(document.getElementById('new-emp-store').value) || null;
+  if (!name) { toast('Введите имя сотрудника'); return; }
+  if (!storeId) { toast('Выберите точку'); return; }
   try {
-    await api('POST', '/employees', { name, storeId: state.storeId, role, telegramUsername: telegramUsername || undefined });
+    await api('POST', '/employees', { name, storeId, role, telegramUsername: telegramUsername || undefined });
     toast('✅ Сотрудник добавлен');
     document.getElementById('add-employee-form').classList.add('hidden');
     document.getElementById('new-emp-name').value = '';
     document.getElementById('new-emp-username').value = '';
+    document.getElementById('new-emp-store').value = '';
     loadEmployees();
   } catch (e) { toast('❌ ' + e.message); }
 }

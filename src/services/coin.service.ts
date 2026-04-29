@@ -1,16 +1,23 @@
 import { pool } from '../db/pool';
 import type { CoinReason, CoinTransaction } from '../types';
 
-// Фиксированные суммы начисления по причинам (из документа)
+// Суммы начисления/списания по причинам (Maria Crew v3.0)
 export const COIN_AMOUNTS: Record<Exclude<CoinReason, 'spend' | 'manual'>, number> = {
-  checklist_day: 1,
-  review:        3,
-  cake_order:    2,
-  substitution:  5,
-  mentoring:     10,
-  idea:          5,
-  quiz:          2,
-  checkin:       5,
+  // Начисления
+  checklist_day:       1,
+  review:              3,
+  cake_order:          2,   // устарело, оставлено для обратной совместимости
+  substitution:        5,
+  mentoring:           10,
+  idea:                5,
+  training_meeting:    5,
+  knowledge_applied:   3,
+  quiz:                2,
+  checkin:             3,
+  // Списания (отрицательные)
+  bad_review:          -5,
+  dirty_store:         -5,
+  training_resistance: -3,
 };
 
 /** Текущий баланс монет сотрудника */
@@ -31,9 +38,10 @@ export async function canAfford(employeeId: number, amount: number): Promise<boo
 }
 
 /**
- * Начисляет монеты сотруднику.
+ * Начисляет или списывает монеты сотруднику.
  * Для стандартных причин сумма берётся из COIN_AMOUNTS.
  * Для 'manual' сумму нужно передать явно.
+ * Баланс не уходит ниже 0: если списание превышает баланс, списывается ровно столько, сколько есть.
  */
 export async function earn(params: {
   employeeId: number;
@@ -45,12 +53,23 @@ export async function earn(params: {
 }): Promise<CoinTransaction> {
   const { employeeId, reason, createdBy, refId, note } = params;
 
-  const amount =
+  let amount =
     params.amount !== undefined
       ? params.amount
       : COIN_AMOUNTS[reason as keyof typeof COIN_AMOUNTS];
 
-  if (amount <= 0) throw new Error('Сумма начисления должна быть положительной');
+  if (amount === 0) throw new Error('Сумма не может быть равна нулю');
+
+  // Для отрицательных операций: баланс не уходит ниже 0
+  if (amount < 0) {
+    const balance = await getBalance(employeeId);
+    if (balance === 0) {
+      // Списывать нечего — операция не создаётся
+      return { id: 0, employeeId, amount: 0, reason, refId: refId ?? null,
+               note: note ?? null, createdBy: createdBy ?? null, createdAt: new Date() } as CoinTransaction;
+    }
+    amount = -Math.min(Math.abs(amount), balance);
+  }
 
   const { rows } = await pool.query<CoinTransaction>(
     `INSERT INTO coin_transactions (employee_id, amount, reason, ref_id, note, created_by)

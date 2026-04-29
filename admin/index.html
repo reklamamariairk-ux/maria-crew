@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Maria Crew · Admin</title>
+  <link rel="icon" type="image/png" href="/webapp/assets/logo-light.png">
   <link rel="stylesheet" href="style.css">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 </head>
@@ -21,14 +22,28 @@
 <!-- ── App ───────────────────────────────────────────────────────────── -->
 <div id="app">
 
+  <!-- Mobile header (visible only on small screens) -->
+  <header class="mobile-header">
+    <button class="mobile-menu-btn" onclick="openSidebar()" aria-label="Меню">
+      <i data-lucide="menu"></i>
+    </button>
+    <img src="/webapp/assets/logo-light.png" alt="Мария" class="mobile-logo">
+    <select id="mobile-store-select" onchange="onMobileStoreChange()" class="mobile-store-sel">
+      <option value="">— Все точки —</option>
+    </select>
+  </header>
+
+  <!-- Sidebar overlay (mobile backdrop) -->
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
   <!-- Sidebar -->
-  <aside class="sidebar">
+  <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
-      <div class="sidebar-brand-logo">M</div>
-      <div class="sidebar-brand-text">
-        <strong>Maria Crew</strong>
-        <span>Админ-панель</span>
-      </div>
+      <img src="/webapp/assets/logo-light.png" alt="Кондитерская Мария" class="sidebar-logo">
+      <span class="sidebar-brand-badge">Admin</span>
+      <button class="sidebar-close-btn" onclick="closeSidebar()" aria-label="Закрыть">
+        <i data-lucide="x"></i>
+      </button>
     </div>
 
     <div class="sidebar-store">
@@ -374,6 +389,11 @@
         <p class="section-title">Новый сотрудник</p>
         <div class="form-row" style="margin-bottom:0">
           <label>Имя <input type="text" id="new-emp-name" style="width:200px"></label>
+          <label>Точка
+            <select id="new-emp-store" style="width:180px">
+              <option value="">— Выбери точку —</option>
+            </select>
+          </label>
           <label>@username <input type="text" id="new-emp-username" placeholder="ivan_ivanov" style="width:160px"></label>
           <label>Роль
             <select id="new-emp-role" style="width:140px">
@@ -390,14 +410,22 @@
         <span class="bulk-bar-count" id="emp-bulk-count">0</span>
         <span class="text-muted" style="font-size:13px">выделено</span>
         <select id="bulk-coin-reason" class="input" style="font-size:13px;padding:7px 10px" onchange="onBulkReasonChange(this)">
-          <option value="">Начислить: причина</option>
-          <option value="checklist_day">Чек-лист (+1)</option>
-          <option value="review">Отзыв (+3)</option>
-          <option value="cake_order">Торт (+2)</option>
-          <option value="substitution">Подмена (+5)</option>
-          <option value="mentoring">Наставничество (+10)</option>
-          <option value="idea">Идея (+5)</option>
-          <option value="manual">Вручную (со своей суммой)</option>
+          <option value="">— Причина —</option>
+          <optgroup label="Начисления">
+            <option value="checklist_day">Чек-лист 100% (+1)</option>
+            <option value="review">Именной отзыв (+3)</option>
+            <option value="substitution">Подмена коллеги (+5)</option>
+            <option value="mentoring">Наставничество (+10)</option>
+            <option value="idea">Идея внедрена (+5)</option>
+            <option value="training_meeting">Собрание по обучению (+5)</option>
+            <option value="knowledge_applied">Применение знаний (+3)</option>
+            <option value="manual">Вручную (своя сумма)</option>
+          </optgroup>
+          <optgroup label="Списания">
+            <option value="bad_review">Отрицательный отзыв (−5)</option>
+            <option value="dirty_store">Нарушение стандартов (−5)</option>
+            <option value="training_resistance">Сопротивление обучению (−3)</option>
+          </optgroup>
         </select>
         <input type="number" id="bulk-coin-amount" value="1" style="width:80px;display:none" placeholder="сумма">
         <button class="btn btn-primary btn-sm" onclick="bulkAwardCoins()"><i data-lucide="coins"></i> Начислить</button>

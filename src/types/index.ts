@@ -10,19 +10,25 @@ export type CardSource =
   | 'mvp'
   | 'team_bonus'
   | 'seasonal'
+  | 'certification'      // прохождение аттестации
   | 'manual';
 
 export type CoinReason =
-  | 'checklist_day'
-  | 'review'
-  | 'cake_order'
-  | 'substitution'
-  | 'mentoring'
-  | 'idea'
-  | 'spend'
-  | 'manual'
-  | 'quiz'
-  | 'checkin';
+  | 'checklist_day'      // чек-лист 100% за день (+1)
+  | 'review'             // именной положительный отзыв (+3)
+  | 'cake_order'         // торт на заказ (устарело, оставлено для истории)
+  | 'substitution'       // подмена коллеги на другой точке (+5)
+  | 'mentoring'          // наставничество (+10)
+  | 'idea'               // идея, которую внедрили (+5)
+  | 'training_meeting'   // участие в собрании по обучению (+5)
+  | 'knowledge_applied'  // тренер подтвердил применение знаний (+3)
+  | 'bad_review'         // отрицательный отзыв гостя (-5)
+  | 'dirty_store'        // не пройден чек-лист / грязно на точке (-5)
+  | 'training_resistance'// сопротивление обучению (-3)
+  | 'spend'              // списание при обмене в Store
+  | 'manual'             // ручное начисление/корректировка
+  | 'quiz'               // правильный ответ в квизе (+2)
+  | 'checkin';           // ежедневный вход в приложение (+3)
 
 export type PrizeType =
   | 'cake'
