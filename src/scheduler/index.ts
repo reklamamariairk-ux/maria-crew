@@ -66,13 +66,17 @@ export function initScheduler(bot: Bot<BotContext>): void {
   // ── 4. Render keep-alive — пинг каждые 13 минут ──────────────────────────
   // Render free tier засыпает через 15 мин без трафика
   cron.schedule('*/13 * * * *', () => {
-    const url = `${serviceUrl}/api/health`;
-    const client = url.startsWith('https') ? https : http;
-    client.get(url, (res) => {
-      if (res.statusCode !== 200) console.warn('[keep-alive] health вернул', res.statusCode);
-    }).on('error', (err) => {
-      console.warn('[keep-alive] ping ошибка:', err.message);
-    });
+    try {
+      const url = `${serviceUrl}/api/health`;
+      const client = url.startsWith('https') ? https : http;
+      client.get(url, (res) => {
+        if (res.statusCode !== 200) console.warn('[keep-alive] health вернул', res.statusCode);
+      }).on('error', (err) => {
+        console.warn('[keep-alive] ping ошибка:', err.message);
+      });
+    } catch (err) {
+      console.error('[keep-alive] неожиданная ошибка:', err);
+    }
   });
 
   // ── 5. Neon keep-alive — запрос к БД каждую минуту ─────────────────────

@@ -352,9 +352,10 @@ router.get('/rating', async (req: Request, res: Response, next: NextFunction): P
     const ranking = await getEmployeeLeaderboard(
       auth.employee.storeId, now.getFullYear(), now.getMonth() + 1
     );
-    const myRank = ranking.findIndex(r => r.employeeId === auth.employee.id) + 1;
+    const idx = ranking.findIndex(r => r.employeeId === auth.employee.id);
+    const myRank = idx >= 0 ? idx + 1 : null;
 
-    res.json({ ranking, myRank: myRank || null });
+    res.json({ ranking, myRank });
   } catch (err) { next(err); }
 });
 

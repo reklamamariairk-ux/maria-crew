@@ -65,15 +65,13 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
 router.get('/engagement', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const days = Math.min(Math.max(parseInt(String(req.query.days ?? '30'), 10) || 30, 1), 90);
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - days);
     const { rows } = await pool.query<{ date: string; uniqueUsers: string }>(
       `SELECT checkin_date::text AS date, COUNT(DISTINCT employee_id)::text AS "uniqueUsers"
        FROM daily_checkins
-       WHERE checkin_date >= $1
+       WHERE checkin_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Irkutsk')::date - $1
        GROUP BY checkin_date
        ORDER BY checkin_date ASC`,
-      [cutoff.toISOString().slice(0, 10)]
+      [days]
     );
     res.json(rows.map(r => ({ date: r.date, uniqueUsers: parseInt(r.uniqueUsers, 10) })));
   } catch (err) { next(err); }
@@ -137,6 +135,8 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     const username = telegramUsername !== undefined
       ? (telegramUsername ? telegramUsername.replace(/^@/, '').toLowerCase() : null)
       : undefined;
+    const empId = parseInt(req.params.id, 10);
+    if (isNaN(empId)) { res.status(400).json({ error: 'Неверный id' }); return; }
     const { rows } = await pool.query(
       `UPDATE employees SET
          name              = COALESCE($1, name),
@@ -145,7 +145,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
          is_active         = COALESCE($4, is_active),
          telegram_username = COALESCE($5, telegram_username)
        WHERE id = $6 RETURNING *`,
-      [name ?? null, storeId ?? null, role ?? null, isActive ?? null, username ?? null, req.params.id]
+      [name ?? null, storeId ?? null, role ?? null, isActive ?? null, username ?? null, empId]
     );
     if (!rows[0]) { res.status(404).json({ error: 'Не найден' }); return; }
     res.json(rows[0]);

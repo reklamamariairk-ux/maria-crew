@@ -15,9 +15,9 @@ export async function weeklyDigest(
 
   // Топ-5 по карточкам в текущем месяце
   const { rows: topCards } = await pool.query<{
-    name: string; storeName: string; cards: string;
+    name: string; storeName: string; cards: number;
   }>(
-    `SELECT e.name, s.name AS "storeName", COUNT(ec.id) AS cards
+    `SELECT e.name, s.name AS "storeName", COUNT(ec.id)::int AS cards
      FROM employee_cards ec
      JOIN employees e ON e.id = ec.employee_id
      JOIN stores s ON s.id = e.store_id
@@ -30,10 +30,10 @@ export async function weeklyDigest(
 
   // Топ-5 по монетам за месяц
   const { rows: topCoins } = await pool.query<{
-    name: string; storeName: string; earned: string;
+    name: string; storeName: string; earned: number;
   }>(
     `SELECT e.name, s.name AS "storeName",
-            SUM(ct.amount) FILTER (WHERE ct.amount > 0) AS earned
+            SUM(ct.amount) FILTER (WHERE ct.amount > 0)::int AS earned
      FROM coin_transactions ct
      JOIN employees e ON e.id = ct.employee_id
      JOIN stores s ON s.id = e.store_id

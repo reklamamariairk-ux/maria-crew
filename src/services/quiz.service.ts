@@ -110,9 +110,9 @@ export async function getDailyQuestions(employeeId: number): Promise<{ questions
     .filter((q): q is QuizQuestion => q !== undefined);
 
   return {
-    questions: ordered.map(q => ({ ...q, correctIndex: -1 })),
+    questions: ordered.map(q => ({ ...q, correctIndex: -1 })) as QuizQuestion[],
     alreadyDone: false,
-  } as unknown as { questions: QuizQuestion[]; alreadyDone: boolean };
+  };
 }
 
 export async function getDailyQuestionsWithAnswers(employeeId: number): Promise<{ questions: QuizQuestion[]; alreadyDone: boolean }> {
