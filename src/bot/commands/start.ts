@@ -11,8 +11,12 @@ async function maybeAskPhone(ctx: BotContext, employeeId: number): Promise<void>
   if (rows[0]?.phone) return;
   const kb = new Keyboard().requestContact('📱 Поделиться номером').oneTime().resized();
   await ctx.reply(
-    'Чтобы руководители могли быстрее с тобой связаться — поделись номером телефона:',
-    { reply_markup: kb }
+    '📱 <b>Нужен твой номер телефона</b>\n\n' +
+    'Это нужно, чтобы начислять подарки и премии напрямую в <b>1С</b> на твой профиль ' +
+    'сотрудника. Без номера система не сможет связать твою активность в Maria Crew с ' +
+    'учётной записью в 1С.\n\n' +
+    'Нажми кнопку ниже — Telegram сам подставит твой номер, ничего вводить не нужно.',
+    { parse_mode: 'HTML', reply_markup: kb }
   );
 }
 

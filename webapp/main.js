@@ -355,19 +355,41 @@ function maybeRequestPhoneOnce() {
   if (!employee || employee.phone) return;
   if (sessionStorage.getItem('phone_asked') === '1') return;
   if (!tg || typeof tg.requestContact !== 'function') return;
-  // Маленькая задержка, чтобы интерфейс успел отрисоваться
+  sessionStorage.setItem('phone_asked', '1');
+
+  const explanation =
+    'Нужен твой номер телефона, чтобы начислять подарки и премии ' +
+    'напрямую в 1С на твой профиль сотрудника.\n\n' +
+    'Без номера система не сможет связать твою активность в Maria Crew ' +
+    'с учётной записью в 1С.\n\nПоделиться номером?';
+
+  // Сначала показываем предупреждение и только при согласии запрашиваем контакт.
   setTimeout(() => {
-    sessionStorage.setItem('phone_asked', '1');
-    try {
-      tg.requestContact((shared) => {
-        if (shared) {
-          showToast('Спасибо! Номер сохранён.');
-          // Бот получит контакт и сохранит сам — обновим объект employee
-          employee.phone = '+saved';
-        }
-      });
-    } catch {
-      // requestContact доступен не везде — игнорируем ошибки
+    const askContact = () => {
+      try {
+        tg.requestContact((shared) => {
+          if (shared) {
+            showToast('Спасибо! Номер сохранён.');
+            employee.phone = '+saved';
+          }
+        });
+      } catch { /* requestContact доступен не везде */ }
+    };
+
+    if (typeof tg.showConfirm === 'function') {
+      tg.showConfirm(explanation, (ok) => { if (ok) askContact(); });
+    } else if (typeof tg.showPopup === 'function') {
+      tg.showPopup({
+        title: 'Номер для 1С',
+        message: explanation,
+        buttons: [
+          { id: 'yes', type: 'default', text: 'Поделиться' },
+          { id: 'no',  type: 'cancel'  },
+        ],
+      }, (id) => { if (id === 'yes') askContact(); });
+    } else {
+      // Фоллбэк для старых клиентов Telegram
+      if (window.confirm(explanation)) askContact();
     }
   }, 1500);
 }
