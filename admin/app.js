@@ -346,11 +346,6 @@ async function loadCoinEmployees() {
     sel.appendChild(opt);
   });
   sel.onchange = loadCoinHistory;
-
-  // показывать/скрывать поле суммы для manual
-  document.getElementById('coin-reason').onchange = function() {
-    document.getElementById('manual-amount-label').classList.toggle('hidden', this.value !== 'manual');
-  };
 }
 
 async function loadCoinHistory() {
@@ -385,19 +380,17 @@ async function loadCoinHistory() {
 
 async function awardCoins() {
   const employeeId = parseInt(document.getElementById('coin-employee').value);
-  const reason = document.getElementById('coin-reason').value;
+  const amount = parseInt(document.getElementById('coin-amount').value, 10);
   const note = document.getElementById('coin-note').value;
-  const isManual = reason === 'manual';
-  const amount = isManual ? parseInt(document.getElementById('coin-amount').value) : undefined;
 
   if (!employeeId) { toast('Выберите сотрудника'); return; }
-  if (isManual && (isNaN(amount) || amount === 0)) { toast('Укажи сумму (можно с минусом для списания)'); return; }
+  if (isNaN(amount) || amount === 0) { toast('Выбери количество'); return; }
 
   try {
-    await api('POST', '/coins/award', { employeeId, reason, amount, note: note || undefined });
-    toast(amount && amount < 0 ? '✅ Монеты списаны' : '✅ Монеты начислены');
+    await api('POST', '/coins/award', { employeeId, reason: 'manual', amount, note: note || undefined });
+    toast(amount < 0 ? '✅ Монеты списаны' : '✅ Монеты начислены');
     document.getElementById('coin-note').value = '';
-    if (isManual) document.getElementById('coin-amount').value = '1';
+    document.getElementById('coin-amount').value = '1';
     loadCoinHistory();
   } catch (e) { toast('❌ ' + e.message); }
 }

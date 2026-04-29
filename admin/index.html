@@ -247,28 +247,38 @@
               <option value="">— выбери —</option>
             </select>
           </label>
-          <label>Причина
-            <select id="coin-reason" style="width:200px">
-              <option value="checklist_day">Чек-лист 100% за день (+1)</option>
-              <option value="review">Именной отзыв гостя (+3)</option>
-              <option value="cake_order">Торт на заказ (+2)</option>
-              <option value="substitution">Подмена коллеги (+5)</option>
-              <option value="mentoring">Наставничество (+10)</option>
-              <option value="idea">Идея внедрена (+5)</option>
-              <option value="manual">Вручную (своя сумма / минус)</option>
+          <label>Количество
+            <select id="coin-amount" style="width:120px">
+              <option value="-10">−10</option>
+              <option value="-9">−9</option>
+              <option value="-8">−8</option>
+              <option value="-7">−7</option>
+              <option value="-6">−6</option>
+              <option value="-5">−5</option>
+              <option value="-4">−4</option>
+              <option value="-3">−3</option>
+              <option value="-2">−2</option>
+              <option value="-1">−1</option>
+              <option value="1" selected>+1</option>
+              <option value="2">+2</option>
+              <option value="3">+3</option>
+              <option value="4">+4</option>
+              <option value="5">+5</option>
+              <option value="6">+6</option>
+              <option value="7">+7</option>
+              <option value="8">+8</option>
+              <option value="9">+9</option>
+              <option value="10">+10</option>
             </select>
           </label>
-          <label id="manual-amount-label" class="hidden">Сумма
-            <input type="number" id="coin-amount" value="1" style="width:80px">
-          </label>
           <label>Примечание
-            <input type="text" id="coin-note" placeholder="необязательно" style="width:200px">
+            <input type="text" id="coin-note" placeholder="необязательно" style="width:240px">
           </label>
           <button class="btn btn-primary" onclick="awardCoins()"><i data-lucide="check"></i> Применить</button>
         </div>
         <p class="text-muted" style="margin-top:6px">
           <i data-lucide="info" style="width:12px;height:12px"></i>
-          Для списания — выбери «Вручную» и введи отрицательную сумму (например, −5).
+          Положительное значение — начисление, отрицательное — списание. Используй примечание, чтобы указать причину.
         </p>
       </div>
 
