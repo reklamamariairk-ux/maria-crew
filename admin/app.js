@@ -1409,7 +1409,7 @@ async function loadHeroes() {
   }
   tbody.innerHTML = list.map(h => `<tr data-hero-id="${h.id}">
     <td style="color:var(--muted);font-size:12px">${h.id}</td>
-    <td><strong>${esc(h.name)}</strong></td>
+    <td><input type="text" class="hero-name-input" value="${esc(h.name)}" style="width:120px;font-weight:600"></td>
     <td>${h.isLimited ? '<span class="badge badge-mvp">Лимит</span>' : '<span class="badge badge-neutral">Основной</span>'}</td>
     <td><input type="text" class="hero-desc-input" value="${esc(h.description ?? '')}" placeholder="..." style="width:100%"></td>
     <td><input type="text" class="hero-img-input" value="${esc(h.imageUrl ?? '')}" placeholder="https://..." style="width:100%"></td>
@@ -1420,11 +1420,13 @@ async function loadHeroes() {
 
 async function saveHero(id, btn) {
   const row = document.querySelector(`tr[data-hero-id="${id}"]`);
+  const name        = row.querySelector('.hero-name-input').value.trim();
   const description = row.querySelector('.hero-desc-input').value.trim() || null;
   const imageUrl    = row.querySelector('.hero-img-input').value.trim() || null;
+  if (!name) { toast('Имя не может быть пустым'); return; }
   btn.disabled = true; btn.textContent = '⏳';
   try {
-    await api('PATCH', `/heroes/${id}`, { description, imageUrl });
+    await api('PATCH', `/heroes/${id}`, { name, description, imageUrl });
     toast('✅ Герой обновлён');
   } catch (e) { toast('❌ ' + e.message); }
   finally { btn.disabled = false; btn.innerHTML = '<i data-lucide="save"></i>'; renderIcons(); }

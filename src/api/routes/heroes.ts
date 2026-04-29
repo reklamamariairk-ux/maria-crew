@@ -17,17 +17,22 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
   } catch (err) { next(err); }
 });
 
-// PATCH /api/heroes/:id — обновить описание и/или image_url
+// PATCH /api/heroes/:id — обновить имя, описание и/или image_url
 router.patch('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = parseInt(req.params.id, 10);
-    const { imageUrl, description } = req.body as { imageUrl?: string | null; description?: string | null };
+    const { name, imageUrl, description } = req.body as {
+      name?: string; imageUrl?: string | null; description?: string | null;
+    };
 
     const sets: string[] = [];
     const vals: (string | null | number)[] = [];
 
+    if (name !== undefined && name.trim()) {
+      vals.push(name.trim());
+      sets.push(`name = $${vals.length}`);
+    }
     if (imageUrl !== undefined) {
-      // Пустая строка → NULL (нет картинки)
       vals.push(imageUrl === '' ? null : (imageUrl ?? null));
       sets.push(`image_url = $${vals.length}`);
     }
@@ -45,7 +50,7 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction): Pr
     );
     if (!rows[0]) { res.status(404).json({ error: 'Герой не найден' }); return; }
     res.json(rows[0]);
-    logAudit('hero_update', { heroId: id, imageUrl, description }, req.ip).catch(() => {});
+    logAudit('hero_update', { heroId: id, name, imageUrl, description }, req.ip).catch(() => {});
   } catch (err) { next(err); }
 });
 
