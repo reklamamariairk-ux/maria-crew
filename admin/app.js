@@ -1338,10 +1338,10 @@ const SEASON_LABELS = { spring: 'Весна', summer: 'Лето', autumn: 'Ос�
 
 async function loadChallenges() {
   const tbody = document.getElementById('challenges-tbody');
-  tbody.innerHTML = skeletonRows(8, 4);
+  tbody.innerHTML = skeletonRows(9, 4);
   const list = await api('GET', '/challenges') || [];
   if (list.length === 0) {
-    tbody.innerHTML = emptyRow(8, 'flame', 'Нет челленджей — создайте первый');
+    tbody.innerHTML = emptyRow(9, 'flame', 'Нет челленджей — создайте первый');
     renderIcons(); return;
   }
   tbody.innerHTML = list.map(ch => {
@@ -1358,9 +1358,19 @@ async function loadChallenges() {
       <td>${ch.is_active
         ? '<span class="badge badge-approved">Активен</span>'
         : '<span class="badge badge-neutral">Неактивен</span>'}</td>
+      <td><button class="btn btn-danger btn-sm btn-icon" onclick="deleteChallenge(${ch.id})" title="Удалить"><i data-lucide="trash-2"></i></button></td>
     </tr>`;
   }).join('');
   renderIcons();
+}
+
+async function deleteChallenge(id) {
+  if (!confirm('Удалить челлендж? Будут также удалены записи участников.')) return;
+  try {
+    await api('DELETE', `/challenges/${id}`);
+    toast('Челлендж удалён');
+    loadChallenges();
+  } catch (e) { toast('❌ ' + e.message); }
 }
 
 async function showAddChallenge() {

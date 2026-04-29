@@ -140,6 +140,11 @@ export async function listChallenges() {
   return rows;
 }
 
+export async function deleteChallenge(id: number): Promise<boolean> {
+  const { rowCount } = await pool.query(`DELETE FROM seasonal_challenges WHERE id = $1`, [id]);
+  return (rowCount ?? 0) > 0;
+}
+
 export async function createChallenge(data: {
   name: string; description: string; season: string; year: number;
   heroId?: number; startDate: string; endDate: string; conditionDescription: string;
