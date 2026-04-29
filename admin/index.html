@@ -14,7 +14,8 @@
 <div id="login-screen">
   <h1>Maria Crew</h1>
   <p>Панель управления</p>
-  <input type="password" id="secret-input" placeholder="Секретный ключ" onkeydown="if(event.key==='Enter')login()">
+  <input type="text" id="login-username" placeholder="Логин" autocomplete="username">
+  <input type="password" id="login-password" placeholder="Пароль" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
   <button onclick="login()">Войти</button>
   <p id="login-error" style="color:var(--red);font-size:13px"></p>
 </div>
@@ -98,6 +99,9 @@
       </button>
       <button class="nav-item" data-tab="settings" onclick="switchTab('settings')">
         <i data-lucide="settings"></i> Настройки
+      </button>
+      <button class="nav-item role-superadmin-only" data-tab="adminUsers" onclick="switchTab('adminUsers')">
+        <i data-lucide="shield"></i> Доступы
       </button>
     </nav>
 
@@ -861,6 +865,54 @@
           <button class="btn btn-ghost" onclick="loadMvpConfig()"><i data-lucide="rotate-ccw"></i> Сбросить</button>
         </div>
         <p id="cfg-last-updated" class="text-muted" style="font-size:12px;margin-top:10px"></p>
+      </div>
+    </div>
+
+    <!-- ── Доступы (суперадмин) ──────────────────────────────────── -->
+    <div id="tab-adminUsers" class="tab-content hidden">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Доступы в админку</h1>
+          <p class="page-subtitle">Учётные записи и роли. Доступно только суперадмину.</p>
+        </div>
+        <button class="btn btn-primary" onclick="document.getElementById('add-admin-form').classList.toggle('hidden')">
+          <i data-lucide="user-plus"></i> Создать
+        </button>
+      </div>
+
+      <div id="add-admin-form" class="hidden card card-pad" style="margin-bottom:16px">
+        <p class="section-title">Новый администратор</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+          <label>Логин <input type="text" id="new-admin-username" class="input" placeholder="petrov"></label>
+          <label>Пароль <input type="text" id="new-admin-password" class="input" placeholder="мин. 4 символа"></label>
+          <label>Роль
+            <select id="new-admin-role" class="input">
+              <option value="superadmin">Суперадмин — полный доступ</option>
+              <option value="editor" selected>Админище — всё кроме монет</option>
+              <option value="coin_admin">Администратор — только монеты</option>
+            </select>
+          </label>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-primary" onclick="addAdminUser()"><i data-lucide="check"></i> Создать</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('add-admin-form').classList.add('hidden')">Отмена</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:50px">#</th>
+            <th>Логин</th>
+            <th style="width:200px">Роль</th>
+            <th style="width:160px">Последний вход</th>
+            <th style="width:100px">Статус</th>
+            <th style="width:240px">Действие</th>
+          </tr></thead>
+          <tbody id="admin-users-tbody">
+            <tr><td colspan="6" class="empty">Загрузка...</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
 

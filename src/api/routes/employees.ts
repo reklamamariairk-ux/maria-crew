@@ -4,8 +4,18 @@ import { getAvailableCardCount } from '../../services/card.service';
 import { getBalance, earn } from '../../services/coin.service';
 import { logAudit } from '../../services/audit.service';
 import { notifyCoinAward } from '../../bot/notifications/sender';
+import { requireRole } from '../middleware/adminAuth';
 
 const router = Router();
+
+// coin_admin не может создавать/менять сотрудников
+function denyCoinAdminForWrites(req: Request, res: Response, next: NextFunction): void {
+  if (req.adminRole === 'coin_admin') {
+    res.status(403).json({ error: 'Эта операция недоступна для роли «Только монеты»' });
+    return;
+  }
+  next();
+}
 
 // GET /api/employees?storeId=&recent=1&page=1&pageSize=50
 // Если page указан — возвращает {data, total, page, pages}; иначе — массив (backward compat)
@@ -111,7 +121,7 @@ router.get('/:id/summary', async (req: Request, res: Response, next: NextFunctio
 });
 
 // POST /api/employees
-router.post('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.post('/', denyCoinAdminForWrites, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { name, storeId, role = 'employee', joinedAt, telegramUsername } = req.body as {
       name: string; storeId: number; role?: string; joinedAt?: string; telegramUsername?: string;
@@ -129,7 +139,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
 });
 
 // PUT /api/employees/:id
-router.put('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.put('/:id', denyCoinAdminForWrites, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { name, storeId, role, isActive, telegramUsername, phone } = req.body as {
       name?: string; storeId?: number; role?: string; isActive?: boolean;
@@ -175,7 +185,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
 
 // POST /api/employees/bulk-coins — начислить монеты сразу нескольким сотрудникам
 // body: { employeeIds: number[], reason: string, amount?: number, note?: string }
-router.post('/bulk-coins', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.post('/bulk-coins', requireRole('superadmin', 'coin_admin'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { employeeIds, reason, amount, note } = req.body as {
       employeeIds: number[]; reason: string; amount?: number; note?: string;
@@ -213,7 +223,7 @@ router.post('/bulk-coins', async (req: Request, res: Response, next: NextFunctio
 });
 
 // POST /api/employees/bulk-active — массовое активировать/деактивировать
-router.post('/bulk-active', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.post('/bulk-active', denyCoinAdminForWrites, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { employeeIds, isActive } = req.body as { employeeIds: number[]; isActive: boolean };
     if (!Array.isArray(employeeIds) || employeeIds.length === 0) {

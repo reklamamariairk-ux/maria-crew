@@ -32,7 +32,10 @@ export type AuditAction =
   | 'broadcast'
   | 'challenge_create'
   | 'challenge_update'
-  | 'challenge_delete';
+  | 'challenge_delete'
+  | 'admin_user_create'
+  | 'admin_user_update'
+  | 'admin_user_delete';
 
 /** Записывает событие в audit_log. Не бросает исключений — фоновый журнал */
 export async function logAudit(

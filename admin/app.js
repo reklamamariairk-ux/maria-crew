@@ -1,6 +1,7 @@
 // ── State ────────────────────────────────────────────────────────────────────
 const state = {
   token: sessionStorage.getItem('mc_token') || '',
+  role:  sessionStorage.getItem('mc_role')  || '',
   storeId: null,
   year: new Date().getFullYear(),
   month: new Date().getMonth() + 1,
@@ -8,6 +9,12 @@ const state = {
   employees: [],
   currentTab: 'dashboard',
   cloudinary: { cloudName: '', uploadPreset: '', enabled: false },
+};
+
+const ROLE_LABEL = {
+  superadmin: 'Суперадмин',
+  editor:     'Админище',
+  coin_admin: 'Администратор (монеты)',
 };
 
 // Lucide иконки рендерятся через lucide.createIcons() после каждой вставки HTML.
@@ -61,6 +68,11 @@ async function api(method, path, body) {
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(`/api${path}`, opts);
   if (res.status === 401) { logout(); return null; }
+  if (res.status === 403) {
+    const err = await res.json().catch(() => ({}));
+    toast('⚠️ ' + (err.error || 'Недостаточно прав'));
+    return null;
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Ошибка сети' }));
     throw new Error(err.error || 'Ошибка');
@@ -70,16 +82,24 @@ async function api(method, path, body) {
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 async function login() {
-  const secret = document.getElementById('secret-input').value;
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!username || !password) {
+    document.getElementById('login-error').textContent = 'Введи логин и пароль';
+    return;
+  }
   try {
-    const data = await fetch('/api/auth/login', {
+    const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ secret }),
-    }).then(r => r.json());
-    if (!data.token) throw new Error('Неверный ключ');
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.token) throw new Error(data.error || 'Неверный логин или пароль');
     state.token = data.token;
+    state.role  = data.role || '';
     sessionStorage.setItem('mc_token', data.token);
+    sessionStorage.setItem('mc_role', state.role);
     showApp();
   } catch (e) {
     document.getElementById('login-error').textContent = e.message;
@@ -88,15 +108,51 @@ async function login() {
 
 function logout() {
   sessionStorage.removeItem('mc_token');
+  sessionStorage.removeItem('mc_role');
   state.token = '';
+  state.role = '';
   document.getElementById('app').classList.remove('visible');
   document.getElementById('login-screen').style.display = 'flex';
+}
+
+function applyRoleVisibility() {
+  const r = state.role;
+  // Скрываем элементы только-для-суперадмина
+  document.querySelectorAll('.role-superadmin-only').forEach(el => {
+    el.style.display = (r === 'superadmin') ? '' : 'none';
+  });
+  // Скрываем элементы, недоступные для роли «только монеты»
+  // Видимые для coin_admin: дашборд, монеты, сотрудники (read), точки (read)
+  const COIN_ADMIN_ALLOWED = new Set(['dashboard', 'coins', 'employees']);
+  document.querySelectorAll('.nav-item[data-tab]').forEach(btn => {
+    const tab = btn.getAttribute('data-tab');
+    if (r === 'coin_admin' && !COIN_ADMIN_ALLOWED.has(tab) && !btn.classList.contains('role-superadmin-only')) {
+      btn.style.display = 'none';
+    } else if (r === 'editor' && tab === 'coins') {
+      btn.style.display = 'none';
+    }
+  });
+  // Скрываем кнопку Bulk-coins для editor
+  document.querySelectorAll('.role-coins-write').forEach(el => {
+    el.style.display = (r === 'superadmin' || r === 'coin_admin') ? '' : 'none';
+  });
 }
 
 // ── App init ─────────────────────────────────────────────────────────────────
 async function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').classList.add('visible');
+
+  // Если роли нет в сессии (старый токен) — узнаём её с сервера
+  if (!state.role) {
+    const meta = await api('GET', '/me/admin').catch(() => null);
+    if (meta && meta.role) {
+      state.role = meta.role;
+      sessionStorage.setItem('mc_role', state.role);
+    }
+  }
+  applyRoleVisibility();
+
   updatePeriodLabels();
   renderIcons();
   await Promise.all([loadStores(), loadCloudinaryConfig()]);
@@ -212,6 +268,7 @@ function refreshCurrentTab() {
   if (state.currentTab === 'challenges')  loadChallenges();
   if (state.currentTab === 'heroes')      loadHeroes();
   if (state.currentTab === 'settings')    loadMvpConfig();
+  if (state.currentTab === 'adminUsers')  loadAdminUsers();
   if (state.currentTab === 'notify')      loadNotifyForm();
 }
 
@@ -1933,6 +1990,91 @@ async function exportLeaderboardCsv() {
     ['Место','Сотрудник','Точка','MVP Score','MVP','Карточек','Монет'],
     emps.map((e, i) => [i+1, e.name ?? e.employeeName, e.storeName ?? '', e.mvpScore ?? '', e.isMvp ? 'Да' : '', e.cardsCount ?? '', e.coinsBalance ?? ''])
   );
+}
+
+// ── Доступы (управление админами, только суперадмин) ─────────────────────────
+
+async function loadAdminUsers() {
+  const tbody = document.getElementById('admin-users-tbody');
+  tbody.innerHTML = skeletonRows(6, 4);
+  const list = await api('GET', '/admin-users') || [];
+  if (list.length === 0) {
+    tbody.innerHTML = emptyRow(6, 'shield', 'Нет учётных записей');
+    renderIcons(); return;
+  }
+  tbody.innerHTML = list.map(u => `<tr>
+    <td style="color:var(--muted);font-size:12px">${u.id}</td>
+    <td><strong>${esc(u.username)}</strong></td>
+    <td>
+      <select onchange="updateAdminUserRole(${u.id}, this.value)" ${u.id === state.adminUserId ? 'disabled' : ''}>
+        <option value="superadmin"${u.role === 'superadmin' ? ' selected' : ''}>Суперадмин</option>
+        <option value="editor"${u.role === 'editor' ? ' selected' : ''}>Админище — всё кроме монет</option>
+        <option value="coin_admin"${u.role === 'coin_admin' ? ' selected' : ''}>Администратор — только монеты</option>
+      </select>
+    </td>
+    <td style="font-size:12px;color:var(--muted)">${u.lastLoginAt ? formatDate(u.lastLoginAt) : '—'}</td>
+    <td>${u.isActive
+      ? '<span class="badge badge-approved">Активен</span>'
+      : '<span class="badge badge-neutral">Отключён</span>'}</td>
+    <td style="display:flex;gap:4px;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="resetAdminPassword(${u.id})" title="Сменить пароль"><i data-lucide="key"></i></button>
+      ${u.isActive
+        ? `<button class="btn btn-ghost btn-sm" onclick="toggleAdminActive(${u.id}, false)"><i data-lucide="user-x"></i> Отключить</button>`
+        : `<button class="btn btn-ghost btn-sm" onclick="toggleAdminActive(${u.id}, true)"><i data-lucide="user-check"></i> Включить</button>`}
+      <button class="btn btn-danger btn-sm btn-icon" onclick="deleteAdminUser(${u.id})" title="Удалить"><i data-lucide="trash-2"></i></button>
+    </td>
+  </tr>`).join('');
+  renderIcons();
+}
+
+async function addAdminUser() {
+  const username = document.getElementById('new-admin-username').value.trim();
+  const password = document.getElementById('new-admin-password').value;
+  const role     = document.getElementById('new-admin-role').value;
+  if (!username) { toast('Введи логин'); return; }
+  if (!password || password.length < 4) { toast('Пароль минимум 4 символа'); return; }
+  try {
+    await api('POST', '/admin-users', { username, password, role });
+    toast('✅ Пользователь создан');
+    document.getElementById('add-admin-form').classList.add('hidden');
+    document.getElementById('new-admin-username').value = '';
+    document.getElementById('new-admin-password').value = '';
+    loadAdminUsers();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+async function updateAdminUserRole(id, role) {
+  try {
+    await api('PUT', `/admin-users/${id}`, { role });
+    toast('Роль обновлена');
+  } catch (e) { toast('❌ ' + e.message); loadAdminUsers(); }
+}
+
+async function toggleAdminActive(id, isActive) {
+  try {
+    await api('PUT', `/admin-users/${id}`, { isActive });
+    toast(isActive ? 'Включён' : 'Отключён');
+    loadAdminUsers();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+async function resetAdminPassword(id) {
+  const password = prompt('Введи новый пароль (минимум 4 символа):');
+  if (!password) return;
+  if (password.length < 4) { toast('Пароль минимум 4 символа'); return; }
+  try {
+    await api('PUT', `/admin-users/${id}`, { password });
+    toast('✅ Пароль обновлён');
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+async function deleteAdminUser(id) {
+  if (!confirm('Удалить эту учётную запись?')) return;
+  try {
+    await api('DELETE', `/admin-users/${id}`);
+    toast('Удалено');
+    loadAdminUsers();
+  } catch (e) { toast('❌ ' + e.message); }
 }
 
 // ── Старт ─────────────────────────────────────────────────────────────────────

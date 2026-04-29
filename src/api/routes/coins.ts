@@ -3,12 +3,13 @@ import { pool } from '../../db/pool';
 import { earn, getHistory, getBalance } from '../../services/coin.service';
 import { notifyCoinAward } from '../../bot/notifications/sender';
 import { logAudit } from '../../services/audit.service';
+import { requireRole } from '../middleware/adminAuth';
 import type { CoinReason } from '../../types';
 
 const router = Router();
 
-// POST /api/coins/award
-router.post('/award', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+// POST /api/coins/award — только superadmin или coin_admin
+router.post('/award', requireRole('superadmin', 'coin_admin'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { employeeId, reason, amount, createdBy, note } = req.body as {
       employeeId: number; reason: Exclude<CoinReason, 'spend'>;

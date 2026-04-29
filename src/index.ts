@@ -8,6 +8,7 @@ import { createServer } from './server';
 import { initNotifications } from './bot/notifications/sender';
 import { initScheduler } from './scheduler/index';
 import { effectiveAdminSecret } from './api/middleware/adminAuth';
+import { ensureBootstrapSuperadmin } from './services/adminAuth.service';
 import { markDbReady, markDbError } from './diagnostics';
 import fs from 'fs';
 import path from 'path';
@@ -234,6 +235,7 @@ async function initDatabaseBackground(): Promise<void> {
       await checkDatabase();
       await runMigrations();
       await seedIfEmpty();
+      await ensureBootstrapSuperadmin();
       markDbReady();
       console.log('[db] ✓ База данных полностью готова');
       // Warm up the pool so the first API request doesn't hit Neon cold

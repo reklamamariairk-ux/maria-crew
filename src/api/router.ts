@@ -1,6 +1,7 @@
-import { Router } from 'express';
-import { adminAuth } from './middleware/adminAuth';
+import { Router, Request, Response, NextFunction } from 'express';
+import { adminAuth, requireRole } from './middleware/adminAuth';
 import { rateLimit } from './middleware/rateLimit';
+import adminUsersRoutes from './routes/adminUsers';
 import authRoutes      from './routes/auth';
 import webappRoutes    from './routes/webapp';
 import storeRoutes     from './routes/stores';
@@ -36,20 +37,53 @@ router.get('/config/cloudinary', (_req, res) => {
 
 // Всё остальное — требует Bearer-токен
 router.use(adminAuth);
-router.use('/stores',      storeRoutes);
-router.use('/employees',   employeeRoutes);
-router.use('/metrics',     metricsRoutes);
-router.use('/coins',       coinsRoutes);
-router.use('/exchanges',   exchangeRoutes);
-router.use('/leaderboard', leaderboardRoutes);
-router.use('/quiz',        quizRoutes);
-router.use('/challenges',  challengeRoutes);
-router.use('/cards',       cardRoutes);
-router.use('/heroes',      heroRoutes);
-router.use('/prizes',      prizeRoutes);
-router.use('/audit',       auditRoutes);
-router.use('/config',      configRoutes);
-router.use('/dashboard',   dashboardRoutes);
-router.use('/notify',      notifyRoutes);
+
+// Метаданные текущего админа — нужны фронту, чтобы спрятать недоступные разделы
+router.get('/me/admin', (req: Request, res: Response): void => {
+  res.json({ id: req.adminUserId, role: req.adminRole });
+});
+
+// ── Защита монетных операций (только superadmin + coin_admin) ──────────────
+const allowCoinWrite = requireRole('superadmin', 'coin_admin');
+const denyForCoinAdmin = (req: Request, res: Response, next: NextFunction): void => {
+  if (req.adminRole === 'coin_admin') {
+    res.status(403).json({ error: 'Эта операция недоступна для роли «Только монеты»' });
+    return;
+  }
+  next();
+};
+
+// coin_admin может только: POST /coins/award, POST /employees/bulk-coins,
+// и читать списки (GET ... /coins, /employees, /stores).
+// Все остальные write-операции запрещены.
+
+router.use('/coins',       coinsRoutes);                          // POST /award защитим внутри роутера
+router.use('/employees',   employeeRoutes);                       // POST /bulk-coins тоже внутри
+router.use('/stores',      denyForCoinAdmin, storeRoutes);
+router.use('/metrics',     denyForCoinAdmin, metricsRoutes);
+router.use('/exchanges',   denyForCoinAdmin, exchangeRoutes);
+router.use('/leaderboard', denyForCoinAdmin, leaderboardRoutes);
+router.use('/quiz',        denyForCoinAdmin, quizRoutes);
+router.use('/challenges',  denyForCoinAdmin, challengeRoutes);
+router.use('/cards',       denyForCoinAdmin, cardRoutes);
+router.use('/heroes',      denyForCoinAdmin, heroRoutes);
+router.use('/prizes',      denyForCoinAdmin, prizeRoutes);
+router.use('/audit',       denyForCoinAdmin, auditRoutes);
+router.use('/notify',      denyForCoinAdmin, notifyRoutes);
+
+// /config: GET доступен всем, PUT (PUT /mvp) — только superadmin
+router.use('/config', (req: Request, res: Response, next: NextFunction): void => {
+  if (req.method !== 'GET' && req.adminRole !== 'superadmin') {
+    res.status(403).json({ error: 'Только суперадмин может менять настройки' });
+    return;
+  }
+  next();
+}, configRoutes);
+
+// Дашборд — все роли
+router.use('/dashboard', dashboardRoutes);
+
+// Управление админ-пользователями — только superadmin
+router.use('/admin-users', requireRole('superadmin'), adminUsersRoutes);
 
 export default router;
