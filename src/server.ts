@@ -73,8 +73,8 @@ export function createServer(bot: Bot<BotContext>, webhookSecret: string): expre
   app.use(express.static(adminDir));
   app.get('*', (_req, res) => res.sendFile(path.join(adminDir, 'index.html')));
 
-  app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-    console.error('API error:', err.message);
+  app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+    console.error(`API error [${req.method} ${req.path}]:`, err.message);
     res.status(500).json({ error: err.message || 'Внутренняя ошибка сервера' });
   });
 
