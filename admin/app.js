@@ -1657,7 +1657,10 @@ async function loadDashboard() {
   const top3El = document.getElementById('dash-top3');
   if (data.top3Mvp && data.top3Mvp.length > 0) {
     const medals = ['🥇', '🥈', '🥉'];
-    top3El.innerHTML = data.top3Mvp.map((e, i) =>
+    const periodLabel = data.mvpPeriod
+      ? `<div style="font-size:12px;color:var(--text-3);margin-bottom:8px">за ${MONTH_NAMES[data.mvpPeriod.month]} ${data.mvpPeriod.year}</div>`
+      : '';
+    top3El.innerHTML = periodLabel + data.top3Mvp.map((e, i) =>
       `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
         <span style="font-size:20px">${medals[i] ?? ''}</span>
         <div style="flex:1">
@@ -1668,7 +1671,7 @@ async function loadDashboard() {
       </div>`
     ).join('');
   } else {
-    top3El.innerHTML = '<p class="text-muted">Нет данных за текущий месяц</p>';
+    top3El.innerHTML = '<p class="text-muted">Пока нет рассчитанных MVP. Заполни метрики и нажми «Обработать месяц».</p>';
   }
 
   // Active challenges

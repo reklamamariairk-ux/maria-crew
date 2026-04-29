@@ -17,16 +17,23 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
       pool.query<{ count: string }>(
         `SELECT COUNT(*)::text AS count FROM store_exchanges WHERE status = 'pending'`
       ),
-      pool.query<{ id: number; name: string; storeName: string; mvpScore: string }>(
-        `SELECT e.id, e.name, s.name AS "storeName",
-                ROUND(mm.mvp_score, 2)::text AS "mvpScore"
+      pool.query<{ id: number; name: string; storeName: string; mvpScore: string; year: number; month: number }>(
+        `WITH latest AS (
+           SELECT year, month FROM monthly_metrics
+           WHERE mvp_score IS NOT NULL
+           ORDER BY year DESC, month DESC
+           LIMIT 1
+         )
+         SELECT e.id, e.name, s.name AS "storeName",
+                ROUND(mm.mvp_score, 2)::text AS "mvpScore",
+                mm.year, mm.month
          FROM monthly_metrics mm
          JOIN employees e ON e.id = mm.employee_id
          JOIN stores s ON s.id = e.store_id
-         WHERE mm.year = $1 AND mm.month = $2 AND mm.mvp_score IS NOT NULL
+         JOIN latest l ON l.year = mm.year AND l.month = mm.month
+         WHERE mm.mvp_score IS NOT NULL
          ORDER BY mm.mvp_score DESC NULLS LAST
-         LIMIT 3`,
-        [year, month]
+         LIMIT 3`
       ),
       pool.query<{ total: string }>(
         `SELECT COALESCE(SUM(amount), 0)::text AS total
@@ -50,10 +57,18 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
 
     const totalActiveEmps = parseInt(empResult.rows[0].count, 10);
 
+    const mvpPeriod = top3Result.rows[0]
+      ? { year: top3Result.rows[0].year, month: top3Result.rows[0].month }
+      : null;
+
     res.json({
       activeEmployees: totalActiveEmps,
       pendingExchanges: parseInt(pendingResult.rows[0].count, 10),
-      top3Mvp: top3Result.rows.map(r => ({ ...r, mvpScore: parseFloat(r.mvpScore) })),
+      top3Mvp: top3Result.rows.map(r => ({
+        id: r.id, name: r.name, storeName: r.storeName,
+        mvpScore: parseFloat(r.mvpScore),
+      })),
+      mvpPeriod,
       coinsIssuedThisMonth: parseInt(coinsResult.rows[0].total, 10),
       activeChallenges: challengeResult.rows.map(c => ({
         id: c.id,
