@@ -57,6 +57,7 @@ type Employee = {
   telegramUsername?: string;
   telegramPhotoUrl?: string;
   role: string;
+  phone?: string | null;
 };
 
 function sleep(ms: number): Promise<void> {
@@ -88,7 +89,7 @@ async function getEmployee(telegramId: number): Promise<Employee | null> {
   const { rows } = await withDbRetry('getEmployee', () => pool.query<Employee>(
     `SELECT e.id, e.name, e.store_id AS "storeId", s.name AS "storeName",
             e.telegram_id AS "telegramId", e.telegram_username AS "telegramUsername",
-            e.telegram_photo_url AS "telegramPhotoUrl", e.role
+            e.telegram_photo_url AS "telegramPhotoUrl", e.role, e.phone
      FROM employees e JOIN stores s ON s.id = e.store_id
      WHERE e.telegram_id = $1 AND e.is_active = true`,
     [telegramId]

@@ -1764,6 +1764,18 @@ async function sendNotification() {
   }
 }
 
+async function saveEmployeePhone(id, btn) {
+  const input = document.getElementById('emp-phone-input');
+  if (!input) return;
+  const phone = input.value.trim() || null;
+  btn.disabled = true;
+  try {
+    await api('PUT', `/employees/${id}`, { phone });
+    toast('✅ Телефон сохранён');
+  } catch (e) { toast('❌ ' + e.message); }
+  finally { btn.disabled = false; }
+}
+
 // ── Карточка сотрудника (модалка) ─────────────────────────────────────────────
 async function showEmployeeModal(id) {
   const modal = document.getElementById('modal-employee');
@@ -1813,6 +1825,13 @@ async function showEmployeeModal(id) {
         <div style="font-size:13px;color:var(--text-2);margin-bottom:4px">Последний вход</div>
         <div style="font-size:13px">${lastSeen}</div>
       </div>
+    </div>
+
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:20px;padding:12px;background:var(--bg-2,#f8f8f8);border-radius:8px">
+      <i data-lucide="phone" style="width:16px;height:16px;color:var(--text-2)"></i>
+      <span style="font-size:13px;color:var(--text-2)">Телефон:</span>
+      <input type="tel" id="emp-phone-input" value="${esc(summary.phone ?? '')}" placeholder="+7..." style="flex:1;min-width:140px">
+      <button class="btn btn-primary btn-sm" onclick="saveEmployeePhone(${summary.id}, this)"><i data-lucide="save"></i> Сохранить</button>
     </div>
 
     <p class="section-title">Последние монеты</p>

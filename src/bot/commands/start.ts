@@ -1,7 +1,20 @@
-import { InlineKeyboard } from 'grammy';
+import { InlineKeyboard, Keyboard } from 'grammy';
 import { pool } from '../../db/pool';
 import type { BotContext } from '../context';
 import { esc } from '../helpers';
+
+/** Если у сотрудника нет телефона — отправляет клавиатуру с кнопкой "Поделиться номером". */
+async function maybeAskPhone(ctx: BotContext, employeeId: number): Promise<void> {
+  const { rows } = await pool.query<{ phone: string | null }>(
+    `SELECT phone FROM employees WHERE id = $1`, [employeeId]
+  );
+  if (rows[0]?.phone) return;
+  const kb = new Keyboard().requestContact('📱 Поделиться номером').oneTime().resized();
+  await ctx.reply(
+    'Чтобы руководители могли быстрее с тобой связаться — поделись номером телефона:',
+    { reply_markup: kb }
+  );
+}
 
 const WEBAPP_URL = (
   process.env.WEBHOOK_URL ??
@@ -35,6 +48,7 @@ export async function handleStart(ctx: BotContext): Promise<void> {
       `Открывай приложение и смотри свои карточки, монеты и рейтинг:`,
       mainMenuKeyboard()
     );
+    await maybeAskPhone(ctx, ctx.employee.id);
     return;
   }
 
@@ -144,4 +158,10 @@ export async function handleStoreSelection(ctx: BotContext): Promise<void> {
     );
   }
   await ctx.answerCallbackQuery('Добро пожаловать! 🎉');
+
+  // Запрашиваем номер у нового сотрудника
+  const { rows: empRows } = await pool.query<{ id: number }>(
+    `SELECT id FROM employees WHERE telegram_id = $1`, [telegramId]
+  );
+  if (empRows[0]) await maybeAskPhone(ctx, empRows[0].id);
 }

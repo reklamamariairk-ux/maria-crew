@@ -346,6 +346,30 @@ function showApp(stats) {
 
   // Load streak info
   apiFetch('/streak').then(updateStreakBadge).catch(() => {});
+
+  // Если у сотрудника нет номера телефона — попросим один раз
+  maybeRequestPhoneOnce();
+}
+
+function maybeRequestPhoneOnce() {
+  if (!employee || employee.phone) return;
+  if (sessionStorage.getItem('phone_asked') === '1') return;
+  if (!tg || typeof tg.requestContact !== 'function') return;
+  // Маленькая задержка, чтобы интерфейс успел отрисоваться
+  setTimeout(() => {
+    sessionStorage.setItem('phone_asked', '1');
+    try {
+      tg.requestContact((shared) => {
+        if (shared) {
+          showToast('Спасибо! Номер сохранён.');
+          // Бот получит контакт и сохранит сам — обновим объект employee
+          employee.phone = '+saved';
+        }
+      });
+    } catch {
+      // requestContact доступен не везде — игнорируем ошибки
+    }
+  }, 1500);
 }
 
 // ── Tab routing ───────────────────────────────────────────────────────────────

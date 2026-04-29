@@ -1,4 +1,5 @@
-import { Bot, session, BotError } from 'grammy';
+import { Bot, session, BotError, Keyboard } from 'grammy';
+import { pool } from '../db/pool';
 import type { BotContext, SessionData } from './context';
 import { authMiddleware } from './middleware/auth';
 import { handleStart, handleStoreSelection, mainMenuKeyboard } from './commands/start';
@@ -90,6 +91,36 @@ export function createBot(token: string): Bot<BotContext> {
 
   // ── Магазин ───────────────────────────────────────────────────────────────────
   bot.callbackQuery(/^store:/, handleStoreCallback);
+
+  // ── Получение номера телефона (через "Поделиться контактом") ────────────────
+  bot.on(':contact', async ctx => {
+    const tgId = ctx.from?.id;
+    const contact = ctx.message?.contact;
+    if (!tgId || !contact) return;
+    if (contact.user_id !== tgId) {
+      await ctx.reply('Поделись, пожалуйста, своим собственным номером 🙂');
+      return;
+    }
+    try {
+      const { rowCount } = await pool.query(
+        `UPDATE employees SET phone = $1
+         WHERE telegram_id = $2 AND (phone IS NULL OR phone = '')`,
+        [contact.phone_number, tgId]
+      );
+      if (rowCount && rowCount > 0) {
+        await ctx.reply('✅ Номер сохранён, спасибо!', {
+          reply_markup: { remove_keyboard: true },
+        });
+      } else {
+        await ctx.reply('Номер уже сохранён ранее.', {
+          reply_markup: { remove_keyboard: true },
+        });
+      }
+    } catch (err) {
+      console.error('[contact] save error:', err);
+      await ctx.reply('Не удалось сохранить номер, попробуй позже.');
+    }
+  });
 
   // ── Глобальный обработчик ошибок ──────────────────────────────────────────────
   bot.catch(async (err: BotError<BotContext>) => {

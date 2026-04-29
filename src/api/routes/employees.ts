@@ -32,6 +32,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
               e.telegram_username AS "telegramUsername",
               e.telegram_photo_url AS "telegramPhotoUrl",
               e.last_seen_at      AS "lastSeenAt",
+              e.phone             AS "phone",
               e.store_id          AS "storeId",
               s.name              AS "storeName"
        FROM employees e
@@ -85,6 +86,7 @@ router.get('/:id/summary', async (req: Request, res: Response, next: NextFunctio
       `SELECT e.id, e.name, e.role, e.is_active AS "isActive", e.joined_at AS "joinedAt",
               e.telegram_id AS "telegramId", e.telegram_username AS "telegramUsername",
               e.telegram_photo_url AS "telegramPhotoUrl", e.last_seen_at AS "lastSeenAt",
+              e.phone AS "phone",
               e.store_id AS "storeId", s.name AS "storeName"
        FROM employees e JOIN stores s ON s.id = e.store_id
        WHERE e.id = $1`,
@@ -129,11 +131,15 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
 // PUT /api/employees/:id
 router.put('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { name, storeId, role, isActive, telegramUsername } = req.body as {
-      name?: string; storeId?: number; role?: string; isActive?: boolean; telegramUsername?: string;
+    const { name, storeId, role, isActive, telegramUsername, phone } = req.body as {
+      name?: string; storeId?: number; role?: string; isActive?: boolean;
+      telegramUsername?: string; phone?: string | null;
     };
     const username = telegramUsername !== undefined
       ? (telegramUsername ? telegramUsername.replace(/^@/, '').toLowerCase() : null)
+      : undefined;
+    const phoneNorm = phone !== undefined
+      ? (phone && phone.trim() ? phone.trim() : null)
       : undefined;
     const empId = parseInt(req.params.id, 10);
     if (isNaN(empId)) { res.status(400).json({ error: 'Неверный id' }); return; }
@@ -143,9 +149,13 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
          store_id          = COALESCE($2, store_id),
          role              = COALESCE($3, role),
          is_active         = COALESCE($4, is_active),
-         telegram_username = COALESCE($5, telegram_username)
-       WHERE id = $6 RETURNING *`,
-      [name ?? null, storeId ?? null, role ?? null, isActive ?? null, username ?? null, empId]
+         telegram_username = COALESCE($5, telegram_username),
+         phone             = CASE WHEN $7::boolean THEN $6 ELSE phone END
+       WHERE id = $8 RETURNING *`,
+      [
+        name ?? null, storeId ?? null, role ?? null, isActive ?? null,
+        username ?? null, phoneNorm ?? null, phoneNorm !== undefined, empId,
+      ]
     );
     if (!rows[0]) { res.status(404).json({ error: 'Не найден' }); return; }
     res.json(rows[0]);
@@ -157,8 +167,8 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     if (isActive !== undefined) {
       logAudit(isActive ? 'employee_activate' : 'employee_deactivate', { employeeId: rows[0].id }).catch(() => {});
     }
-    if (name !== undefined || role !== undefined || username !== undefined) {
-      logAudit('employee_update', { employeeId: rows[0].id, name, role, telegramUsername: username }).catch(() => {});
+    if (name !== undefined || role !== undefined || username !== undefined || phone !== undefined) {
+      logAudit('employee_update', { employeeId: rows[0].id, name, role, telegramUsername: username, phone: phoneNorm }).catch(() => {});
     }
   } catch (err) { next(err); }
 });
