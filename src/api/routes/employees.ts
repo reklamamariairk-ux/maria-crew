@@ -68,7 +68,7 @@ router.get('/engagement', async (req: Request, res: Response, next: NextFunction
     const { rows } = await pool.query<{ date: string; uniqueUsers: string }>(
       `SELECT checkin_date::text AS date, COUNT(DISTINCT employee_id)::text AS "uniqueUsers"
        FROM daily_checkins
-       WHERE checkin_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Irkutsk')::date - $1
+       WHERE checkin_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Irkutsk')::date - $1::int
        GROUP BY checkin_date
        ORDER BY checkin_date ASC`,
       [days]
