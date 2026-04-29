@@ -85,12 +85,13 @@ export async function ensureBootstrapSuperadmin(): Promise<void> {
 // ── Утилиты для работы с пользователями ─────────────────────────────────────
 
 export async function authenticate(username: string, password: string): Promise<{ uid: number; role: AdminRole } | null> {
-  const { rows } = await pool.query<{ id: number; password_hash: string; role: AdminRole }>(
+  // pool auto-camelizes колонки: password_hash → passwordHash
+  const { rows } = await pool.query<{ id: number; passwordHash: string; role: AdminRole }>(
     `SELECT id, password_hash, role FROM admin_users WHERE username = $1 AND is_active = true`,
     [username]
   );
   if (!rows[0]) return null;
-  if (!verifyPassword(password, rows[0].password_hash)) return null;
+  if (!verifyPassword(password, rows[0].passwordHash)) return null;
   await pool.query(`UPDATE admin_users SET last_login_at = NOW() WHERE id = $1`, [rows[0].id]);
   return { uid: rows[0].id, role: rows[0].role };
 }

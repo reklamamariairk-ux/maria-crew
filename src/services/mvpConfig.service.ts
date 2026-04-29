@@ -35,17 +35,18 @@ export async function getMvpConfig(): Promise<MvpConfig> {
   if (cached && now - cacheTime < CACHE_TTL_MS) return cached;
 
   try {
+    // pool автоматически переводит snake_case колонки в camelCase
     const { rows } = await pool.query<{
       id: number;
-      mystery_shopper_weight: string;
-      reviews_per_card: string;
-      reviews_max: string;
-      checklist_weight: string;
-      revenue_weight_factor: string;
-      revenue_max: string;
-      mvp_coin_reward: number | string | null;
-      top_store_coin_reward: number | string | null;
-      updated_at: Date;
+      mysteryShopperWeight: string;
+      reviewsPerCard: string;
+      reviewsMax: string;
+      checklistWeight: string;
+      revenueWeightFactor: string;
+      revenueMax: string;
+      mvpCoinReward: number | string | null;
+      topStoreCoinReward: number | string | null;
+      updatedAt: Date;
     }>(`SELECT * FROM mvp_config ORDER BY id LIMIT 1`);
 
     if (!rows[0]) return DEFAULT_CONFIG;
@@ -53,15 +54,15 @@ export async function getMvpConfig(): Promise<MvpConfig> {
     const r = rows[0];
     cached = {
       id: r.id,
-      mysteryShopperWeight: parseFloat(r.mystery_shopper_weight),
-      reviewsPerCard: parseFloat(r.reviews_per_card),
-      reviewsMax: parseFloat(r.reviews_max),
-      checklistWeight: parseFloat(r.checklist_weight),
-      revenueWeightFactor: parseFloat(r.revenue_weight_factor),
-      revenueMax: parseFloat(r.revenue_max),
-      mvpCoinReward: r.mvp_coin_reward != null ? Number(r.mvp_coin_reward) : 50,
-      topStoreCoinReward: r.top_store_coin_reward != null ? Number(r.top_store_coin_reward) : 30,
-      updatedAt: r.updated_at,
+      mysteryShopperWeight: parseFloat(r.mysteryShopperWeight),
+      reviewsPerCard: parseFloat(r.reviewsPerCard),
+      reviewsMax: parseFloat(r.reviewsMax),
+      checklistWeight: parseFloat(r.checklistWeight),
+      revenueWeightFactor: parseFloat(r.revenueWeightFactor),
+      revenueMax: parseFloat(r.revenueMax),
+      mvpCoinReward: r.mvpCoinReward != null ? Number(r.mvpCoinReward) : 50,
+      topStoreCoinReward: r.topStoreCoinReward != null ? Number(r.topStoreCoinReward) : 30,
+      updatedAt: r.updatedAt,
     };
     cacheTime = now;
     return cached;
