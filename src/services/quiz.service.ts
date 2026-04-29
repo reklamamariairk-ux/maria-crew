@@ -156,7 +156,7 @@ export async function submitAnswer(
 
   const correctIndex = rows[0].correctIndex;
   const isCorrect = answerIndex === correctIndex;
-  const coinsEarned = isCorrect ? 2 : 0;
+  const coinsEarned = isCorrect ? 1 : 0;
 
   await pool.query(
     `INSERT INTO quiz_attempts (employee_id, question_id, is_correct, coins_earned)
