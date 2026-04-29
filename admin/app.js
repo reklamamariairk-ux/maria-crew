@@ -239,6 +239,20 @@ function setStoreFromInline(value) {
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────
 function switchTab(tab) {
+  // Страховка: некоторые вкладки доступны только определённым ролям.
+  const SUPERADMIN_ONLY = new Set(['adminUsers', 'settings']);
+  const COIN_ADMIN_ALLOWED = new Set(['dashboard', 'coins', 'employees']);
+  if (SUPERADMIN_ONLY.has(tab) && state.role !== 'superadmin') {
+    toast('⚠️ Раздел доступен только суперадмину');
+    tab = 'dashboard';
+  } else if (state.role === 'coin_admin' && !COIN_ADMIN_ALLOWED.has(tab)) {
+    toast('⚠️ Этот раздел недоступен для роли «Только монеты»');
+    tab = 'dashboard';
+  } else if (state.role === 'editor' && tab === 'coins') {
+    toast('⚠️ Раздел монет недоступен для твоей роли');
+    tab = 'dashboard';
+  }
+
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
   document.getElementById(`tab-${tab}`).classList.remove('hidden');
