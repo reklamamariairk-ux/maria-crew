@@ -8,6 +8,8 @@ export interface MvpConfig {
   checklistWeight: number;
   revenueWeightFactor: number;
   revenueMax: number;
+  mvpCoinReward: number;
+  topStoreCoinReward: number;
   updatedAt: Date;
 }
 
@@ -23,6 +25,8 @@ const DEFAULT_CONFIG: MvpConfig = {
   checklistWeight: 25,
   revenueWeightFactor: 20,
   revenueMax: 25,
+  mvpCoinReward: 50,
+  topStoreCoinReward: 30,
   updatedAt: new Date(),
 };
 
@@ -39,6 +43,8 @@ export async function getMvpConfig(): Promise<MvpConfig> {
       checklist_weight: string;
       revenue_weight_factor: string;
       revenue_max: string;
+      mvp_coin_reward: number | string | null;
+      top_store_coin_reward: number | string | null;
       updated_at: Date;
     }>(`SELECT * FROM mvp_config ORDER BY id LIMIT 1`);
 
@@ -53,6 +59,8 @@ export async function getMvpConfig(): Promise<MvpConfig> {
       checklistWeight: parseFloat(r.checklist_weight),
       revenueWeightFactor: parseFloat(r.revenue_weight_factor),
       revenueMax: parseFloat(r.revenue_max),
+      mvpCoinReward: r.mvp_coin_reward != null ? Number(r.mvp_coin_reward) : 50,
+      topStoreCoinReward: r.top_store_coin_reward != null ? Number(r.top_store_coin_reward) : 30,
       updatedAt: r.updated_at,
     };
     cacheTime = now;
@@ -76,6 +84,8 @@ export async function updateMvpConfig(
     checklist_weight:       'checklistWeight',
     revenue_weight_factor:  'revenueWeightFactor',
     revenue_max:            'revenueMax',
+    mvp_coin_reward:        'mvpCoinReward',
+    top_store_coin_reward:  'topStoreCoinReward',
   };
 
   for (const [col, key] of Object.entries(map)) {

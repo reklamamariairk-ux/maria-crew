@@ -1613,6 +1613,8 @@ async function loadMvpConfig() {
   document.getElementById('cfg-checklist').value       = cfg.checklistWeight;
   document.getElementById('cfg-revenue-factor').value  = cfg.revenueWeightFactor;
   document.getElementById('cfg-revenue-max').value     = cfg.revenueMax;
+  document.getElementById('cfg-mvp-coins').value       = cfg.mvpCoinReward ?? 50;
+  document.getElementById('cfg-top-store-coins').value = cfg.topStoreCoinReward ?? 30;
   const upd = document.getElementById('cfg-last-updated');
   if (upd && cfg.updatedAt) {
     upd.textContent = `Последнее изменение: ${formatAuditDateTime(cfg.updatedAt)}`;
@@ -1620,7 +1622,7 @@ async function loadMvpConfig() {
 }
 
 async function saveMvpConfig() {
-  const body = {
+  const weights = {
     mysteryShopperWeight: parseFloat(document.getElementById('cfg-mystery').value),
     reviewsPerCard:       parseFloat(document.getElementById('cfg-reviews-per-card').value),
     reviewsMax:           parseFloat(document.getElementById('cfg-reviews-max').value),
@@ -1628,11 +1630,18 @@ async function saveMvpConfig() {
     revenueWeightFactor:  parseFloat(document.getElementById('cfg-revenue-factor').value),
     revenueMax:           parseFloat(document.getElementById('cfg-revenue-max').value),
   };
-  if (Object.values(body).some(v => isNaN(v) || v < 0 || v > 100)) {
-    toast('Все значения должны быть от 0 до 100'); return;
+  if (Object.values(weights).some(v => isNaN(v) || v < 0 || v > 100)) {
+    toast('Веса должны быть от 0 до 100'); return;
+  }
+  const coins = {
+    mvpCoinReward:      parseInt(document.getElementById('cfg-mvp-coins').value, 10),
+    topStoreCoinReward: parseInt(document.getElementById('cfg-top-store-coins').value, 10),
+  };
+  if (Object.values(coins).some(v => isNaN(v) || v < 0 || v > 10000)) {
+    toast('Монеты должны быть от 0 до 10000'); return;
   }
   try {
-    await api('PUT', '/config/mvp', body);
+    await api('PUT', '/config/mvp', { ...weights, ...coins });
     toast('✅ Настройки сохранены');
     loadMvpConfig();
   } catch (e) { toast('❌ ' + e.message); }

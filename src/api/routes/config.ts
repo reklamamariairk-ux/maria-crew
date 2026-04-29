@@ -14,12 +14,13 @@ router.get('/mvp', async (_req: Request, res: Response, next: NextFunction): Pro
 // PUT /api/config/mvp
 router.put('/mvp', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const allowed = ['mysteryShopperWeight', 'reviewsPerCard', 'reviewsMax',
+    const allowedWeights = ['mysteryShopperWeight', 'reviewsPerCard', 'reviewsMax',
                      'checklistWeight', 'revenueWeightFactor', 'revenueMax'] as const;
+    const allowedCoins = ['mvpCoinReward', 'topStoreCoinReward'] as const;
     const body = req.body as Record<string, unknown>;
     const data: Record<string, number> = {};
 
-    for (const key of allowed) {
+    for (const key of allowedWeights) {
       if (key in body) {
         const val = Number(body[key]);
         if (isNaN(val) || val < 0 || val > 100) {
@@ -27,6 +28,17 @@ router.put('/mvp', async (req: Request, res: Response, next: NextFunction): Prom
           return;
         }
         data[key] = val;
+      }
+    }
+
+    for (const key of allowedCoins) {
+      if (key in body) {
+        const val = Number(body[key]);
+        if (isNaN(val) || val < 0 || val > 10000) {
+          res.status(400).json({ error: `${key} должен быть числом от 0 до 10000` });
+          return;
+        }
+        data[key] = Math.round(val);
       }
     }
 

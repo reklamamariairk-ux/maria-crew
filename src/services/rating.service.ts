@@ -144,6 +144,24 @@ export async function processMonthForStore(
       [JSON.stringify(log), s.id]
     );
 
+    // Бонусные монеты MVP — настраивается админом в mvp_config
+    if (isMvp && cfg.mvpCoinReward > 0) {
+      const note = `MVP месяца: ${month}/${year}`;
+      // Идемпотентно: проверяем, нет ли уже такого начисления за этот месяц
+      const { rows: existing } = await pool.query<{ id: number }>(
+        `SELECT id FROM coin_transactions
+         WHERE employee_id = $1 AND reason = 'manual' AND note = $2`,
+        [s.employeeId, note]
+      );
+      if (!existing[0]) {
+        await pool.query(
+          `INSERT INTO coin_transactions (employee_id, amount, reason, note)
+           VALUES ($1, $2, 'manual', $3)`,
+          [s.employeeId, cfg.mvpCoinReward, note]
+        );
+      }
+    }
+
     results.push({
       employeeId: s.employeeId,
       name: s.employeeName,
@@ -250,7 +268,32 @@ export async function processMonthAllStores(
       [rank, isTop, s.storeId, year, month]
     );
 
-    if (isTop) await awardTeamBonus(s.storeId, year, month);
+    if (isTop) {
+      await awardTeamBonus(s.storeId, year, month);
+      // Бонусные монеты всей команде топ-точки
+      const cfg = await getMvpConfig();
+      if (cfg.topStoreCoinReward > 0) {
+        const note = `Бонус топ-точки: ${month}/${year}`;
+        const { rows: emps } = await pool.query<{ id: number }>(
+          `SELECT id FROM employees WHERE store_id = $1 AND is_active = true`,
+          [s.storeId]
+        );
+        for (const e of emps) {
+          const { rows: existing } = await pool.query<{ id: number }>(
+            `SELECT id FROM coin_transactions
+             WHERE employee_id = $1 AND reason = 'manual' AND note = $2`,
+            [e.id, note]
+          );
+          if (!existing[0]) {
+            await pool.query(
+              `INSERT INTO coin_transactions (employee_id, amount, reason, note)
+               VALUES ($1, $2, 'manual', $3)`,
+              [e.id, cfg.topStoreCoinReward, note]
+            );
+          }
+        }
+      }
+    }
 
     finalResults.push({
       year,
