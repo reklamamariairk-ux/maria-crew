@@ -118,39 +118,49 @@ export async function processExchange(
   processedBy: number | null,
   notes?: string
 ): Promise<StoreExchange> {
-  const { rows } = await pool.query<StoreExchange>(
-    `UPDATE store_exchanges
-     SET status = $1, processed_by = $2, notes = COALESCE($3, notes), processed_at = NOW()
-     WHERE id = $4
-     RETURNING id, employee_id AS "employeeId", prize_id AS "prizeId",
-               cards_spent AS "cardsSpent", coins_spent AS "coinsSpent",
-               card_ids AS "cardIds", status, notes,
-               processed_by AS "processedBy", created_at AS "createdAt",
-               processed_at AS "processedAt"`,
-    [status, processedBy, notes ?? null, exchangeId]
-  );
-  if (!rows[0]) throw new Error('Заявка не найдена');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
 
-  // Если отклонили — возвращаем карточки И монеты (раньше монеты были вложены
-  // в проверку карточек и теряли возврат при coin-only заявках)
-  if (status === 'rejected') {
-    const ex = rows[0];
-    if (ex.cardIds && ex.cardIds.length > 0) {
-      await pool.query(
-        `UPDATE employee_cards SET is_spent = false WHERE id = ANY($1)`,
-        [ex.cardIds]
-      );
+    const { rows } = await client.query<StoreExchange>(
+      `UPDATE store_exchanges
+       SET status = $1, processed_by = $2, notes = COALESCE($3, notes), processed_at = NOW()
+       WHERE id = $4
+       RETURNING id, employee_id AS "employeeId", prize_id AS "prizeId",
+                 cards_spent AS "cardsSpent", coins_spent AS "coinsSpent",
+                 card_ids AS "cardIds", status, notes,
+                 processed_by AS "processedBy", created_at AS "createdAt",
+                 processed_at AS "processedAt"`,
+      [status, processedBy, notes ?? null, exchangeId]
+    );
+    if (!rows[0]) throw new Error('Заявка не найдена');
+
+    // При отклонении — возврат карточек и монет в одной транзакции
+    if (status === 'rejected') {
+      const ex = rows[0];
+      if (ex.cardIds && ex.cardIds.length > 0) {
+        await client.query(
+          `UPDATE employee_cards SET is_spent = false WHERE id = ANY($1)`,
+          [ex.cardIds]
+        );
+      }
+      if (ex.coinsSpent > 0) {
+        await client.query(
+          `INSERT INTO coin_transactions (employee_id, amount, reason, ref_id, note)
+           VALUES ($1, $2, 'manual', $3, 'Возврат: заявка отклонена')`,
+          [ex.employeeId, ex.coinsSpent, exchangeId]
+        );
+      }
     }
-    if (ex.coinsSpent > 0) {
-      await pool.query(
-        `INSERT INTO coin_transactions (employee_id, amount, reason, ref_id, note)
-         VALUES ($1, $2, 'manual', $3, 'Возврат: заявка отклонена')`,
-        [ex.employeeId, ex.coinsSpent, exchangeId]
-      );
-    }
+
+    await client.query('COMMIT');
+    return rows[0];
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
-
-  return rows[0];
 }
 
 /** История обменов сотрудника */

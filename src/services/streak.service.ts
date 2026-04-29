@@ -1,4 +1,5 @@
 import { pool } from '../db/pool';
+import { COIN_AMOUNTS } from './coin.service';
 
 export interface StreakInfo {
   checkedInToday: boolean;
@@ -40,12 +41,6 @@ export async function doCheckin(employeeId: number): Promise<{ streakDay: number
   const today = irkutskDate();
   const yesterday = irkutskDate(-1);
 
-  const { rows: existing } = await pool.query<{ id: number }>(
-    `SELECT id FROM daily_checkins WHERE employee_id = $1 AND checkin_date = $2`,
-    [employeeId, today]
-  );
-  if (existing[0]) return { streakDay: 0, coinsEarned: 0, alreadyCheckedIn: true };
-
   const { rows: prev } = await pool.query<{ streakDay: number }>(
     `SELECT streak_day AS "streakDay" FROM daily_checkins
      WHERE employee_id = $1 AND checkin_date = $2`,
@@ -54,16 +49,23 @@ export async function doCheckin(employeeId: number): Promise<{ streakDay: number
 
   const streakDay = (prev[0]?.streakDay ?? 0) + 1;
   const isWeekly = streakDay % 7 === 0;
-  const coinsEarned = isWeekly ? 20 : 5;
+  const coinsEarned = isWeekly ? 20 : COIN_AMOUNTS.checkin;
   const note = isWeekly
     ? `🔥 Серия ${streakDay} дней! Недельный бонус`
     : `Ежедневный вход, серия ${streakDay} ${plural(streakDay, 'день', 'дня', 'дней')}`;
 
-  await pool.query(
+  // ON CONFLICT DO NOTHING защищает от двойного начисления при параллельных запросах
+  const { rows: inserted } = await pool.query<{ id: number }>(
     `INSERT INTO daily_checkins (employee_id, checkin_date, streak_day, coins_earned)
-     VALUES ($1, $2, $3, $4)`,
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (employee_id, checkin_date) DO NOTHING
+     RETURNING id`,
     [employeeId, today, streakDay, coinsEarned]
   );
+
+  if (!inserted[0]) {
+    return { streakDay: 0, coinsEarned: 0, alreadyCheckedIn: true };
+  }
 
   await pool.query(
     `INSERT INTO coin_transactions (employee_id, amount, reason, note)

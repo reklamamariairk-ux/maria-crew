@@ -64,9 +64,7 @@ export async function earn(params: {
   if (amount < 0) {
     const balance = await getBalance(employeeId);
     if (balance === 0) {
-      // Списывать нечего — операция не создаётся
-      return { id: 0, employeeId, amount: 0, reason, refId: refId ?? null,
-               note: note ?? null, createdBy: createdBy ?? null, createdAt: new Date() } as CoinTransaction;
+      throw new Error('Нечего списывать: баланс уже нулевой');
     }
     amount = -Math.min(Math.abs(amount), balance);
   }
