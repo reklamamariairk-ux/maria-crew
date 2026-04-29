@@ -64,7 +64,11 @@ export async function doCheckin(employeeId: number): Promise<{ streakDay: number
   );
 
   if (!inserted[0]) {
-    return { streakDay: 0, coinsEarned: 0, alreadyCheckedIn: true };
+    const { rows: todayRow } = await pool.query<{ streakDay: number }>(
+      `SELECT streak_day AS "streakDay" FROM daily_checkins WHERE employee_id = $1 AND checkin_date = $2`,
+      [employeeId, today]
+    );
+    return { streakDay: todayRow[0]?.streakDay ?? 0, coinsEarned: 0, alreadyCheckedIn: true };
   }
 
   await pool.query(

@@ -29,7 +29,8 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
 
 router.put('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Неверный id' }); return; }
     await updateQuestion(id, req.body);
     res.json({ ok: true });
     logAudit('quiz_question_update', { questionId: id, changes: req.body }).catch(() => {});
@@ -38,7 +39,8 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
 
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Неверный id' }); return; }
     await deleteQuestion(id);
     res.json({ ok: true });
     logAudit('quiz_question_delete', { questionId: id }, req.ip).catch(() => {});

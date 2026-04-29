@@ -13,8 +13,8 @@ export function monthName(month: number, genitive = false): string {
 }
 
 export function currentPeriod(): { year: number; month: number } {
-  const now = new Date();
-  return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  const irk = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  return { year: irk.getUTCFullYear(), month: irk.getUTCMonth() + 1 };
 }
 
 const RANK_EMOJI = ['🥇', '🥈', '🥉'];

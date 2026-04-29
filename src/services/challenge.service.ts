@@ -1,4 +1,5 @@
 import { pool } from '../db/pool';
+import { irkutskDate } from './streak.service';
 
 export interface ActiveChallenge {
   id: number;
@@ -23,7 +24,7 @@ function currentSeason(): string {
 }
 
 export async function getActiveChallenge(employeeId: number): Promise<ActiveChallenge | null> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = irkutskDate();
 
   const { rows } = await pool.query<{
     id: number; name: string; description: string; season: string;
