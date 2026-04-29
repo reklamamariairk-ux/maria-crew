@@ -13,7 +13,7 @@ export const COIN_AMOUNTS: Record<Exclude<CoinReason, 'spend' | 'manual'>, numbe
   training_meeting:    5,
   knowledge_applied:   3,
   quiz:                1,
-  checkin:             3,
+  checkin:             1,
   // Списания (отрицательные)
   bad_review:          -5,
   dirty_store:         -5,
