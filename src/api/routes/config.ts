@@ -36,4 +36,11 @@ router.put('/mvp', async (req: Request, res: Response, next: NextFunction): Prom
   } catch (err) { next(err); }
 });
 
+// GET /api/config/cloudinary — публичные параметры для загрузки изображений
+router.get('/cloudinary', (_req: Request, res: Response): void => {
+  const cloudName    = process.env.CLOUDINARY_CLOUD_NAME    ?? '';
+  const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET ?? '';
+  res.json({ cloudName, uploadPreset, enabled: !!(cloudName && uploadPreset) });
+});
+
 export default router;

@@ -7,6 +7,7 @@ const state = {
   stores: [],
   employees: [],
   currentTab: 'dashboard',
+  cloudinary: { cloudName: '', uploadPreset: '', enabled: false },
 };
 
 // Lucide иконки рендерятся через lucide.createIcons() после каждой вставки HTML.
@@ -98,8 +99,13 @@ async function showApp() {
   document.getElementById('app').classList.add('visible');
   updatePeriodLabels();
   renderIcons();
-  await loadStores();
+  await Promise.all([loadStores(), loadCloudinaryConfig()]);
   switchTab('dashboard');
+}
+
+async function loadCloudinaryConfig() {
+  const cfg = await api('GET', '/config/cloudinary').catch(() => null);
+  if (cfg) state.cloudinary = cfg;
 }
 
 async function loadStores() {
@@ -1412,7 +1418,12 @@ async function loadHeroes() {
     <td><input type="text" class="hero-name-input" value="${esc(h.name)}" style="width:120px;font-weight:600"></td>
     <td>${h.isLimited ? '<span class="badge badge-mvp">Лимит</span>' : '<span class="badge badge-neutral">Основной</span>'}</td>
     <td><input type="text" class="hero-desc-input" value="${esc(h.description ?? '')}" placeholder="..." style="width:100%"></td>
-    <td><input type="text" class="hero-img-input" value="${esc(h.imageUrl ?? '')}" placeholder="https://..." style="width:100%"></td>
+    <td>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input type="text" class="hero-img-input" value="${esc(h.imageUrl ?? '')}" placeholder="https://..." style="flex:1;min-width:0">
+        ${state.cloudinary.enabled ? `<button class="btn btn-ghost btn-sm btn-icon" onclick="uploadHeroImage(${h.id})" title="Загрузить фото"><i data-lucide="upload"></i></button>` : ''}
+      </div>
+    </td>
     <td><button class="btn btn-primary btn-sm btn-icon" onclick="saveHero(${h.id}, this)" title="Сохранить"><i data-lucide="save"></i></button></td>
   </tr>`).join('');
   renderIcons();
@@ -1430,6 +1441,46 @@ async function saveHero(id, btn) {
     toast('✅ Герой обновлён');
   } catch (e) { toast('❌ ' + e.message); }
   finally { btn.disabled = false; btn.innerHTML = '<i data-lucide="save"></i>'; renderIcons(); }
+}
+
+function uploadHeroImage(heroId) {
+  if (!state.cloudinary.enabled) { toast('Cloudinary не настроен'); return; }
+  const input = document.getElementById('hero-file-input');
+  input.dataset.heroId = heroId;
+  input.value = '';
+  input.click();
+}
+
+async function _onHeroFileSelected(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const heroId = parseInt(input.dataset.heroId, 10);
+  const row = document.querySelector(`tr[data-hero-id="${heroId}"]`);
+  if (!row) return;
+
+  const uploadBtn = row.querySelector(`button[onclick="uploadHeroImage(${heroId})"]`);
+  if (uploadBtn) { uploadBtn.disabled = true; uploadBtn.innerHTML = '<i data-lucide="loader-2"></i>'; renderIcons(); }
+
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('upload_preset', state.cloudinary.uploadPreset);
+
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${state.cloudinary.cloudName}/image/upload`, {
+      method: 'POST',
+      body: fd,
+    });
+    if (!res.ok) throw new Error(`Cloudinary error ${res.status}`);
+    const data = await res.json();
+    const url = data.secure_url;
+
+    row.querySelector('.hero-img-input').value = url;
+    toast('Фото загружено — нажми «Сохранить»');
+  } catch (e) {
+    toast('❌ ' + e.message);
+  } finally {
+    if (uploadBtn) { uploadBtn.disabled = false; uploadBtn.innerHTML = '<i data-lucide="upload"></i>'; renderIcons(); }
+  }
 }
 
 // ── Аналитика квиза ──────────────────────────────────────────────────────────
