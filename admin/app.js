@@ -1345,19 +1345,26 @@ async function loadChallenges() {
     renderIcons(); return;
   }
   tbody.innerHTML = list.map(ch => {
-    const start = ch.start_date ? ch.start_date.slice(0,10) : '—';
-    const end   = ch.end_date   ? ch.end_date.slice(0,10)   : '—';
+    const startStr = ch.startDate ? String(ch.startDate).slice(0,10) : '—';
+    const endStr   = ch.endDate   ? String(ch.endDate).slice(0,10)   : '—';
+    const today = new Date().toISOString().slice(0,10);
+    const isCurrent = ch.isActive && startStr <= today && endStr >= today;
+    const statusBadge = !ch.isActive
+      ? '<span class="badge badge-neutral">Отключён</span>'
+      : isCurrent
+        ? '<span class="badge badge-approved">Активен</span>'
+        : (endStr < today
+            ? '<span class="badge badge-neutral">Завершён</span>'
+            : '<span class="badge badge-pending">Запланирован</span>');
     return `<tr>
       <td style="color:var(--muted);font-size:12px">${ch.id}</td>
       <td><strong>${esc(ch.name)}</strong></td>
       <td>${SEASON_LABELS[ch.season] ?? ch.season}</td>
       <td>${ch.year}</td>
-      <td style="font-size:12px;color:var(--muted)">${start} — ${end}</td>
+      <td style="font-size:12px;color:var(--muted)">${startStr} — ${endStr}</td>
       <td style="font-size:13px">${esc(ch.heroName ?? '—')}</td>
       <td>${ch.entries ?? 0}</td>
-      <td>${ch.is_active
-        ? '<span class="badge badge-approved">Активен</span>'
-        : '<span class="badge badge-neutral">Неактивен</span>'}</td>
+      <td>${statusBadge}</td>
       <td><button class="btn btn-danger btn-sm btn-icon" onclick="deleteChallenge(${ch.id})" title="Удалить"><i data-lucide="trash-2"></i></button></td>
     </tr>`;
   }).join('');
