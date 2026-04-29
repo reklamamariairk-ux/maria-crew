@@ -27,6 +27,13 @@ router.use('/auth', authRoutes);
 // Mini App — использует Telegram initData, не admin-токен; ограничение: 60 запросов/мин с IP
 router.use('/webapp', rateLimit(60, 60_000), webappRoutes);
 
+// Публичный cloudinary-конфиг (только cloud_name + upload_preset, секретов нет)
+router.get('/config/cloudinary', (_req, res) => {
+  const cloudName    = process.env.CLOUDINARY_CLOUD_NAME    ?? '';
+  const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET ?? '';
+  res.json({ cloudName, uploadPreset, enabled: !!(cloudName && uploadPreset) });
+});
+
 // Всё остальное — требует Bearer-токен
 router.use(adminAuth);
 router.use('/stores',      storeRoutes);
