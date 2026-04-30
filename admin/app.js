@@ -1779,23 +1779,43 @@ async function loadDashboard() {
 }
 
 async function loadEngagement() {
-  const data = await api('GET', '/employees/engagement?days=30');
+  // Cache-busting + явный запрос свежих данных
+  const data = await api('GET', `/employees/engagement?days=30&_=${Date.now()}`);
   const el = document.getElementById('engagement-chart');
   if (!el) return;
-  if (!data || data.length === 0) {
-    el.innerHTML = '<p class="text-muted" style="font-size:13px">Нет данных о чек-инах за последние 30 дней</p>';
+
+  // Строим карту "дата → uniqueUsers" из ответа
+  const byDate = new Map((data || []).map(d => [d.date, Number(d.uniqueUsers) || 0]));
+
+  // Генерируем все 30 дней (Иркутск, UTC+8) включая сегодня — даже пустые
+  const days = [];
+  const irkNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(irkNow.getTime() - i * 24 * 60 * 60 * 1000);
+    const iso = d.toISOString().slice(0, 10);
+    days.push({ date: iso, uniqueUsers: byDate.get(iso) ?? 0 });
+  }
+
+  const totalCheckins = days.reduce((s, d) => s + d.uniqueUsers, 0);
+  if (totalCheckins === 0) {
+    el.innerHTML = '<p class="text-muted" style="font-size:13px">Нет чек-инов за последние 30 дней. Сотрудники должны нажать 🔥 в шапке приложения.</p>';
     return;
   }
-  const maxVal = Math.max(...data.map(d => d.uniqueUsers), 1);
-  const bars = data.map(d => {
-    const h = Math.max(2, Math.round(d.uniqueUsers / maxVal * 60));
+
+  const maxVal = Math.max(...days.map(d => d.uniqueUsers), 1);
+  const todayIso = days[days.length - 1].date;
+  const bars = days.map(d => {
+    const h = d.uniqueUsers > 0 ? Math.max(4, Math.round(d.uniqueUsers / maxVal * 60)) : 2;
     const shortDate = d.date.slice(5); // MM-DD
-    return `<div class="eng-bar-wrap" title="${d.date}: ${d.uniqueUsers} чел.">
-      <div class="eng-bar" style="height:${h}px"></div>
-      <div class="eng-date">${shortDate}</div>
+    const isToday = d.date === todayIso;
+    return `<div class="eng-bar-wrap" title="${d.date}: ${d.uniqueUsers} чел.${isToday ? ' (сегодня)' : ''}">
+      <div class="eng-bar${d.uniqueUsers === 0 ? ' eng-bar-empty' : ''}${isToday ? ' eng-bar-today' : ''}" style="height:${h}px"></div>
+      <div class="eng-date${isToday ? ' eng-date-today' : ''}">${shortDate}</div>
     </div>`;
   }).join('');
-  el.innerHTML = `<div class="eng-chart">${bars}</div>`;
+  const updated = new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+  el.innerHTML = `<div class="eng-chart">${bars}</div>
+    <p class="text-muted" style="font-size:11px;margin-top:6px;text-align:right">Обновлено в ${updated}</p>`;
 }
 
 // ── Рассылка ──────────────────────────────────────────────────────────────────

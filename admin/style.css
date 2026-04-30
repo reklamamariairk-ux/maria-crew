@@ -626,8 +626,11 @@ table select {
 .eng-chart { display: flex; align-items: flex-end; gap: 3px; height: 70px; padding-top: 4px; }
 .eng-bar-wrap { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 0; }
 .eng-bar { background: var(--pink); border-radius: 3px 3px 0 0; width: 100%; min-height: 2px; transition: opacity .15s; }
+.eng-bar.eng-bar-empty { background: var(--cream-dark, #e8e1d8); }
+.eng-bar.eng-bar-today { box-shadow: 0 0 0 2px rgba(212, 33, 57, .25); }
 .eng-bar:hover { opacity: .75; }
 .eng-date { font-size: 9px; color: var(--text-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+.eng-date.eng-date-today { color: var(--pink); font-weight: 700; }
 
 /* ── Dashboard pending badge ─────────────────────────────────────────── */
 #dash-pending-card.has-pending .stat-card-icon { background: var(--red-50, #fee2e2); color: var(--red, #ef4444); }
