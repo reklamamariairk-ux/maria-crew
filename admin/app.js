@@ -1041,7 +1041,17 @@ function roleLabel(r) {
 
 // ── Квиз ─────────────────────────────────────────────────────────────────────
 const QUIZ_LABELS = ['А','Б','В','Г'];
-const QUIZ_CATS   = { product:'Продукция', service:'Сервис', crew:'Команда' };
+const QUIZ_CATS   = {
+  product: 'Продукция',
+  service: 'Сервис',
+  crew:    'Команда',
+  brand:   'Бренд',
+  sales:   'Техники продаж',
+  upsell:  'Допродажи',
+  loyalty: 'Лояльность',
+  cashier: 'Касса',
+  display: 'Выкладка',
+};
 
 async function loadQuizQuestions() {
   const tbody = document.getElementById('quiz-tbody');
@@ -1722,7 +1732,7 @@ async function loadQuizAnalytics() {
   if (!data) { wrap.innerHTML = ''; return; }
 
   const { summary, hardestQuestions, byCategory } = data;
-  const QUIZ_CATS_LABEL = { product: 'Продукция', service: 'Сервис', crew: 'Команда' };
+  const QUIZ_CATS_LABEL = QUIZ_CATS;
 
   wrap.innerHTML = `
     <div class="card card-pad">
