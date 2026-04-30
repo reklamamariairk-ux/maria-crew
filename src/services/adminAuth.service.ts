@@ -84,14 +84,27 @@ export async function ensureBootstrapSuperadmin(): Promise<void> {
 
 // ── Утилиты для работы с пользователями ─────────────────────────────────────
 
-export async function authenticate(username: string, password: string): Promise<{ uid: number; role: AdminRole } | null> {
+export async function authenticate(username: string, password: string): Promise<{ uid: number; role: AdminRole; mustChangePassword: boolean } | null> {
   // pool auto-camelizes колонки: password_hash → passwordHash
-  const { rows } = await pool.query<{ id: number; passwordHash: string; role: AdminRole }>(
-    `SELECT id, password_hash, role FROM admin_users WHERE username = $1 AND is_active = true`,
+  const { rows } = await pool.query<{ id: number; passwordHash: string; role: AdminRole; mustChangePassword: boolean | null }>(
+    `SELECT id, password_hash, role, must_change_password FROM admin_users WHERE username = $1 AND is_active = true`,
     [username]
   );
   if (!rows[0]) return null;
   if (!verifyPassword(password, rows[0].passwordHash)) return null;
   await pool.query(`UPDATE admin_users SET last_login_at = NOW() WHERE id = $1`, [rows[0].id]);
-  return { uid: rows[0].id, role: rows[0].role };
+  return { uid: rows[0].id, role: rows[0].role, mustChangePassword: !!rows[0].mustChangePassword };
+}
+
+export async function changeOwnPassword(userId: number, oldPassword: string, newPassword: string): Promise<boolean> {
+  const { rows } = await pool.query<{ passwordHash: string }>(
+    `SELECT password_hash FROM admin_users WHERE id = $1 AND is_active = true`, [userId]
+  );
+  if (!rows[0] || !verifyPassword(oldPassword, rows[0].passwordHash)) return false;
+  const hash = hashPassword(newPassword);
+  await pool.query(
+    `UPDATE admin_users SET password_hash = $1, must_change_password = false WHERE id = $2`,
+    [hash, userId]
+  );
+  return true;
 }

@@ -112,9 +112,14 @@ async function login() {
     if (!res.ok || !data.token) throw new Error(data.error || 'Неверный логин или пароль');
     state.token = data.token;
     state.role  = data.role || '';
+    state.requirePasswordChange = !!data.mustChangePassword;
     sessionStorage.setItem('mc_token', data.token);
     sessionStorage.setItem('mc_role', state.role);
     showApp();
+    if (state.requirePasswordChange) {
+      // Сразу принуждаем сменить временный пароль
+      openChangePasswordModal(true);
+    }
   } catch (e) {
     document.getElementById('login-error').textContent = e.message;
   }
@@ -127,6 +132,91 @@ function logout() {
   state.role = '';
   document.getElementById('app').classList.remove('visible');
   document.getElementById('login-screen').style.display = 'flex';
+}
+
+function openChangePasswordModal(forced = false) {
+  const modal = document.getElementById('modal-change-password');
+  document.getElementById('cpw-old').value = '';
+  document.getElementById('cpw-new').value = '';
+  document.getElementById('cpw-hint').textContent = forced
+    ? 'Это временный пароль — задай свой постоянный (минимум 4 символа).'
+    : 'Минимум 4 символа. Новый пароль должен отличаться от текущего.';
+  document.getElementById('cpw-close-btn').style.display = forced ? 'none' : '';
+  document.getElementById('cpw-cancel').style.display = forced ? 'none' : '';
+  modal.classList.remove('hidden');
+  renderIcons();
+}
+
+function closeChangePasswordModal() {
+  if (state.requirePasswordChange) return; // блокируем закрытие при принудительной смене
+  document.getElementById('modal-change-password').classList.add('hidden');
+}
+
+function openCoinsExport() {
+  const form = document.getElementById('coins-export-form');
+  form.classList.toggle('hidden');
+  if (form.classList.contains('hidden')) return;
+  // По умолчанию: с 1-го числа текущего месяца до сегодня
+  const irk = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  const y = irk.getUTCFullYear(), m = String(irk.getUTCMonth() + 1).padStart(2, '0');
+  document.getElementById('coins-export-from').value = `${y}-${m}-01`;
+  document.getElementById('coins-export-to').value = irk.toISOString().slice(0, 10);
+  // Заполняем точки
+  const sel = document.getElementById('coins-export-store');
+  if (sel.options.length <= 1) {
+    (state.stores || []).forEach(s => {
+      const o = document.createElement('option');
+      o.value = s.id; o.textContent = s.name; sel.appendChild(o);
+    });
+  }
+}
+
+async function downloadCoinsCsv() {
+  const from = document.getElementById('coins-export-from').value;
+  const to   = document.getElementById('coins-export-to').value;
+  const storeId = document.getElementById('coins-export-store').value;
+  if (!from || !to) { toast('Укажи даты'); return; }
+  const params = new URLSearchParams({ from, to });
+  if (storeId) params.set('storeId', storeId);
+  try {
+    const res = await fetch(`/api/coins/export?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${state.token}` },
+    });
+    if (!res.ok) throw new Error(await res.text() || 'Ошибка экспорта');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `coins_${from}_${to}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast('✅ CSV выгружен');
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+async function submitChangePassword() {
+  const oldPassword = document.getElementById('cpw-old').value;
+  const newPassword = document.getElementById('cpw-new').value;
+  if (!oldPassword || !newPassword) { toast('Заполни оба поля'); return; }
+  if (newPassword.length < 4) { toast('Минимум 4 символа'); return; }
+  if (oldPassword === newPassword) { toast('Новый пароль должен отличаться от старого'); return; }
+  try {
+    await api('POST', '/auth/change-password', { oldPassword, newPassword });
+    state.requirePasswordChange = false;
+    document.getElementById('modal-change-password').classList.add('hidden');
+    toast('✅ Пароль обновлён');
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+function updatePendingBadge(count) {
+  const badge = document.getElementById('nav-pending-badge');
+  if (!badge) return;
+  if (count && count > 0) {
+    badge.textContent = count > 99 ? '99+' : String(count);
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
 }
 
 function applyRoleVisibility() {
@@ -165,6 +255,16 @@ async function showApp() {
   renderIcons();
   await Promise.all([loadStores(), loadCloudinaryConfig()]);
   switchTab('dashboard');
+
+  // Раз в 2 минуты подтягиваем количество ожидающих заявок (фон, безшумно)
+  if (!state.pendingPoll) {
+    state.pendingPoll = setInterval(async () => {
+      try {
+        const data = await api('GET', '/exchanges?status=pending');
+        updatePendingBadge(Array.isArray(data) ? data.length : 0);
+      } catch { /* ignore */ }
+    }, 120_000);
+  }
 }
 
 async function loadCloudinaryConfig() {
@@ -479,6 +579,11 @@ async function loadExchanges() {
   const tbody = document.getElementById('exchanges-tbody');
   tbody.innerHTML = skeletonRows(8, 5);
   const data = await api('GET', `/exchanges${params}`) || [];
+
+  // Если фильтр = pending, бейдж обновляем по длине списка (без лишнего запроса)
+  if (status === 'pending' && !state.storeId) {
+    updatePendingBadge(data.length);
+  }
 
   if (data.length === 0) {
     tbody.innerHTML = emptyRow(8, 'shopping-bag', 'Нет заявок');
@@ -1735,6 +1840,7 @@ async function loadDashboard() {
   const pendingCard = document.getElementById('dash-pending-card');
   pendingEl.textContent = data.pendingExchanges;
   pendingCard.classList.toggle('has-pending', data.pendingExchanges > 0);
+  updatePendingBadge(data.pendingExchanges);
 
   // Top-3 MVP
   const top3El = document.getElementById('dash-top3');

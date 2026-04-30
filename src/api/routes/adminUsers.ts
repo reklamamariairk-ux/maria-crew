@@ -81,6 +81,8 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
       }
       vals.push(hashPassword(password));
       sets.push(`password_hash = $${vals.length}`);
+      // Если суперадмин сбрасывает пароль — требуем сменить при первом входе
+      sets.push(`must_change_password = true`);
     }
     if (sets.length === 0) { res.status(400).json({ error: 'Нечего обновлять' }); return; }
 

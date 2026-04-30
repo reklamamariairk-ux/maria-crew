@@ -69,6 +69,7 @@
       </button>
       <button class="nav-item" data-tab="exchanges" onclick="switchTab('exchanges')">
         <i data-lucide="shopping-bag"></i> Заявки
+        <span id="nav-pending-badge" class="nav-badge hidden">0</span>
       </button>
       <button class="nav-item" data-tab="employees" onclick="switchTab('employees')">
         <i data-lucide="users"></i> Сотрудники
@@ -107,6 +108,9 @@
 
     <div class="sidebar-footer">
       <span class="text-muted">v1.0</span>
+      <button class="btn btn-ghost btn-sm" onclick="openChangePasswordModal()" title="Сменить свой пароль">
+        <i data-lucide="key"></i>
+      </button>
       <button class="logout-btn" onclick="logout()">
         <i data-lucide="log-out"></i> Выйти
       </button>
@@ -240,6 +244,24 @@
         <div>
           <h1 class="page-title">Монеты</h1>
           <p class="page-subtitle">Начисление и списание Mария-монет</p>
+        </div>
+        <button class="btn btn-ghost" onclick="openCoinsExport()">
+          <i data-lucide="download"></i> Экспорт CSV
+        </button>
+      </div>
+
+      <div id="coins-export-form" class="hidden card card-pad" style="margin-bottom:16px">
+        <p class="section-title">Экспорт операций за период</p>
+        <div class="form-row" style="margin-bottom:0">
+          <label>С <input type="date" id="coins-export-from"></label>
+          <label>По <input type="date" id="coins-export-to"></label>
+          <label>Точка
+            <select id="coins-export-store">
+              <option value="">— все точки —</option>
+            </select>
+          </label>
+          <button class="btn btn-primary" onclick="downloadCoinsCsv()"><i data-lucide="download"></i> Скачать</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('coins-export-form').classList.add('hidden')">Отмена</button>
         </div>
       </div>
 
@@ -969,6 +991,31 @@
     </div>
     <div id="modal-emp-body" style="overflow-y:auto;max-height:70vh;padding:16px">
       <p class="text-muted">Загрузка...</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Модалка: Сменить пароль ──────────────────────────────────────────── -->
+<div id="modal-change-password" class="modal-overlay hidden" onclick="if(event.target===this && !state.requirePasswordChange)closeChangePasswordModal()">
+  <div class="modal-box" style="max-width:420px;width:95%">
+    <div class="modal-header">
+      <h2 class="modal-title">Сменить пароль</h2>
+      <button class="modal-close" id="cpw-close-btn" onclick="closeChangePasswordModal()"><i data-lucide="x"></i></button>
+    </div>
+    <div style="padding:16px">
+      <p id="cpw-hint" class="text-muted" style="font-size:13px;margin-bottom:12px">
+        Минимум 4 символа. Новый пароль должен отличаться от текущего.
+      </p>
+      <label style="display:block;margin-bottom:10px">Текущий пароль
+        <input type="password" id="cpw-old" class="input" style="width:100%;margin-top:4px">
+      </label>
+      <label style="display:block;margin-bottom:14px">Новый пароль
+        <input type="password" id="cpw-new" class="input" style="width:100%;margin-top:4px">
+      </label>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost" id="cpw-cancel" onclick="closeChangePasswordModal()">Отмена</button>
+        <button class="btn btn-primary" onclick="submitChangePassword()"><i data-lucide="check"></i> Сохранить</button>
+      </div>
     </div>
   </div>
 </div>

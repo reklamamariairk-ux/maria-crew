@@ -9,6 +9,9 @@ import { remindDailyCoins } from './jobs/remindDailyCoins';
 import { weeklyDigest } from './jobs/weeklyDigest';
 import { remindQuiz } from './jobs/remindQuiz';
 import { remindStreak } from './jobs/remindStreak';
+import { autoProcessMonth } from './jobs/autoProcessMonth';
+import { auditRetention } from './jobs/auditRetention';
+import { digestPendingExchanges } from './jobs/digestPendingExchanges';
 
 export function initScheduler(bot: Bot<BotContext>): void {
   const sendMessage = async (telegramId: string, html: string): Promise<void> => {
@@ -57,6 +60,24 @@ export function initScheduler(bot: Bot<BotContext>): void {
     await remindStreak(sendMessage);
   }, { timezone: 'Asia/Irkutsk' });
 
+  // ── 3c. Авто-обработка прошедшего месяца (1-го числа в 03:00) ────────────
+  cron.schedule('0 3 1 * *', async () => {
+    console.log('[scheduler] autoProcessMonth — запуск');
+    try { await autoProcessMonth(); }
+    catch (err) { console.error('[scheduler] autoProcessMonth error:', err); }
+  }, { timezone: 'Asia/Irkutsk' });
+
+  // ── 3d. Чистка журнала старше 6 месяцев (ежедневно в 03:30) ──────────────
+  cron.schedule('30 3 * * *', async () => {
+    await auditRetention();
+  }, { timezone: 'Asia/Irkutsk' });
+
+  // ── 3e. Дайджест непогашенных заявок (ежедневно в 10:00) ─────────────────
+  cron.schedule('0 10 * * *', async () => {
+    console.log('[scheduler] digestPendingExchanges — запуск');
+    await digestPendingExchanges(sendMessage);
+  }, { timezone: 'Asia/Irkutsk' });
+
   const serviceUrl = (
     process.env.WEBHOOK_URL ??
     process.env.RENDER_EXTERNAL_URL ??
@@ -98,4 +119,7 @@ export function initScheduler(bot: Bot<BotContext>): void {
   console.log('  • Пн–Сб 20:00           — напоминание про монеты');
   console.log('  • Пятница 18:00          — еженедельный дайджест в канал');
   console.log('  • Каждый день 21:00     — личное напоминание про серию');
+  console.log('  • 1-е число месяца 03:00 — авто-обработка прошедшего месяца');
+  console.log('  • Каждый день 03:30     — чистка журнала >6 мес');
+  console.log('  • Каждый день 10:00     — дайджест непогашенных заявок');
 }

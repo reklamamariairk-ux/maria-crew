@@ -22,8 +22,8 @@ import notifyRoutes from './routes/notify';
 
 const router = Router();
 
-// Логин не требует auth
-router.use('/auth', authRoutes);
+// Логин не требует auth — но защищаем от перебора паролей: 10 попыток за 15 минут с IP
+router.use('/auth', rateLimit(10, 15 * 60 * 1000), authRoutes);
 
 // Mini App — использует Telegram initData, не admin-токен; ограничение: 60 запросов/мин с IP
 router.use('/webapp', rateLimit(60, 60_000), webappRoutes);

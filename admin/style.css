@@ -622,6 +622,16 @@ table select {
 .form-col label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--text-2); font-weight: 500; }
 .form-col textarea.input { font-family: inherit; font-size: 14px; }
 
+/* ── Sidebar pending badge ──────────────────────────────────────────── */
+.nav-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--red, #ef4444); color: #fff;
+  font-size: 11px; font-weight: 800;
+  border-radius: 10px; min-width: 20px; padding: 0 6px; height: 18px;
+  margin-left: auto;
+}
+.nav-badge.hidden { display: none; }
+
 /* ── Engagement chart bars ───────────────────────────────────────────── */
 .eng-chart { display: flex; align-items: flex-end; gap: 3px; height: 70px; padding-top: 4px; }
 .eng-bar-wrap { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 0; }

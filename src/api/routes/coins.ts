@@ -65,4 +65,84 @@ router.get('/history/:employeeId', async (req: Request, res: Response, next: Nex
   } catch (err) { next(err); }
 });
 
+// GET /api/coins/export?from=YYYY-MM-DD&to=YYYY-MM-DD&storeId=
+// Возвращает CSV всех начислений монет за период (для бухгалтерии).
+router.get('/export', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const from = String(req.query.from ?? '').trim();
+    const to   = String(req.query.to   ?? '').trim();
+    const storeIdRaw = String(req.query.storeId ?? '').trim();
+    const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRe.test(from) || !dateRe.test(to)) {
+      res.status(400).json({ error: 'from и to обязательны в формате YYYY-MM-DD' });
+      return;
+    }
+
+    const params: (string | number)[] = [from, to];
+    let storeFilter = '';
+    if (storeIdRaw) {
+      const storeId = parseInt(storeIdRaw, 10);
+      if (!isNaN(storeId)) { params.push(storeId); storeFilter = ` AND e.store_id = $${params.length}`; }
+    }
+
+    const { rows } = await pool.query<{
+      createdAt: Date; employeeName: string; storeName: string;
+      amount: number; reason: string; note: string | null;
+    }>(
+      `SELECT ct.created_at AS "createdAt",
+              e.name        AS "employeeName",
+              s.name        AS "storeName",
+              ct.amount, ct.reason, ct.note
+       FROM coin_transactions ct
+       JOIN employees e ON e.id = ct.employee_id
+       LEFT JOIN stores s ON s.id = e.store_id
+       WHERE ct.created_at >= $1::date
+         AND ct.created_at <  ($2::date + INTERVAL '1 day')
+         ${storeFilter}
+       ORDER BY ct.created_at ASC`,
+      params
+    );
+
+    const REASON_LABELS: Record<string, string> = {
+      checklist_day: 'Чек-лист 100%', review: 'Именной отзыв', cake_order: 'Торт на заказ',
+      substitution: 'Подмена', mentoring: 'Наставничество', idea: 'Идея',
+      training_meeting: 'Собрание', knowledge_applied: 'Применение знаний',
+      bad_review: 'Отрицательный отзыв', dirty_store: 'Нарушение чистоты',
+      training_resistance: 'Сопротивление обучению', spend: 'Обмен в Store',
+      manual: 'Вручную', quiz: 'Квиз', checkin: 'Ежедневный вход',
+    };
+
+    // CSV: discreet escaping для запятых, ковычек, переводов строк
+    const esc = (v: string | number | null | undefined) => {
+      if (v === null || v === undefined) return '';
+      const s = String(v);
+      return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+
+    const header = ['Дата', 'Сотрудник', 'Точка', 'Сумма', 'Причина', 'Примечание'];
+    const lines = [header.join(';')];
+    for (const r of rows) {
+      const date = new Date(r.createdAt);
+      // Иркутское представление
+      const irk = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+      const ds = irk.toISOString().slice(0, 16).replace('T', ' ');
+      lines.push([
+        esc(ds),
+        esc(r.employeeName),
+        esc(r.storeName ?? ''),
+        esc(r.amount),
+        esc(REASON_LABELS[r.reason] ?? r.reason),
+        esc(r.note ?? ''),
+      ].join(';'));
+    }
+
+    const filename = `coins_${from}_${to}.csv`;
+    // BOM для Excel — чтобы кириллица не сломалась
+    const csv = '﻿' + lines.join('\r\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  } catch (err) { next(err); }
+});
+
 export default router;
