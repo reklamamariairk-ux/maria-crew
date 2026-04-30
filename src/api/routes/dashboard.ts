@@ -19,19 +19,21 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
       pool.query<{ count: string }>(
         `SELECT COUNT(*)::text AS count FROM store_exchanges WHERE status = 'pending'`
       ),
-      // Берём метрики свежайшего месяца и считаем MVP «на лету», чтобы
-      // дашборд обновлялся сразу после ввода метрик, без «Обработать месяц».
+      // Метрики свежайшего месяца + сохранённый mvp_score (если был «Обработать месяц»).
+      // Если ничего нет — всё равно показываем сотрудников с любыми проставленными полями.
       pool.query<{
         id: number; name: string; storeName: string; year: number; month: number;
         mysteryShopperScore: string | null; reviewsCount: number;
         checklistPercent: string | null; revenuePercent: string | null;
+        savedMvpScore: string | null;
       }>(
         `WITH latest AS (
            SELECT year, month FROM monthly_metrics
            WHERE mystery_shopper_score IS NOT NULL
-              OR reviews_count > 0
+              OR COALESCE(reviews_count, 0) > 0
               OR checklist_percent IS NOT NULL
               OR revenue_percent IS NOT NULL
+              OR mvp_score IS NOT NULL
            ORDER BY year DESC, month DESC
            LIMIT 1
          )
@@ -40,7 +42,8 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
                 mm.mystery_shopper_score::text AS "mysteryShopperScore",
                 COALESCE(mm.reviews_count, 0) AS "reviewsCount",
                 mm.checklist_percent::text     AS "checklistPercent",
-                mm.revenue_percent::text       AS "revenuePercent"
+                mm.revenue_percent::text       AS "revenuePercent",
+                mm.mvp_score::text             AS "savedMvpScore"
          FROM monthly_metrics mm
          JOIN employees e ON e.id = mm.employee_id
          JOIN stores s ON s.id = e.store_id
@@ -69,25 +72,31 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
 
     const totalActiveEmps = parseInt(empResult.rows[0].count, 10);
 
-    // Расчёт MVP «на лету» из текущих метрик (без необходимости «Обработать месяц»)
+    // Расчёт MVP «на лету» — приоритет у сохранённого mvp_score,
+    // если его нет — считаем из текущих метрик той же формулой.
     const cfg = await getMvpConfig();
     const scored = top3Result.rows.map(r => {
-      const score = calcMvpScore({
+      const live = calcMvpScore({
         mysteryShopperScore: r.mysteryShopperScore !== null ? parseFloat(r.mysteryShopperScore) : null,
         reviewsCount: Number(r.reviewsCount) || 0,
         checklistPercent: r.checklistPercent !== null ? parseFloat(r.checklistPercent) : null,
         revenuePercent: r.revenuePercent !== null ? parseFloat(r.revenuePercent) : null,
       }, cfg);
+      const saved = r.savedMvpScore !== null ? parseFloat(r.savedMvpScore) : null;
+      const score = saved !== null && saved > 0 ? saved : live;
       return { id: r.id, name: r.name, storeName: r.storeName, mvpScore: score, year: r.year, month: r.month };
     });
     const top3Mvp = scored
-      .filter(s => s.mvpScore > 0)
       .sort((a, b) => b.mvpScore - a.mvpScore)
       .slice(0, 3);
 
     const mvpPeriod = top3Mvp[0]
       ? { year: top3Mvp[0].year, month: top3Mvp[0].month }
       : null;
+
+    if (top3Mvp.length === 0) {
+      console.log('[dashboard] no MVP data — top3Result rows:', top3Result.rows.length);
+    }
 
     res.json({
       activeEmployees: totalActiveEmps,
