@@ -802,19 +802,27 @@ async function loadRating() {
 
 // ── Store ─────────────────────────────────────────────────────────────────────
 
+let storeRequestId = 0;
+
 async function loadStore() {
   document.getElementById('store-prizes').innerHTML =
     '<div class="empty"><div class="empty-icon">🛍</div><div class="empty-text">Загружаем...</div></div>';
   document.getElementById('store-goal').innerHTML = '';
+
+  // Race-protection: каждый загрузочный запрос получает свой id;
+  // если до завершения был запущен новый — старый отбрасываем.
+  const myId = ++storeRequestId;
 
   try {
     const [prizes, me] = await Promise.all([
       prizesCache ? Promise.resolve(prizesCache) : apiFetch('/prizes'),
       myStatsCache ? Promise.resolve(myStatsCache) : apiFetch('/me'),
     ]);
+    if (myId !== storeRequestId) return; // более свежий запрос уже идёт — не перезаписываем кэш
     prizesCache = prizes; myStatsCache = me;
     renderPrizes();
   } catch (err) {
+    if (myId !== storeRequestId) return;
     document.getElementById('store-prizes').innerHTML =
       `<div class="empty"><div class="empty-icon">😕</div><div class="empty-text">${err.message}</div></div>`;
   }

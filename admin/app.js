@@ -17,6 +17,20 @@ const ROLE_LABEL = {
   coin_admin: 'Администратор (монеты)',
 };
 
+// Единая точка истины: какие вкладки доступны какой роли.
+// Используется и в applyRoleVisibility(), и в switchTab() — чтобы UI и навигация не разошлись.
+const SUPERADMIN_ONLY_TABS = new Set(['adminUsers', 'settings']);
+const COIN_ADMIN_TABS = new Set(['dashboard', 'coins', 'employees']);
+const EDITOR_FORBIDDEN_TABS = new Set(['coins']);
+
+function tabAllowed(tab, role) {
+  if (role === 'superadmin') return true;
+  if (SUPERADMIN_ONLY_TABS.has(tab)) return false;
+  if (role === 'coin_admin') return COIN_ADMIN_TABS.has(tab);
+  if (role === 'editor') return !EDITOR_FORBIDDEN_TABS.has(tab);
+  return false;
+}
+
 // Lucide иконки рендерятся через lucide.createIcons() после каждой вставки HTML.
 function renderIcons() {
   if (window.lucide) lucide.createIcons();
@@ -117,22 +131,16 @@ function logout() {
 
 function applyRoleVisibility() {
   const r = state.role;
-  // Скрываем элементы только-для-суперадмина
-  document.querySelectorAll('.role-superadmin-only').forEach(el => {
-    el.style.display = (r === 'superadmin') ? '' : 'none';
-  });
-  // Скрываем элементы, недоступные для роли «только монеты»
-  // Видимые для coin_admin: дашборд, монеты, сотрудники (read), точки (read)
-  const COIN_ADMIN_ALLOWED = new Set(['dashboard', 'coins', 'employees']);
   document.querySelectorAll('.nav-item[data-tab]').forEach(btn => {
     const tab = btn.getAttribute('data-tab');
-    if (r === 'coin_admin' && !COIN_ADMIN_ALLOWED.has(tab) && !btn.classList.contains('role-superadmin-only')) {
-      btn.style.display = 'none';
-    } else if (r === 'editor' && tab === 'coins') {
-      btn.style.display = 'none';
+    btn.style.display = tabAllowed(tab, r) ? '' : 'none';
+  });
+  // role-superadmin-only — на любых других элементах вне меню
+  document.querySelectorAll('.role-superadmin-only').forEach(el => {
+    if (!el.classList.contains('nav-item')) {
+      el.style.display = (r === 'superadmin') ? '' : 'none';
     }
   });
-  // Скрываем кнопку Bulk-coins для editor
   document.querySelectorAll('.role-coins-write').forEach(el => {
     el.style.display = (r === 'superadmin' || r === 'coin_admin') ? '' : 'none';
   });
@@ -239,17 +247,11 @@ function setStoreFromInline(value) {
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────
 function switchTab(tab) {
-  // Страховка: некоторые вкладки доступны только определённым ролям.
-  const SUPERADMIN_ONLY = new Set(['adminUsers', 'settings']);
-  const COIN_ADMIN_ALLOWED = new Set(['dashboard', 'coins', 'employees']);
-  if (SUPERADMIN_ONLY.has(tab) && state.role !== 'superadmin') {
-    toast('⚠️ Раздел доступен только суперадмину');
-    tab = 'dashboard';
-  } else if (state.role === 'coin_admin' && !COIN_ADMIN_ALLOWED.has(tab)) {
-    toast('⚠️ Этот раздел недоступен для роли «Только монеты»');
-    tab = 'dashboard';
-  } else if (state.role === 'editor' && tab === 'coins') {
-    toast('⚠️ Раздел монет недоступен для твоей роли');
+  // Страховка: используем общий tabAllowed(), чтобы UI и навигация были согласованы.
+  if (state.role && !tabAllowed(tab, state.role)) {
+    if (SUPERADMIN_ONLY_TABS.has(tab)) toast('⚠️ Раздел доступен только суперадмину');
+    else if (state.role === 'coin_admin') toast('⚠️ Раздел недоступен для роли «Только монеты»');
+    else toast('⚠️ Раздел недоступен для твоей роли');
     tab = 'dashboard';
   }
 
@@ -793,6 +795,7 @@ async function addEmployee() {
 }
 
 async function toggleEmployee(id, isActive) {
+  if (!isActive && !confirm('Скрыть этого сотрудника? Он перестанет получать монеты, карточки и уведомления.')) return;
   try {
     await api('PUT', `/employees/${id}`, { isActive });
     loadEmployees();

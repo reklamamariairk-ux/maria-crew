@@ -8,9 +8,10 @@ const router = Router();
 // GET /api/dashboard — сводная статистика для главной страницы
 router.get('/', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
+    // Иркутск (UTC+8) — чтобы счётчик «монет в этом месяце» не «прыгал» в полночь UTC
+    const irkNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const year = irkNow.getUTCFullYear();
+    const month = irkNow.getUTCMonth() + 1;
 
     const [empResult, pendingResult, top3Result, coinsResult, challengeResult] = await Promise.all([
       pool.query<{ count: string }>(
@@ -93,10 +94,6 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
     const mvpPeriod = top3Mvp[0]
       ? { year: top3Mvp[0].year, month: top3Mvp[0].month }
       : null;
-
-    if (top3Mvp.length === 0) {
-      console.log('[dashboard] no MVP data — top3Result rows:', top3Result.rows.length);
-    }
 
     res.json({
       activeEmployees: totalActiveEmps,
