@@ -766,11 +766,24 @@ const COIN_ICONS = {
   training_resistance: '🚫',
 };
 
+// Названия месяцев в родительном падеже для подзаголовков «За май»
+const MONTH_GENITIVE = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const MONTH_NOMINATIVE = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+
+function currentIrkutskMonth() {
+  const irk = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  return irk.getUTCMonth();
+}
+
 async function loadCoins() {
+  const monthIdx = currentIrkutskMonth();
   document.getElementById('coins-balance').textContent  = '—';
   document.getElementById('coins-monthly').textContent  = '—';
   document.getElementById('coins-balance-unit').textContent = 'монет';
-  document.getElementById('coins-monthly-sub').textContent  = 'за месяц';
+  document.getElementById('coins-monthly-sub').textContent  = `за ${MONTH_GENITIVE[monthIdx]}`;
+  // Заголовок info-card конкретизируем — какой именно месяц
+  const monthlyTitleEl = document.querySelector('#tab-coins .coins-top .info-card:nth-child(2) .info-card-title');
+  if (monthlyTitleEl) monthlyTitleEl.textContent = MONTH_NOMINATIVE[monthIdx];
   document.getElementById('coins-history').innerHTML =
     '<div class="empty"><div class="empty-icon">💰</div><div class="empty-text">Загружаем...</div></div>';
 
@@ -797,7 +810,11 @@ async function loadCoins() {
       return;
     }
 
-    document.getElementById('coins-history').innerHTML = renderCoinsHistory(history);
+    document.getElementById('coins-history').innerHTML = renderCoinsHistory(history) + `
+      <p style="font-size:12px;color:var(--hint);text-align:center;padding:14px 12px 4px;line-height:1.5">
+        💡 Зарабатывай больше: ежедневный квиз 🧩, серия входов 🔥, чек-листы ✅,
+        отзывы ⭐, наставничество и обучение 🎓
+      </p>`;
   } catch (err) {
     document.getElementById('coins-history').innerHTML =
       `<div class="empty"><div class="empty-icon">😕</div><div class="empty-text">${err.message}</div></div>`;
