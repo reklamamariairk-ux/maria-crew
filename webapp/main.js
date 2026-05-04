@@ -209,7 +209,11 @@ function showToast(msg) {
 
 function fmt(dateStr) {
   const d = new Date(dateStr);
-  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  const now = new Date();
+  // Если транзакция/заявка не из текущего года — добавляем год
+  return d.getFullYear() === now.getFullYear()
+    ? `${d.getDate()} ${MONTHS[d.getMonth()]}`
+    : `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 function plural(n, one, few, many) {
@@ -1277,15 +1281,36 @@ function renderPrizes() {
     .sort((a, b) => (isCards ? a.cardsRequired - b.cardsRequired : a.coinsRequired - b.coinsRequired))[0];
 
   if (nextPrize) {
-    const cost = isCards ? nextPrize.cardsRequired : nextPrize.coinsRequired;
-    const pct  = Math.min(100, Math.round((balance / cost) * 100));
-    const need = Math.max(0, cost - balance);
+    const isMixedNext = nextPrize.cardsRequired > 0 && nextPrize.coinsRequired > 0;
+    let pct, subText;
+    if (isMixedNext) {
+      // Для mixed-приза показываем прогресс по «более дефицитной» валюте,
+      // чтобы 100% по одной не маскировал нехватку другой.
+      const cardsPct = nextPrize.cardsRequired > 0
+        ? Math.min(100, ((myStatsCache.availableCards || 0) / nextPrize.cardsRequired) * 100) : 100;
+      const coinsPct = nextPrize.coinsRequired > 0
+        ? Math.min(100, ((myStatsCache.coinBalance || 0) / nextPrize.coinsRequired) * 100) : 100;
+      pct = Math.round(Math.min(cardsPct, coinsPct));
+      const cardsHave = myStatsCache.availableCards || 0;
+      const coinsHave = myStatsCache.coinBalance    || 0;
+      const cardsNeed = Math.max(0, nextPrize.cardsRequired - cardsHave);
+      const coinsNeed = Math.max(0, nextPrize.coinsRequired - coinsHave);
+      const needParts = [];
+      if (cardsNeed > 0) needParts.push(`${cardsNeed} ${pluralCards(cardsNeed)}`);
+      if (coinsNeed > 0) needParts.push(`${coinsNeed} ${pluralCoins(coinsNeed)}`);
+      subText = `Стоимость: ${priceLabel(nextPrize)}${needParts.length ? ` — ещё <strong>${needParts.join(' и ')}</strong>` : ''}`;
+    } else {
+      const cost = isCards ? nextPrize.cardsRequired : nextPrize.coinsRequired;
+      pct        = Math.min(100, Math.round((balance / cost) * 100));
+      const need = Math.max(0, cost - balance);
+      subText = `${balance} / ${cost} ${pluralUnit(cost)}${need > 0 ? ` — ещё <strong>${need} ${pluralUnit(need)}</strong>` : ''}`;
+    }
     goalEl.innerHTML = `
       <div class="goal-card">
         <div class="goal-card-title">🎯 До следующего приза</div>
         <div class="goal-card-prize">${escapeHtml(nextPrize.name)}</div>
         <div class="goal-bar-wrap"><div class="goal-bar-fill" style="width:${pct}%"></div></div>
-        <div class="goal-card-sub">${balance} / ${cost} ${pluralUnit(cost)}${need > 0 ? ` — ещё <strong>${need} ${pluralUnit(need)}</strong>` : ''}</div>
+        <div class="goal-card-sub">${subText}</div>
       </div>`;
   } else if (prizes.length > 0) {
     goalEl.innerHTML = `
@@ -1448,6 +1473,9 @@ async function doExchange(prizeId, btn) {
   } catch (err) {
     showToast(err.message || 'Ошибка. Попробуй ещё раз.');
     tg?.HapticFeedback?.notificationOccurred('error');
+    // Сбрасываем кэш — на сервере могла поменяться картина (например, баланс
+    // успели изменить параллельно). Свежий запрос при следующем рендере.
+    prizesCache = null; myStatsCache = null;
   } finally {
     exchangeInFlight = false;
     // Если отменил подтверждение или произошла ошибка — нужно вернуть кнопки в активное состояние.
