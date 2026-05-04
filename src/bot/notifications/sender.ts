@@ -114,7 +114,7 @@ export async function notifyCardsAwarded(
   await send(rows[0].telegramId, text);
 }
 
-/** Уведомляет MVP точки */
+/** Уведомляет лучшего сотрудника точки */
 export async function notifyMvp(
   employeeId: number,
   storeName: string,
@@ -129,11 +129,11 @@ export async function notifyMvp(
   if (!rows[0]) return;
 
   const text =
-    `⭐ <b>Ты MVP точки!</b>\n\n` +
+    `⭐ <b>Ты лучший сотрудник точки!</b>\n\n` +
     `${esc(storeName)} · ${monthName(month)} ${year}\n` +
     `Результат: <b>${score.toFixed(2)} баллов</b>\n\n` +
     `Твои призы:\n` +
-    `🃏 Карточка героя с отметкой MVP\n` +
+    `🃏 Особая карточка героя\n` +
     `🎂 Торт или пирог «Мария» в подарок\n` +
     `📅 Право первого выбора смен\n\n` +
     `Так держать! 💪`;
@@ -157,7 +157,7 @@ export async function notifyTopStore(
   );
 
   const text =
-    `🏆 <b>Ваша точка — Топ-точка месяца!</b>\n\n` +
+    `🏆 <b>Ваша точка — лучшая в этом месяце!</b>\n\n` +
     `${esc(storeName)} · ${monthName(month)} ${year}\n` +
     `Результат: <b>${score.toFixed(1)} баллов</b>\n\n` +
     `Каждый получает +1 карточку героя 🃏\n` +
@@ -262,10 +262,10 @@ export async function publishMonthResults(
 
   if (top) {
     const storeName = storeMap.get(top.storeId) ?? '';
-    text += `🏆 <b>Топ-точка: ${esc(storeName)}</b> — ${top.storeScore.toFixed(1)} баллов\n\n`;
+    text += `🏆 <b>Лучшая точка: ${esc(storeName)}</b> — ${top.storeScore.toFixed(1)} баллов\n\n`;
   }
 
-  text += `<b>MVP по точкам:</b>\n`;
+  text += `<b>Лучшие сотрудники по точкам:</b>\n`;
   for (const result of results) {
     const mvp = result.employees.find(e => e.isMvp);
     if (mvp) {

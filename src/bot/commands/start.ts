@@ -30,7 +30,7 @@ export function mainMenuKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
     .webApp('🚀 Открыть Maria Crew', WEBAPP_URL).row()
     .text('🃏 Коллекция', 'menu:collection').text('💰 Монеты', 'menu:coins').row()
-    .text('⭐ Рейтинг', 'menu:rating').text('🏆 Топ точек', 'menu:top').row()
+    .text('⭐ Рейтинг', 'menu:rating').text('🏆 Лучшие точки', 'menu:top').row()
     .text('🛍 Maria Store', 'menu:store').text('👥 Команда', 'menu:crew');
 }
 

@@ -567,7 +567,7 @@ async function loadCollection() {
           <div class="howto-row"><span class="howto-row-icon">✅</span><div class="howto-row-text"><strong>Выполни чек-лист за смену</strong><span>Руководитель отмечает каждый день</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">⭐</span><div class="howto-row-text"><strong>Получи именной отзыв от гостя</strong><span>Упомянули тебя по имени в отзыве</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">📈</span><div class="howto-row-text"><strong>Выполни план продаж</strong><span>Хороший результат за месяц</span></div></div>
-          <div class="howto-row"><span class="howto-row-icon">👑</span><div class="howto-row-text"><strong>Стань MVP месяца</strong><span>Лучший результат точки — особая карточка</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">👑</span><div class="howto-row-text"><strong>Стань лучшим сотрудником месяца</strong><span>Лучший результат точки — особая карточка</span></div></div>
         </div>
         <p style="font-size:12px;color:var(--hint);text-align:center;padding-bottom:4px">Карточки выдаёт руководитель по итогам месяца</p>`;
     } else if (ownedMain < totalMain) {
@@ -778,7 +778,7 @@ async function loadRating() {
   document.getElementById('rating-info-block').innerHTML = `
     <div class="rating-info">
       <span class="rating-info-icon">ℹ️</span>
-      <div class="rating-info-text">Рейтинг считается по MVP-баллам за текущий месяц. MVP-балл — оценка твоей работы: чек-листы, отзывы, план продаж и другие показатели.</div>
+      <div class="rating-info-text">Рейтинг считается по баллам за текущий месяц. Балл — оценка твоей работы: чек-листы, отзывы, план продаж и другие показатели. Кто наберёт больше всех — становится лучшим сотрудником месяца.</div>
     </div>`;
 
   try {
@@ -799,7 +799,7 @@ async function loadRating() {
         : 'нет оценки';
       return `<div class="lb-item${isMe ? ' lb-me' : ''}">
         <div class="lb-rank">${MEDALS[i] || (i + 1)}</div>
-        <div class="lb-name">${escapeHtml(r.name)}${r.isMvp ? ' <span class="lb-mvp">MVP</span>' : ''}</div>
+        <div class="lb-name">${escapeHtml(r.name)}${r.isMvp ? ' <span class="lb-mvp">★ ЛУЧШИЙ</span>' : ''}</div>
         <div class="lb-score">${score}</div>
       </div>`;
     }).join('');

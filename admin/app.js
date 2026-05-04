@@ -478,7 +478,7 @@ async function saveMetrics() {
 
 async function processMonth() {
   if (!state.storeId) { toast('Выберите точку'); return; }
-  if (!confirm(`Обработать ${MONTH_NAMES[state.month]} ${state.year}?\n\n⚠️ Внимание: автообработка ПЕРЕЗАПИШЕТ MVP-баллы и статус MVP, выставленные вручную во вкладке «Рейтинги», на значения, рассчитанные по метрикам.\n\nЕсли ты ставил баллы вручную — нажми «Отмена» и не запускай автообработку (карточки за метрики и MVP можно выдать вручную во вкладке «Карточки»).\n\nПродолжить автообработку?`)) return;
+  if (!confirm(`Обработать ${MONTH_NAMES[state.month]} ${state.year}?\n\n⚠️ Внимание: автообработка ПЕРЕЗАПИШЕТ баллы и статус «Лучший сотрудник», выставленные вручную во вкладке «Рейтинги», на значения, рассчитанные по метрикам.\n\nЕсли ты ставил баллы вручную — нажми «Отмена» и не запускай автообработку (карточки за метрики и за лучшего сотрудника можно выдать вручную во вкладке «Карточки»).\n\nПродолжить автообработку?`)) return;
 
   const avgRatingScore = parseFloat(document.getElementById('store-rating-score').value) || 0;
   const revenuePercent = parseFloat(document.getElementById('store-revenue-percent').value) || 0;
@@ -493,10 +493,10 @@ async function processMonth() {
     });
     const processed = result.results?.[0];
     const mvp = processed?.employees?.find(e => e.isMvp);
-    toast(`✅ Готово! MVP: ${mvp?.name ?? '—'} (${mvp?.mvpScore?.toFixed(2) ?? '—'} б.)`);
+    toast(`✅ Готово! Лучший сотрудник: ${mvp?.name ?? '—'} (${mvp?.mvpScore?.toFixed(2) ?? '—'} б.)`);
     loadMetrics();
   } catch (e) { toast('❌ ' + e.message); }
-  finally { btn.disabled = false; btn.textContent = '⚡ Обработать месяц (MVP + карточки + уведомления)'; }
+  finally { btn.disabled = false; btn.textContent = '⚡ Обработать месяц (баллы + карточки + уведомления)'; }
 }
 
 // ── Монеты ────────────────────────────────────────────────────────────────────
@@ -929,15 +929,15 @@ async function loadLeaderboard() {
       const score = e.mvpScore !== null ? Number(e.mvpScore).toFixed(2) : '';
       return `<tr>
         <td><strong>${RANK[i] ?? i+1}</strong></td>
-        <td><strong>${esc(e.name)}</strong>${e.isMvp ? ' <span class="badge badge-mvp"><i data-lucide="star"></i> MVP</span>' : ''}</td>
+        <td><strong>${esc(e.name)}</strong>${e.isMvp ? ' <span class="badge badge-mvp"><i data-lucide="star"></i> Лучший</span>' : ''}</td>
         <td><input type="number" step="0.01" min="0" max="200" class="lb-score-input"
             value="${score}" data-emp-id="${e.employeeId}"
             onchange="saveEmployeeScore(${e.employeeId}, this)"></td>
         <td>${e.cardsCount}</td>
         <td>
           ${e.isMvp
-            ? '<button class="btn btn-ghost btn-sm" disabled><i data-lucide="star"></i> MVP</button>'
-            : `<button class="btn btn-ghost btn-sm" onclick="setEmployeeMvp(${e.employeeId})"><i data-lucide="star"></i> Сделать MVP</button>`}
+            ? '<button class="btn btn-ghost btn-sm" disabled><i data-lucide="star"></i> Лучший</button>'
+            : `<button class="btn btn-ghost btn-sm" onclick="setEmployeeMvp(${e.employeeId})"><i data-lucide="star"></i> Сделать лучшим</button>`}
         </td>
       </tr>`;
     }).join('');
@@ -951,13 +951,13 @@ async function loadLeaderboard() {
       const score = s.totalScore !== null ? Number(s.totalScore).toFixed(1) : '';
       return `<tr>
         <td><strong>${RANK[i] ?? i+1}</strong></td>
-        <td><strong>${esc(s.storeName)}</strong>${s.isTop ? ' <span class="badge badge-mvp"><i data-lucide="crown"></i> ТОП</span>' : ''}</td>
+        <td><strong>${esc(s.storeName)}</strong>${s.isTop ? ' <span class="badge badge-mvp"><i data-lucide="crown"></i> Лучшая</span>' : ''}</td>
         <td><input type="number" step="0.1" min="0" max="200" class="lb-score-input"
             value="${score}" onchange="saveStoreScore(${s.storeId}, this)"></td>
         <td>
           ${s.isTop
-            ? '<button class="btn btn-ghost btn-sm" disabled><i data-lucide="crown"></i> ТОП</button>'
-            : `<button class="btn btn-ghost btn-sm" onclick="setStoreTop(${s.storeId})"><i data-lucide="crown"></i> Сделать ТОП</button>`}
+            ? '<button class="btn btn-ghost btn-sm" disabled><i data-lucide="crown"></i> Лучшая</button>'
+            : `<button class="btn btn-ghost btn-sm" onclick="setStoreTop(${s.storeId})"><i data-lucide="crown"></i> Сделать лучшей</button>`}
         </td>
       </tr>`;
     }).join('');
@@ -979,12 +979,12 @@ async function saveEmployeeScore(employeeId, inputEl) {
 }
 
 async function setEmployeeMvp(employeeId) {
-  if (!confirm('Сделать сотрудника MVP месяца? С остальных в этой точке статус MVP будет снят.')) return;
+  if (!confirm('Сделать сотрудника лучшим в этом месяце? С остальных в этой точке статус «Лучший» будет снят.')) return;
   try {
     await api('PUT', `/leaderboard/employees/${employeeId}`, {
       year: state.year, month: state.month, storeId: state.storeId, isMvp: true,
     });
-    toast('✅ MVP назначен');
+    toast('✅ Лучший сотрудник назначен');
     loadLeaderboard();
   } catch (e) { toast('❌ ' + e.message); }
 }
@@ -1004,12 +1004,12 @@ async function saveStoreScore(storeId, inputEl) {
 }
 
 async function setStoreTop(storeId) {
-  if (!confirm('Назначить точку ТОПом месяца? Команда получит бонусную карточку. С остальных точек ТОП будет снят.')) return;
+  if (!confirm('Назначить точку лучшей в этом месяце? Команда получит бонусную карточку. С остальных точек статус «Лучшая» будет снят.')) return;
   try {
     await api('PUT', `/leaderboard/stores/${storeId}`, {
       year: state.year, month: state.month, isTop: true,
     });
-    toast('✅ ТОП-точка обновлена');
+    toast('✅ Лучшая точка обновлена');
     loadLeaderboard();
   } catch (e) { toast('❌ ' + e.message); }
 }
@@ -1122,8 +1122,8 @@ const CARD_SOURCE_LABELS = {
   review:          'Именной отзыв',
   checklist:       'Чек-лист 100%',
   plan:            'Выполнение плана',
-  mvp:             'MVP месяца',
-  team_bonus:      'Бонус ТОП-точки',
+  mvp:             'Лучший сотрудник месяца',
+  team_bonus:      'Бонус лучшей точки',
   seasonal:        'Сезонный челлендж',
   manual:          'Вручную (руководитель)',
 };
@@ -1191,14 +1191,14 @@ async function loadEmployeeCards() {
       </div>
       <div class="stat-card">
         <div class="stat-card-icon"><i data-lucide="star"></i></div>
-        <div class="label">MVP</div>
+        <div class="label">Лучших</div>
         <div class="value">${totalMvp}</div>
       </div>
     </div>
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>Герой</th><th>Источник</th><th>Период</th><th>MVP</th><th>Статус</th><th>Действия</th>
+          <th>Герой</th><th>Источник</th><th>Период</th><th>Лучший</th><th>Статус</th><th>Действия</th>
         </tr></thead>
         <tbody>
           ${cards.map(c => `<tr>
@@ -1456,8 +1456,8 @@ const AUDIT_ACTION_LABELS = {
   metrics_save:             '📊 Метрики',
   metrics_process:          '⚡ Обработка месяца',
   rating_score_set:         '🏆 Балл рейтинга',
-  rating_mvp_set:           '🏆 MVP назначен',
-  rating_top_set:           '🏆 ТОП-точка',
+  rating_mvp_set:           '🏆 Лучший сотрудник назначен',
+  rating_top_set:           '🏆 Лучшая точка',
   exchange_fulfill:         '🎁 Приз выдан',
   exchange_reject:          '🎁 Заявка отклонена',
   store_create:             '🏪 Точка создана',
@@ -2125,7 +2125,7 @@ async function exportMetricsCsv() {
   const emps = (employees || []).filter(e => e.isActive);
   downloadCsv(
     `метрики_${state.year}_${state.month}.csv`,
-    ['Сотрудник','Тайный покупатель (0-100)','Отзывы','Чек-лист (%)','Выполнение плана (%)','MVP Score','MVP'],
+    ['Сотрудник','Тайный покупатель (0-100)','Отзывы','Чек-лист (%)','Выполнение плана (%)','Балл','Лучший месяца'],
     emps.map(e => {
       const m = metricMap[e.id] || {};
       return [e.name, m.mysteryShopperScore ?? '', m.reviewsCount ?? 0, m.checklistPercent ?? '', m.revenuePercent ?? '', m.mvpScore ?? '', m.isMvp ? 'Да' : ''];
@@ -2140,7 +2140,7 @@ async function exportLeaderboardCsv() {
   const emps = data.employees || data || [];
   downloadCsv(
     `рейтинг_${state.year}_${state.month}.csv`,
-    ['Место','Сотрудник','Точка','MVP Score','MVP','Карточек','Монет'],
+    ['Место','Сотрудник','Точка','Балл','Лучший месяца','Карточек','Монет'],
     emps.map((e, i) => [i+1, e.name ?? e.employeeName, e.storeName ?? '', e.mvpScore ?? '', e.isMvp ? 'Да' : '', e.cardsCount ?? '', e.coinsBalance ?? ''])
   );
 }

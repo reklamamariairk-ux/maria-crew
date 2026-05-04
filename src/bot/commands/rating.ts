@@ -28,7 +28,7 @@ export async function handleRating(ctx: BotContext): Promise<void> {
   leaderboard.forEach((entry, i) => {
     const rank = i + 1;
     const emoji = rankEmoji(rank);
-    const mvpTag = entry.isMvp ? ' ⭐ MVP' : '';
+    const mvpTag = entry.isMvp ? ' ⭐ Лучший' : '';
     const score = entry.mvpScore !== null ? entry.mvpScore.toFixed(2) : '—';
     text += `${emoji} ${esc(entry.name)} — ${score}${mvpTag}\n`;
 

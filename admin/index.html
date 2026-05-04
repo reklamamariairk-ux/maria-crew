@@ -150,7 +150,7 @@
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px" class="dashboard-grid">
         <div class="card card-pad">
-          <p class="section-title"><i data-lucide="trophy" style="width:14px;height:14px"></i> Топ-3 MVP месяца</p>
+          <p class="section-title"><i data-lucide="trophy" style="width:14px;height:14px"></i> Топ-3 лучших сотрудников месяца</p>
           <div id="dash-top3">
             <p class="text-muted">Нет данных за текущий месяц</p>
           </div>
@@ -349,13 +349,13 @@
               <option value="review">Именной отзыв</option>
               <option value="checklist">Чек-лист 100%</option>
               <option value="plan">Выполнение плана</option>
-              <option value="mvp">MVP месяца</option>
-              <option value="team_bonus">Бонус ТОП-точки</option>
+              <option value="mvp">Лучший сотрудник месяца</option>
+              <option value="team_bonus">Бонус лучшей точки</option>
               <option value="seasonal">Сезонный челлендж</option>
             </select>
           </label>
           <label style="flex-direction:row;align-items:center;gap:6px;font-weight:500">
-            <input type="checkbox" id="card-mvp"> MVP-карточка
+            <input type="checkbox" id="card-mvp"> Карточка лучшего сотрудника
           </label>
           <button class="btn btn-primary" onclick="giveCard()"><i data-lucide="plus"></i> Выдать</button>
         </div>
@@ -490,7 +490,7 @@
       <div class="page-head">
         <div>
           <h1 class="page-title">Рейтинги</h1>
-          <p class="page-subtitle">MVP сотрудников и топ точек — можно править вручную</p>
+          <p class="page-subtitle">Лучшие сотрудники и лучшие точки — можно править вручную</p>
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
           <div class="inline-store-picker">
@@ -509,7 +509,7 @@
 
       <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:18px;flex-wrap:wrap">
         <div>
-          <p class="section-title">MVP сотрудников</p>
+          <p class="section-title">Лучшие сотрудники</p>
           <div class="table-wrap">
             <table>
               <thead><tr><th>#</th><th>Имя</th><th style="width:90px">Баллы</th><th style="width:60px">Карт.</th><th style="width:130px">Действие</th></tr></thead>
@@ -845,15 +845,15 @@
       <div class="page-head">
         <div>
           <h1 class="page-title">Настройки</h1>
-          <p class="page-subtitle">Формула расчёта MVP Score — веса компонентов</p>
+          <p class="page-subtitle">Формула расчёта баллов лучшего сотрудника — веса компонентов</p>
         </div>
         <button class="btn btn-ghost" onclick="loadMvpConfig()"><i data-lucide="refresh-cw"></i> Обновить</button>
       </div>
 
       <div class="card card-pad" style="max-width:560px">
-        <p class="section-title">Формула MVP Score сотрудника</p>
+        <p class="section-title">Формула баллов сотрудника</p>
         <p class="text-muted" style="font-size:13px;margin-bottom:16px">
-          MVP Score = (тайный покупатель / 100 × <strong>Вес ТП</strong>) + min(отзывы × <strong>Монет/отзыв</strong>, <strong>Макс. отзывов</strong>) + (чек-лист / 100 × <strong>Вес ЧЛ</strong>) + min(план / 100 × <strong>Вес план</strong>, <strong>Макс. план</strong>)
+          Баллы = (тайный покупатель / 100 × <strong>Вес ТП</strong>) + min(отзывы × <strong>Монет/отзыв</strong>, <strong>Макс. отзывов</strong>) + (чек-лист / 100 × <strong>Вес ЧЛ</strong>) + min(план / 100 × <strong>Вес план</strong>, <strong>Макс. план</strong>)
         </p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
           <label>Вес Тайного покупателя (0–100)
@@ -881,10 +881,10 @@
           Начисляются автоматически при нажатии «Обработать месяц» в разделе «Метрики».
         </p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-          <label>Монеты за MVP сотрудника
+          <label>Монеты лучшему сотруднику месяца
             <input type="number" id="cfg-mvp-coins" class="input" min="0" max="10000" step="1" placeholder="50">
           </label>
-          <label>Монеты за Топ-точку (всей команде)
+          <label>Монеты команде лучшей точки
             <input type="number" id="cfg-top-store-coins" class="input" min="0" max="10000" step="1" placeholder="30">
           </label>
         </div>
