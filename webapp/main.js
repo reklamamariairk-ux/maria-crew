@@ -895,24 +895,28 @@ async function loadQuiz() {
 
     // Баннер «Твой первый квиз» — только для совсем нового сотрудника, который ещё не отвечал
     if (firstBanner && isNewUser && quizAnsweredBefore === 0) {
+      const qWord = plural(quizTotalToday, 'вопрос', 'вопроса', 'вопросов');
+      const cWord = plural(quizTotalToday, 'монета', 'монеты', 'монет');
       firstBanner.style.display = 'block';
       firstBanner.innerHTML = `
         <div class="first-quiz-banner">
           <div class="first-quiz-banner-icon">🎉</div>
           <div class="first-quiz-banner-text">
             <strong>Твой первый квиз!</strong>
-            <span>Ответь правильно на все ${quizTotalToday} вопросов — получи +${quizTotalToday} монет прямо сейчас</span>
+            <span>Ответь правильно на все ${quizTotalToday} ${qWord} — получи +${quizTotalToday} ${cWord} прямо сейчас</span>
           </div>
         </div>`;
     } else if (firstBanner && quizAnsweredBefore > 0) {
       // Сотрудник уже отвечал сегодня — баннер «продолжаем»
+      const left = quizTotalToday - quizAnsweredBefore;
+      const leftWord = plural(left, 'вопрос', 'вопроса', 'вопросов');
       firstBanner.style.display = 'block';
       firstBanner.innerHTML = `
         <div class="first-quiz-banner" style="background:linear-gradient(135deg,var(--gold-bg),#fff8e1);border-color:var(--gold)">
           <div class="first-quiz-banner-icon">⏯</div>
           <div class="first-quiz-banner-text">
             <strong>Продолжаем</strong>
-            <span>Ты уже ответил на ${quizAnsweredBefore} из ${quizTotalToday} сегодня. Осталось ${quizTotalToday - quizAnsweredBefore}.</span>
+            <span>Ты уже ответил на ${quizAnsweredBefore} из ${quizTotalToday} сегодня. Осталось ${left} ${leftWord}.</span>
           </div>
         </div>`;
     }
@@ -1047,6 +1051,12 @@ function showQuizResults(container) {
        </div>`
     : '';
 
+  // Если за день ещё остались вопросы — кнопка «Дальше», иначе «На главную»
+  const dayDone = (quizAnsweredBefore + correct + (sessionTotal - correct)) >= dayTotal;
+  const actionBtn = dayDone
+    ? `<button class="btn-quiz-retry" onclick="switchTab('collection')">На карточки</button>`
+    : `<button class="btn-quiz-retry" onclick="loadQuiz()">Продолжить квиз</button>`;
+
   container.innerHTML = `
     <div class="quiz-results-card">
       <div class="quiz-results-emoji">${emoji}</div>
@@ -1056,7 +1066,8 @@ function showQuizResults(container) {
         ? `<div class="quiz-results-coins">+${coinsEarned} ${plural(coinsEarned,'монета','монеты','монет')}</div>`
         : '<div style="font-size:14px;color:var(--hint);margin-bottom:16px">Монет за этот блок ответов нет — попробуй завтра</div>'}
       ${catBlock}
-      <div class="quiz-results-note" style="margin-top:14px">Новые вопросы появятся завтра 🌙</div>
+      <div class="quiz-results-note" style="margin-top:14px">${dayDone ? 'Новые вопросы появятся завтра 🌙' : 'За день остались ещё вопросы — продолжишь?'}</div>
+      ${actionBtn}
     </div>`;
 
   tg?.HapticFeedback?.notificationOccurred(correct === sessionTotal && sessionTotal > 0 ? 'success' : 'warning');
