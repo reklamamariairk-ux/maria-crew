@@ -936,7 +936,7 @@ async function loadLeaderboard() {
         <td>${e.cardsCount}</td>
         <td>
           ${e.isMvp
-            ? '<button class="btn btn-ghost btn-sm" disabled><i data-lucide="star"></i> Лучший</button>'
+            ? `<button class="btn btn-ghost btn-sm" onclick="unsetEmployeeMvp(${e.employeeId})" title="Снять статус"><i data-lucide="x"></i> Снять</button>`
             : `<button class="btn btn-ghost btn-sm" onclick="setEmployeeMvp(${e.employeeId})"><i data-lucide="star"></i> Сделать лучшим</button>`}
         </td>
       </tr>`;
@@ -956,7 +956,7 @@ async function loadLeaderboard() {
             value="${score}" onchange="saveStoreScore(${s.storeId}, this)"></td>
         <td>
           ${s.isTop
-            ? '<button class="btn btn-ghost btn-sm" disabled><i data-lucide="crown"></i> Лучшая</button>'
+            ? `<button class="btn btn-ghost btn-sm" onclick="unsetStoreTop(${s.storeId})" title="Снять статус"><i data-lucide="x"></i> Снять</button>`
             : `<button class="btn btn-ghost btn-sm" onclick="setStoreTop(${s.storeId})"><i data-lucide="crown"></i> Сделать лучшей</button>`}
         </td>
       </tr>`;
@@ -989,6 +989,17 @@ async function setEmployeeMvp(employeeId) {
   } catch (e) { toast('❌ ' + e.message); }
 }
 
+async function unsetEmployeeMvp(employeeId) {
+  if (!confirm('Снять статус «Лучший сотрудник» за этот месяц?\n\n⚠️ Уже начисленные монеты и выданная особая карточка НЕ возвращаются — при необходимости откати их вручную.')) return;
+  try {
+    await api('PUT', `/leaderboard/employees/${employeeId}`, {
+      year: state.year, month: state.month, storeId: state.storeId, isMvp: false,
+    });
+    toast('✅ Статус снят');
+    loadLeaderboard();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
 async function saveStoreScore(storeId, inputEl) {
   const v = inputEl.value.trim();
   const totalScore = v === '' ? null : parseFloat(v);
@@ -1010,6 +1021,17 @@ async function setStoreTop(storeId) {
       year: state.year, month: state.month, isTop: true,
     });
     toast('✅ Лучшая точка обновлена');
+    loadLeaderboard();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+async function unsetStoreTop(storeId) {
+  if (!confirm('Снять статус «Лучшая точка» за этот месяц?\n\n⚠️ Уже начисленные команде +30 монет и карточки team_bonus НЕ возвращаются — при необходимости откати их вручную.')) return;
+  try {
+    await api('PUT', `/leaderboard/stores/${storeId}`, {
+      year: state.year, month: state.month, isTop: false,
+    });
+    toast('✅ Статус снят');
     loadLeaderboard();
   } catch (e) { toast('❌ ' + e.message); }
 }
