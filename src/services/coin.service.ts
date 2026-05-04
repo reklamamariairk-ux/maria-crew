@@ -120,7 +120,9 @@ export async function getHistory(
   return rows;
 }
 
-/** Статистика монет за месяц (сколько заработано, сколько потрачено) */
+/** Статистика монет за месяц (сколько заработано, сколько потрачено).
+ *  Месяц считается по Иркутскому времени (UTC+8) — иначе транзакции в начале/конце
+ *  месяца могут уехать в соседний месяц по UTC. */
 export async function getMonthlySummary(
   employeeId: number,
   year: number,
@@ -132,8 +134,8 @@ export async function getMonthlySummary(
        COALESCE(ABS(SUM(amount) FILTER (WHERE amount < 0)), 0)::text AS spent
      FROM coin_transactions
      WHERE employee_id = $1
-       AND EXTRACT(YEAR  FROM created_at) = $2
-       AND EXTRACT(MONTH FROM created_at) = $3`,
+       AND EXTRACT(YEAR  FROM created_at AT TIME ZONE 'Asia/Irkutsk') = $2
+       AND EXTRACT(MONTH FROM created_at AT TIME ZONE 'Asia/Irkutsk') = $3`,
     [employeeId, year, month]
   );
   const earned = parseInt(rows[0].earned, 10);

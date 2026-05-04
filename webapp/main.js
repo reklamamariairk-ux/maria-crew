@@ -600,16 +600,40 @@ async function loadCollection() {
 
 // ── Coins ─────────────────────────────────────────────────────────────────────
 
+const COIN_ICONS = {
+  checkin:             '🔥',
+  quiz:                '🧩',
+  checklist_day:       '✅',
+  review:              '⭐',
+  cake_order:          '🎂',
+  substitution:        '🔄',
+  mentoring:           '🎓',
+  idea:                '💡',
+  training_meeting:    '📚',
+  knowledge_applied:   '🧠',
+  manual:              '✋',
+  spend:               '🛍',
+  bad_review:          '⚠️',
+  dirty_store:         '🧹',
+  training_resistance: '🚫',
+};
+
 async function loadCoins() {
   document.getElementById('coins-balance').textContent  = '—';
   document.getElementById('coins-monthly').textContent  = '—';
+  document.getElementById('coins-balance-unit').textContent = 'монет';
+  document.getElementById('coins-monthly-sub').textContent  = 'за месяц';
   document.getElementById('coins-history').innerHTML =
     '<div class="empty"><div class="empty-icon">💰</div><div class="empty-text">Загружаем...</div></div>';
 
   try {
-    const { balance, monthly, history } = await apiFetch('/coins');
+    const { balance, monthly, monthlySpent, history } = await apiFetch('/coins');
     document.getElementById('coins-balance').textContent = balance;
+    document.getElementById('coins-balance-unit').textContent = pluralCoins(Number(balance) || 0);
+
     document.getElementById('coins-monthly').textContent = '+' + monthly;
+    document.getElementById('coins-monthly-sub').textContent =
+      monthlySpent > 0 ? `заработано · потрачено −${monthlySpent}` : 'заработано';
 
     if (!history.length) {
       document.getElementById('coins-history').innerHTML = `
@@ -619,17 +643,20 @@ async function loadCoins() {
           <div class="howto-row"><span class="howto-row-icon">🔥</span><div class="howto-row-text"><strong>Серия входов</strong><span>Нажми 🔥 в шапке каждый день. Каждый 7-й день подряд = +5 бонусом</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">✅</span><div class="howto-row-text"><strong>Чек-лист за смену</strong><span>Руководитель начисляет монеты за хороший день</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">⭐</span><div class="howto-row-text"><strong>Именной отзыв от гостя</strong><span>Тебя упомянули по имени в отзыве</span></div></div>
-          <div class="howto-row"><span class="howto-row-icon">🎂</span><div class="howto-row-text"><strong>Торт на заказ</strong><span>Провёл продажу торта на заказ</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">🎓</span><div class="howto-row-text"><strong>Наставничество и обучение</strong><span>Подмена коллеги, идеи, применение знаний</span></div></div>
         </div>
         <p style="font-size:12px;color:var(--hint);text-align:center;padding-bottom:4px">Монеты начисляет руководитель + квиз и серия входов</p>`;
       return;
     }
 
     document.getElementById('coins-history').innerHTML = history.map(tx => {
-      const pos = tx.amount > 0;
+      const pos   = tx.amount > 0;
+      const icon  = COIN_ICONS[tx.reason] || (pos ? '+' : '−');
+      const label = COIN_LABELS[tx.reason] || tx.reason;
       return `<div class="tx-item">
+        <div class="tx-icon ${pos ? 'pos' : 'neg'}">${icon}</div>
         <div style="flex:1;min-width:0">
-          <div class="tx-label">${COIN_LABELS[tx.reason] || tx.reason}</div>
+          <div class="tx-label">${escapeHtml(label)}</div>
           <div class="tx-date">${fmt(tx.createdAt)}</div>
         </div>
         <div class="tx-amount ${pos ? 'pos' : 'neg'}">${pos ? '+' : ''}${tx.amount}</div>

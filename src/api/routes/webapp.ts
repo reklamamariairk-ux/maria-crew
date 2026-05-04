@@ -343,7 +343,7 @@ router.get('/coins', async (req: Request, res: Response, next: NextFunction): Pr
       getMonthlySummary(auth.employee.id, now.getFullYear(), now.getMonth() + 1),
     ]);
 
-    res.json({ balance, monthly: monthly.earned, history });
+    res.json({ balance, monthly: monthly.earned, monthlySpent: monthly.spent, history });
   } catch (err) { next(err); }
 });
 
