@@ -17,7 +17,9 @@ let isNewUser = false;
 // Quiz state
 let quizQuestions = [];
 let quizCurrentIdx = 0;
-let quizResults = { correct: 0, coinsEarned: 0 };
+let quizAnsweredBefore = 0;        // сколько вопросов уже было отвечено сегодня до начала этой сессии
+let quizTotalToday = 5;            // всего вопросов в дневной сессии
+let quizResults = { correct: 0, coinsEarned: 0, byCategory: {} };
 const QUIZ_LABELS = ['А', 'Б', 'В', 'Г'];
 
 const CATEGORY_LABELS = { product: 'Продукция', service: 'Сервис', crew: 'Команда' };
@@ -806,21 +808,36 @@ async function loadQuiz() {
       return;
     }
 
-    if (firstBanner && isNewUser) {
+    quizAnsweredBefore = data.answeredToday || 0;
+    quizTotalToday    = data.totalToday    || 5;
+
+    // Баннер «Твой первый квиз» — только для совсем нового сотрудника, который ещё не отвечал
+    if (firstBanner && isNewUser && quizAnsweredBefore === 0) {
       firstBanner.style.display = 'block';
       firstBanner.innerHTML = `
         <div class="first-quiz-banner">
           <div class="first-quiz-banner-icon">🎉</div>
           <div class="first-quiz-banner-text">
             <strong>Твой первый квиз!</strong>
-            <span>Ответь правильно на все 5 вопросов — получи +5 монет прямо сейчас</span>
+            <span>Ответь правильно на все ${quizTotalToday} вопросов — получи +${quizTotalToday} монет прямо сейчас</span>
+          </div>
+        </div>`;
+    } else if (firstBanner && quizAnsweredBefore > 0) {
+      // Сотрудник уже отвечал сегодня — баннер «продолжаем»
+      firstBanner.style.display = 'block';
+      firstBanner.innerHTML = `
+        <div class="first-quiz-banner" style="background:linear-gradient(135deg,var(--gold-bg),#fff8e1);border-color:var(--gold)">
+          <div class="first-quiz-banner-icon">⏯</div>
+          <div class="first-quiz-banner-text">
+            <strong>Продолжаем</strong>
+            <span>Ты уже ответил на ${quizAnsweredBefore} из ${quizTotalToday} сегодня. Осталось ${quizTotalToday - quizAnsweredBefore}.</span>
           </div>
         </div>`;
     }
 
     quizQuestions = data.questions;
     quizCurrentIdx = 0;
-    quizResults = { correct: 0, coinsEarned: 0 };
+    quizResults = { correct: 0, coinsEarned: 0, byCategory: {} };
     showQuizQuestion(container);
   } catch (err) {
     container.innerHTML = `<div class="empty"><div class="empty-icon">😕</div><div class="empty-text">${err.message}</div></div>`;
@@ -835,30 +852,33 @@ function showQuizQuestion(container) {
   }
 
   const q = quizQuestions[quizCurrentIdx];
-  const n     = quizCurrentIdx + 1;
-  const total = quizQuestions.length;
-  const pct   = Math.round(((n - 1) / total) * 100);
-  const catLabel = CATEGORY_LABELS[q.category] || q.category;
+  // Глобальный номер вопроса в дневной серии (учитываем уже отвеченные ранее)
+  const globalN = quizAnsweredBefore + quizCurrentIdx + 1;
+  const total   = quizTotalToday;
+  // Прогресс — после ответа на N вопросов (т.е. бар у первого = 0%, у пятого = 80%, после ответа = 100%)
+  const pct = Math.round(((globalN - 1) / total) * 100);
+  const catLabel = CATEGORY_LABELS[q.category] || q.category || 'Вопрос';
 
   c.innerHTML = `
     <div class="quiz-card">
       <div class="quiz-header">
-        <span class="quiz-progress-text">Вопрос ${n} из ${total}</span>
-        <span class="quiz-category">${escapeHtml(catLabel)}</span>
+        <span class="quiz-progress-text">Вопрос ${globalN} из ${total}</span>
+        ${q.category ? `<span class="quiz-category">${escapeHtml(catLabel)}</span>` : ''}
       </div>
       <div class="quiz-bar-wrap"><div class="quiz-bar-fill" style="width:${pct}%"></div></div>
       <div class="quiz-question">${escapeHtml(q.question)}</div>
       <div class="quiz-options">
         ${q.options.map((opt, i) => `
-          <button class="quiz-option" onclick="answerQuiz(${q.id},${i},this)" data-index="${i}">
+          <button class="quiz-option" onclick="answerQuiz(${q.id},${i},this,'${q.category}')" data-index="${i}">
             <span class="quiz-option-label">${QUIZ_LABELS[i]}</span>
             <span>${escapeHtml(opt)}</span>
           </button>`).join('')}
       </div>
+      <div id="quiz-feedback" style="margin-top:14px;text-align:center;min-height:24px"></div>
     </div>`;
 }
 
-window.answerQuiz = async function (questionId, answerIndex, btn) {
+window.answerQuiz = async function (questionId, answerIndex, btn, category) {
   document.querySelectorAll('.quiz-option').forEach(b => b.disabled = true);
   tg?.HapticFeedback?.selectionChanged();
 
@@ -872,16 +892,28 @@ window.answerQuiz = async function (questionId, answerIndex, btn) {
       else                                               b.classList.add('dim');
     });
 
+    // Считаем разбивку по категориям
+    const catKey = category || 'other';
+    if (!quizResults.byCategory[catKey]) quizResults.byCategory[catKey] = { correct: 0, total: 0 };
+    quizResults.byCategory[catKey].total++;
+
+    // Мгновенный фидбэк прямо на карточке вопроса
+    const fb = document.getElementById('quiz-feedback');
     if (result.isCorrect) {
       quizResults.correct++;
       quizResults.coinsEarned += result.coinsEarned;
+      quizResults.byCategory[catKey].correct++;
       tg?.HapticFeedback?.notificationOccurred('success');
+      if (fb) fb.innerHTML = result.coinsEarned > 0
+        ? `<span style="display:inline-block;background:var(--gold-bg);color:var(--gold);font-weight:900;padding:6px 14px;border-radius:20px;font-size:13px;animation:pop 0.4s ease">+${result.coinsEarned} ${plural(result.coinsEarned, 'монета', 'монеты', 'монет')} 🎉</span>`
+        : `<span style="color:var(--green);font-weight:700;font-size:13px">✓ Правильно!</span>`;
     } else {
       tg?.HapticFeedback?.notificationOccurred('error');
+      if (fb) fb.innerHTML = `<span style="color:var(--brand);font-weight:700;font-size:13px">✗ Не угадал. Правильный ответ — ${QUIZ_LABELS[result.correctIndex]}</span>`;
     }
 
     quizCurrentIdx++;
-    setTimeout(() => showQuizQuestion(document.getElementById('quiz-container')), 1600);
+    setTimeout(() => showQuizQuestion(document.getElementById('quiz-container')), 1800);
   } catch (err) {
     showToast(err.message);
     document.querySelectorAll('.quiz-option').forEach(b => b.disabled = false);
@@ -889,25 +921,46 @@ window.answerQuiz = async function (questionId, answerIndex, btn) {
 };
 
 function showQuizResults(container) {
-  const { correct, coinsEarned } = quizResults;
+  const { correct, coinsEarned, byCategory } = quizResults;
   const total = quizQuestions.length;
-  const emoji = correct === total ? '🎉' : correct >= 3 ? '👏' : '💪';
-  const title = correct === total ? 'Идеально!' : correct >= 3 ? 'Отлично!' : 'Неплохо!';
+  // Градация: 0 — мотивация, 1-2 — норм, 3-4 — отлично, all correct — идеально
+  let emoji, title, sub;
+  if (correct === total && total > 0) { emoji = '🎉'; title = 'Идеально!';     sub = 'Все ответы верные'; }
+  else if (correct >= Math.ceil(total * 0.7)) { emoji = '👏'; title = 'Отлично!'; sub = 'Хороший результат'; }
+  else if (correct >= 1) { emoji = '💪'; title = 'Неплохо!';                       sub = 'В следующий раз будет ещё лучше'; }
+  else                   { emoji = '🤝'; title = 'Не сдавайся';                    sub = 'Главное — продолжать. Завтра новые вопросы!'; }
+
+  // Разбивка по категориям
+  const catEntries = Object.entries(byCategory).filter(([, v]) => v.total > 0);
+  const catBlock = catEntries.length
+    ? `<div style="margin-top:14px;padding:12px;background:var(--cream);border-radius:12px">
+         <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:var(--hint);margin-bottom:8px">По категориям</div>
+         ${catEntries.map(([cat, v]) => {
+           const label = CATEGORY_LABELS[cat] || cat;
+           const ok    = v.correct === v.total;
+           return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:13px">
+             <span>${escapeHtml(label)}</span>
+             <span style="font-weight:800;color:${ok ? 'var(--green)' : 'var(--text)'}">${v.correct}/${v.total}${ok ? ' ✓' : ''}</span>
+           </div>`;
+         }).join('')}
+       </div>`
+    : '';
 
   container.innerHTML = `
     <div class="quiz-results-card">
       <div class="quiz-results-emoji">${emoji}</div>
       <div class="quiz-results-title">${title}</div>
-      <div class="quiz-results-score">${correct} из ${total} правильных ответов</div>
+      <div class="quiz-results-score">${correct} из ${total} правильных${sub ? ` · ${sub}` : ''}</div>
       ${coinsEarned > 0
         ? `<div class="quiz-results-coins">+${coinsEarned} ${plural(coinsEarned,'монета','монеты','монет')}</div>`
-        : '<div style="font-size:14px;color:var(--hint);margin-bottom:16px">Монеты начисляются за правильные ответы</div>'}
-      <div class="quiz-results-note">Новые вопросы появятся завтра 🌙</div>
+        : '<div style="font-size:14px;color:var(--hint);margin-bottom:16px">Монет за этот блок ответов нет — попробуй завтра</div>'}
+      ${catBlock}
+      <div class="quiz-results-note" style="margin-top:14px">Новые вопросы появятся завтра 🌙</div>
     </div>`;
 
-  tg?.HapticFeedback?.notificationOccurred(correct === total ? 'success' : 'warning');
+  tg?.HapticFeedback?.notificationOccurred(correct === total && total > 0 ? 'success' : 'warning');
 
-  // Refresh header balance if earned coins
+  // Обновляем шапку, если получили монеты
   if (coinsEarned > 0) {
     apiFetch('/me').then(me => {
       myStatsCache = me;

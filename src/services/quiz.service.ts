@@ -116,7 +116,9 @@ export async function getDailyQuestions(employeeId: number): Promise<{ questions
   };
 }
 
-export async function getDailyQuestionsWithAnswers(employeeId: number): Promise<{ questions: QuizQuestion[]; alreadyDone: boolean }> {
+export async function getDailyQuestionsWithAnswers(
+  employeeId: number
+): Promise<{ questions: QuizQuestion[]; alreadyDone: boolean; answeredToday: number; totalToday: number }> {
   const today = irkutskDate();
 
   const { rows: todayAttempts } = await pool.query<{ questionId: number }>(
@@ -125,12 +127,14 @@ export async function getDailyQuestionsWithAnswers(employeeId: number): Promise<
        AND (answered_at AT TIME ZONE 'Asia/Irkutsk')::date = $2::date`,
     [employeeId, today]
   );
-  if (todayAttempts.length >= 5) return { questions: [], alreadyDone: true };
-  const answeredIds = new Set(todayAttempts.map(r => r.questionId));
-
+  const answeredToday = todayAttempts.length;
   const questionIds = await getOrCreateDailySession(employeeId);
+  const totalToday = questionIds.length;
+
+  if (answeredToday >= 5) return { questions: [], alreadyDone: true, answeredToday, totalToday };
+  const answeredIds = new Set(todayAttempts.map(r => r.questionId));
   const remaining = questionIds.filter(id => !answeredIds.has(id));
-  if (remaining.length === 0) return { questions: [], alreadyDone: true };
+  if (remaining.length === 0) return { questions: [], alreadyDone: true, answeredToday, totalToday };
 
   const { rows } = await pool.query<QuizQuestion>(
     `SELECT id, question, options, correct_index AS "correctIndex", category
@@ -143,7 +147,7 @@ export async function getDailyQuestionsWithAnswers(employeeId: number): Promise<
     .map(id => rows.find(r => r.id === id))
     .filter((q): q is QuizQuestion => q !== undefined);
 
-  return { questions: ordered, alreadyDone: false };
+  return { questions: ordered, alreadyDone: false, answeredToday, totalToday };
 }
 
 export async function submitAnswer(

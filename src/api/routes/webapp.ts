@@ -417,6 +417,8 @@ router.get('/quiz/daily', async (req: Request, res: Response, next: NextFunction
     // Strip correctIndex before sending — client submits answers one-by-one
     res.json({
       alreadyDone: result.alreadyDone,
+      answeredToday: result.answeredToday,
+      totalToday: result.totalToday,
       questions: result.questions.map(q => ({ id: q.id, question: q.question, options: q.options, category: q.category })),
     });
   } catch (err) { next(err); }
