@@ -423,7 +423,9 @@ function switchStoreTab(tab) {
   document.getElementById('store-prizes').style.display  = isMine ? 'none' : '';
   document.getElementById('store-mine').style.display    = isMine ? 'block' : 'none';
 
-  if (isMine) loadMyExchanges();
+  // На «Заявки» — force-refresh, чтобы статусы (одобрено/отклонено) от админа подтянулись свежие.
+  // На «Карточки/Монеты» — рисуем из кэша; новый /prizes идёт только при заходе во вкладку «Магазин».
+  if (isMine) loadMyExchanges(true);
   else renderPrizes();
 }
 
@@ -1312,6 +1314,7 @@ async function doExchange(prizeId, btn) {
   // Сразу блокируем все кнопки обмена визуально
   document.querySelectorAll('.prize-btn').forEach(b => { b.disabled = true; });
 
+  let cancelled = false;
   try {
     const prize = prizesCache && prizesCache.find(p => p.id === prizeId);
     const name  = prize ? prize.name : 'приз';
@@ -1321,7 +1324,10 @@ async function doExchange(prizeId, btn) {
       if (tg && tg.showConfirm) tg.showConfirm(msg, resolve);
       else resolve(window.confirm(msg));
     });
-    if (!confirmed) return;
+    if (!confirmed) { cancelled = true; return; }
+
+    // Индикатор «отправляем» — заменяем текст той кнопки, по которой кликнули
+    if (btn) btn.textContent = 'Отправляем…';
 
     await apiFetch('/exchange', { method: 'POST', body: JSON.stringify({ prizeId }) });
     showToast('✅ Заявка отправлена! Руководитель скоро подтвердит.');
@@ -1341,9 +1347,12 @@ async function doExchange(prizeId, btn) {
     tg?.HapticFeedback?.notificationOccurred('error');
   } finally {
     exchangeInFlight = false;
-    // renderPrizes (вызванный в loadStore) перерисует кнопки заново — но если мы вышли по cancel,
-    // нужно вернуть состояние кнопок вручную
-    if (prizesCache) renderPrizes();
+    // Если отменил подтверждение или произошла ошибка — нужно вернуть кнопки в активное состояние.
+    // При успехе renderPrizes (внутри loadStore) уже всё перерисовал.
+    if (cancelled || !prizesCache) {
+      if (prizesCache) renderPrizes();
+      else document.querySelectorAll('.prize-btn').forEach(b => { b.disabled = false; });
+    }
   }
 }
 
