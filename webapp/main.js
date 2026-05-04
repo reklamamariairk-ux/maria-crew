@@ -1000,19 +1000,26 @@ async function loadRating() {
       return;
     }
 
-    // Моя позиция (если есть оценка)
+    // Информация о своём месте показывается только если:
+    // 1) сотрудник в топ-3 — тогда «Ты на N месте»
+    // 2) у сотрудника нет оценки — тогда «У тебя пока нет оценки»
+    // Если сотрудник 4+ местах с оценкой — info-блок скрыт (по запросу заказчика).
     const myIdx = scored.findIndex(r => r.employeeId === employee.id);
     const myEntry = myIdx >= 0 ? scored[myIdx] : null;
-    const myInfo = myEntry
-      ? `<strong>Ты на ${myIdx + 1} месте</strong> — ${Number(myEntry.mvpScore).toFixed(1)} ${pluralScore(Number(myEntry.mvpScore))}${myEntry.isMvp ? ' · ★ Лучший сотрудник' : ''}`
-      : (unscored.some(r => r.employeeId === employee.id)
-          ? '<strong>У тебя пока нет оценки</strong> · покажется, когда руководитель внесёт показатели'
-          : '');
-    document.getElementById('rating-info-block').innerHTML = `
-      <div class="rating-info">
-        <span class="rating-info-icon">ℹ️</span>
-        <div class="rating-info-text">${myInfo || 'Рейтинг по баллам за месяц: чек-листы, отзывы, план продаж.'}</div>
-      </div>`;
+
+    let myInfo = '';
+    if (myEntry && myIdx < 3) {
+      myInfo = `<strong>Ты на ${myIdx + 1} месте</strong> — ${Number(myEntry.mvpScore).toFixed(1)} ${pluralScore(Number(myEntry.mvpScore))}${myEntry.isMvp ? ' · ★ Лучший сотрудник' : ''}`;
+    } else if (!myEntry && unscored.some(r => r.employeeId === employee.id)) {
+      myInfo = '<strong>У тебя пока нет оценки</strong> · покажется, когда руководитель внесёт показатели';
+    }
+
+    document.getElementById('rating-info-block').innerHTML = myInfo
+      ? `<div class="rating-info">
+           <span class="rating-info-icon">ℹ️</span>
+           <div class="rating-info-text">${myInfo}</div>
+         </div>`
+      : '';
 
     const MEDALS = ['🥇','🥈','🥉'];
     // Показываем только топ-3 — своё место сотрудник видит в info-блоке сверху
