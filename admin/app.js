@@ -1824,8 +1824,8 @@ async function loadMvpConfig() {
   document.getElementById('cfg-checklist').value       = cfg.checklistWeight;
   document.getElementById('cfg-revenue-factor').value  = cfg.revenueWeightFactor;
   document.getElementById('cfg-revenue-max').value     = cfg.revenueMax;
-  document.getElementById('cfg-mvp-coins').value       = cfg.mvpCoinReward ?? 50;
-  document.getElementById('cfg-top-store-coins').value = cfg.topStoreCoinReward ?? 30;
+  document.getElementById('cfg-mvp-coins').value       = cfg.mvpCoinReward ?? 0;
+  document.getElementById('cfg-top-store-coins').value = cfg.topStoreCoinReward ?? 0;
   const upd = document.getElementById('cfg-last-updated');
   if (upd && cfg.updatedAt) {
     upd.textContent = `Последнее изменение: ${formatAuditDateTime(cfg.updatedAt)}`;

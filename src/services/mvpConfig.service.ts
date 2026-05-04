@@ -25,8 +25,8 @@ const DEFAULT_CONFIG: MvpConfig = {
   checklistWeight: 25,
   revenueWeightFactor: 20,
   revenueMax: 25,
-  mvpCoinReward: 50,
-  topStoreCoinReward: 30,
+  mvpCoinReward: 0,
+  topStoreCoinReward: 0,
   updatedAt: new Date(),
 };
 
@@ -60,8 +60,8 @@ export async function getMvpConfig(): Promise<MvpConfig> {
       checklistWeight: parseFloat(r.checklistWeight),
       revenueWeightFactor: parseFloat(r.revenueWeightFactor),
       revenueMax: parseFloat(r.revenueMax),
-      mvpCoinReward: r.mvpCoinReward != null ? Number(r.mvpCoinReward) : 50,
-      topStoreCoinReward: r.topStoreCoinReward != null ? Number(r.topStoreCoinReward) : 30,
+      mvpCoinReward: r.mvpCoinReward != null ? Number(r.mvpCoinReward) : 0,
+      topStoreCoinReward: r.topStoreCoinReward != null ? Number(r.topStoreCoinReward) : 0,
       updatedAt: r.updatedAt,
     };
     cacheTime = now;

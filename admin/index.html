@@ -876,16 +876,16 @@
           </label>
         </div>
 
-        <p class="section-title" style="margin-top:24px">Награды</p>
+        <p class="section-title" style="margin-top:24px">Денежные награды (опционально)</p>
         <p class="text-muted" style="font-size:13px;margin-bottom:12px">
-          Начисляются автоматически при нажатии «Обработать месяц» в разделе «Метрики».
+          Начисляются автоматически при «Обработать месяц». Поставь <b>0</b>, чтобы не начислять — карточки (особая со звездой и team_bonus) выдаются всё равно.
         </p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
           <label>Монеты лучшему сотруднику месяца
-            <input type="number" id="cfg-mvp-coins" class="input" min="0" max="10000" step="1" placeholder="50">
+            <input type="number" id="cfg-mvp-coins" class="input" min="0" max="10000" step="1" placeholder="0">
           </label>
           <label>Монеты команде лучшей точки
-            <input type="number" id="cfg-top-store-coins" class="input" min="0" max="10000" step="1" placeholder="30">
+            <input type="number" id="cfg-top-store-coins" class="input" min="0" max="10000" step="1" placeholder="0">
           </label>
         </div>
         <div style="display:flex;gap:8px;margin-top:16px">
