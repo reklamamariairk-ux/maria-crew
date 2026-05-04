@@ -1098,15 +1098,19 @@ async function loadRating() {
     }
 
     // Информация о своём месте показывается только если:
-    // 1) сотрудник в топ-3 — тогда «Ты на N месте»
-    // 2) у сотрудника нет оценки — тогда «У тебя пока нет оценки»
-    // Если сотрудник 4+ местах с оценкой — info-блок скрыт (по запросу заказчика).
+    // 1) сотрудник в топ-3 — «Ты на N месте»
+    // 2) сотрудник назначен лучшим вручную, но не попал в топ-3 — отдельный кейс
+    // 3) у сотрудника нет оценки — «У тебя пока нет оценки»
+    // Иначе info-блок скрыт (по запросу заказчика).
     const myIdx = scored.findIndex(r => r.employeeId === employee.id);
     const myEntry = myIdx >= 0 ? scored[myIdx] : null;
 
     let myInfo = '';
     if (myEntry && myIdx < 3) {
       myInfo = `<strong>Ты на ${myIdx + 1} месте</strong> — ${Number(myEntry.mvpScore).toFixed(1)} ${pluralScore(Number(myEntry.mvpScore))}${myEntry.isMvp ? ' · ★ Лучший сотрудник' : ''}`;
+    } else if (myEntry && myEntry.isMvp) {
+      // Лучший сотрудник, назначенный руководителем вручную (не первый по score)
+      myInfo = '<strong>★ Ты лучший сотрудник месяца!</strong> Поздравляем 🎉';
     } else if (!myEntry && unscored.some(r => r.employeeId === employee.id)) {
       myInfo = '<strong>У тебя пока нет оценки</strong> · покажется, когда руководитель внесёт показатели';
     }
@@ -1186,11 +1190,15 @@ function renderStoresRating(stores, myStoreId) {
         </div>` + html;
     } else {
       const top = ranked[0];
-      const diff = (Number(top.totalScore) - Number(myStore.totalScore)).toFixed(1);
+      const diffNum = Number(top.totalScore) - Number(myStore.totalScore);
+      const diff = diffNum.toFixed(1);
+      const diffPart = diffNum > 0
+        ? `До лидера — <strong>${diff} ${pluralScore(diffNum)}</strong>.`
+        : `Балл такой же, как у лидера — <strong>идёте ноздря в ноздрю!</strong>`;
       html = `
         <div class="rating-info" style="margin-bottom:10px">
           <span class="rating-info-icon">📈</span>
-          <div class="rating-info-text">Твоя точка на <strong>${myRank} месте</strong>. До лидера — <strong>${diff} ${pluralScore(parseFloat(diff))}</strong>. Если станете первыми — каждому бонусная карточка.</div>
+          <div class="rating-info-text">Твоя точка на <strong>${myRank} месте</strong>. ${diffPart} Если станете первыми — каждому бонусная карточка.</div>
         </div>` + html;
     }
   } else {
