@@ -774,39 +774,77 @@ function showQuizResults(container) {
 async function loadRating() {
   document.getElementById('rating-list').innerHTML =
     '<div class="empty"><div class="empty-icon">⭐</div><div class="empty-text">Загружаем...</div></div>';
-
-  document.getElementById('rating-info-block').innerHTML = `
-    <div class="rating-info">
-      <span class="rating-info-icon">ℹ️</span>
-      <div class="rating-info-text">Рейтинг считается по баллам за текущий месяц. Балл — оценка твоей работы: чек-листы, отзывы, план продаж и другие показатели. Кто наберёт больше всех — становится лучшим сотрудником месяца.</div>
-    </div>`;
+  document.getElementById('rating-info-block').innerHTML = '';
 
   try {
     const { ranking } = await apiFetch('/rating');
-    if (!ranking.length) {
+
+    const hasScore = (r) => r.mvpScore !== null && r.mvpScore !== undefined;
+    const scored   = ranking.filter(hasScore);
+    const unscored = ranking.filter(r => !hasScore(r));
+
+    // Если ни у кого нет оценки — показываем понятное пустое состояние
+    if (scored.length === 0) {
+      document.getElementById('rating-info-block').innerHTML = `
+        <div class="rating-info">
+          <span class="rating-info-icon">ℹ️</span>
+          <div class="rating-info-text">Рейтинг считается по баллам за месяц. Балл — оценка твоей работы: чек-листы, отзывы, план продаж и другие показатели. Кто наберёт больше всех — становится лучшим сотрудником месяца.</div>
+        </div>`;
       document.getElementById('rating-list').innerHTML = `
         <div class="empty">
           <div class="empty-icon">📊</div>
-          <div class="empty-text">Рейтинг за этот месяц ещё не сформирован.<br><br>Данные появятся после того, как руководитель внесёт показатели.</div>
+          <div class="empty-text">Рейтинг за этот месяц ещё не сформирован.<br><br>Баллы появятся, когда руководитель внесёт показатели или нажмёт «Обработать месяц».</div>
         </div>`;
       return;
     }
+
+    // Моя позиция (если есть оценка)
+    const myIdx = scored.findIndex(r => r.employeeId === employee.id);
+    const myEntry = myIdx >= 0 ? scored[myIdx] : null;
+    const myInfo = myEntry
+      ? `<strong>Ты на ${myIdx + 1} месте</strong> — ${Number(myEntry.mvpScore).toFixed(1)} ${pluralScore(Number(myEntry.mvpScore))}${myEntry.isMvp ? ' · ★ Лучший сотрудник' : ''}`
+      : (unscored.some(r => r.employeeId === employee.id)
+          ? '<strong>У тебя пока нет оценки</strong> · покажется, когда руководитель внесёт показатели'
+          : '');
+    document.getElementById('rating-info-block').innerHTML = `
+      <div class="rating-info">
+        <span class="rating-info-icon">ℹ️</span>
+        <div class="rating-info-text">${myInfo || 'Рейтинг по баллам за месяц: чек-листы, отзывы, план продаж.'}</div>
+      </div>`;
+
     const MEDALS = ['🥇','🥈','🥉'];
-    document.getElementById('rating-list').innerHTML = ranking.map((r, i) => {
+    let html = scored.map((r, i) => {
       const isMe = r.employeeId === employee.id;
-      const score = r.mvpScore !== null && r.mvpScore !== undefined
-        ? `${Number(r.mvpScore).toFixed(1)} очков`
-        : 'нет оценки';
+      const score = `${Number(r.mvpScore).toFixed(1)} ${pluralScore(Number(r.mvpScore))}`;
       return `<div class="lb-item${isMe ? ' lb-me' : ''}">
         <div class="lb-rank">${MEDALS[i] || (i + 1)}</div>
         <div class="lb-name">${escapeHtml(r.name)}${r.isMvp ? ' <span class="lb-mvp">★ ЛУЧШИЙ</span>' : ''}</div>
         <div class="lb-score">${score}</div>
       </div>`;
     }).join('');
+
+    if (unscored.length > 0) {
+      html += `<div class="section-title" style="margin-top:18px;margin-bottom:8px">Без оценки</div>`;
+      html += unscored.map(r => {
+        const isMe = r.employeeId === employee.id;
+        return `<div class="lb-item${isMe ? ' lb-me' : ''}">
+          <div class="lb-rank">·</div>
+          <div class="lb-name">${escapeHtml(r.name)}</div>
+          <div class="lb-score">—</div>
+        </div>`;
+      }).join('');
+    }
+
+    document.getElementById('rating-list').innerHTML = html;
   } catch (err) {
     document.getElementById('rating-list').innerHTML =
       `<div class="empty"><div class="empty-icon">😕</div><div class="empty-text">${err.message}</div></div>`;
   }
+}
+
+function pluralScore(n) {
+  // Русское склонение для дробных значений считаем как для целой части
+  return plural(Math.floor(Math.abs(n)), 'очко', 'очка', 'очков');
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
