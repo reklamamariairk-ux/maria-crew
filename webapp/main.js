@@ -414,7 +414,15 @@ function switchStoreTab(tab) {
   storeTab = tab;
   document.getElementById('store-tab-cards').classList.toggle('active', tab === 'cards');
   document.getElementById('store-tab-coins').classList.toggle('active', tab === 'coins');
-  renderPrizes();
+  document.getElementById('store-tab-mine').classList.toggle('active', tab === 'mine');
+
+  const isMine = tab === 'mine';
+  document.getElementById('store-goal').style.display    = isMine ? 'none' : '';
+  document.getElementById('store-prizes').style.display  = isMine ? 'none' : '';
+  document.getElementById('store-mine').style.display    = isMine ? 'block' : 'none';
+
+  if (isMine) loadMyExchanges();
+  else renderPrizes();
 }
 
 // ── Daily check-in / streak ───────────────────────────────────────────────────
@@ -967,6 +975,83 @@ function renderPrizes() {
 }
 
 let exchangeInFlight = false;
+let myExchangesCache = null;
+
+const EXCHANGE_STATUS = {
+  pending:   { label: 'Ждёт подтверждения', icon: '⏳' },
+  approved:  { label: 'Подтверждено',       icon: '✅' },
+  fulfilled: { label: 'Приз выдан',          icon: '🎁' },
+  rejected:  { label: 'Отклонено',           icon: '❌' },
+};
+
+async function loadMyExchanges(force = false) {
+  const el = document.getElementById('store-mine');
+  if (!el) return;
+  if (!force && myExchangesCache) {
+    renderMyExchanges();
+    return;
+  }
+  el.innerHTML = '<div class="empty"><div class="empty-icon">🧾</div><div class="empty-text">Загружаем...</div></div>';
+  try {
+    const { exchanges } = await apiFetch('/exchanges/my');
+    myExchangesCache = exchanges;
+    renderMyExchanges();
+  } catch (err) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">😕</div><div class="empty-text">${err.message}</div></div>`;
+  }
+}
+
+function renderMyExchanges() {
+  const el = document.getElementById('store-mine');
+  if (!el || !myExchangesCache) return;
+
+  if (myExchangesCache.length === 0) {
+    el.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">🧾</div>
+        <div class="empty-text">Заявок пока нет.<br>Выбери приз во вкладке «Карточки» или «Монеты».</div>
+      </div>`;
+    return;
+  }
+
+  // Активные (pending/approved) сверху, потом обработанные (fulfilled/rejected)
+  const active   = myExchangesCache.filter(e => e.status === 'pending' || e.status === 'approved');
+  const archived = myExchangesCache.filter(e => e.status === 'fulfilled' || e.status === 'rejected');
+
+  let html = '';
+  if (active.length) {
+    html += `<div class="section-title" style="margin-top:4px;margin-bottom:8px">В работе</div>`;
+    html += active.map(renderExchangeItem).join('');
+  }
+  if (archived.length) {
+    html += `<div class="section-title" style="margin-top:18px;margin-bottom:8px">История</div>`;
+    html += archived.map(renderExchangeItem).join('');
+  }
+  el.innerHTML = html;
+}
+
+function renderExchangeItem(ex) {
+  const status = EXCHANGE_STATUS[ex.status] || { label: ex.status, icon: '·' };
+  const cards  = ex.cardsSpent > 0 ? `${ex.cardsSpent} ${pluralCards(ex.cardsSpent)}` : '';
+  const coins  = ex.coinsSpent > 0 ? `${ex.coinsSpent} ${pluralCoins(ex.coinsSpent)}` : '';
+  const cost   = [cards, coins].filter(Boolean).join(' + ');
+  const date   = fmt(ex.createdAt);
+  const noteBlock = ex.status === 'rejected' && ex.notes
+    ? `<div class="exchange-note">Причина: ${escapeHtml(ex.notes)}</div>`
+    : '';
+  return `
+    <div class="exchange-item">
+      <div class="exchange-head">
+        <div style="flex:1;min-width:0">
+          <div class="exchange-name">${escapeHtml(ex.prizeName)}</div>
+          <div class="exchange-cost">${cost || '—'}</div>
+          <div class="exchange-date">${status.icon} ${date}</div>
+        </div>
+        <span class="exchange-status ${ex.status}">${escapeHtml(status.label)}</span>
+      </div>
+      ${noteBlock}
+    </div>`;
+}
 
 async function doExchange(prizeId, btn) {
   if (exchangeInFlight) return; // защита от двойного клика до показа модалки
@@ -988,8 +1073,8 @@ async function doExchange(prizeId, btn) {
     await apiFetch('/exchange', { method: 'POST', body: JSON.stringify({ prizeId }) });
     showToast('✅ Заявка отправлена! Руководитель скоро подтвердит.');
     tg?.HapticFeedback?.notificationOccurred('success');
-    // Сбрасываем кэш и пере-загружаем призы и баланс одним запросом
-    prizesCache = null; myStatsCache = null;
+    // Сбрасываем кэш и пере-загружаем призы, баланс и историю заявок
+    prizesCache = null; myStatsCache = null; myExchangesCache = null;
     await loadStore();
     if (myStatsCache) {
       updateHeaderStats({

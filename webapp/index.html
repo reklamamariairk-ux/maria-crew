@@ -504,6 +504,32 @@
     .prize-btn.can  { background: var(--brand); color: #fff; box-shadow: 0 3px 10px rgba(212,33,57,0.3); }
     .prize-btn.cant { background: var(--cream-dark); color: var(--hint); }
 
+    /* ── Мои заявки ── */
+    .exchange-item {
+      background: #fff; border-radius: var(--radius);
+      padding: 12px 14px; margin-bottom: 8px;
+      box-shadow: 0 1px 5px rgba(33,28,23,0.07);
+    }
+    .exchange-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+    .exchange-name { font-size: 14px; font-weight: 800; flex: 1; min-width: 0; }
+    .exchange-cost { font-size: 12px; color: var(--hint); margin-top: 3px; font-weight: 600; }
+    .exchange-date { font-size: 11px; color: var(--hint); margin-top: 6px; }
+    .exchange-status {
+      font-size: 10px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.4px; padding: 4px 8px; border-radius: 8px;
+      flex-shrink: 0; white-space: nowrap;
+    }
+    .exchange-status.pending   { background: var(--gold-bg);  color: var(--gold); }
+    .exchange-status.approved  { background: #E0F2FF;        color: #0066CC; }
+    .exchange-status.fulfilled { background: var(--green-bg); color: var(--green); }
+    .exchange-status.rejected  { background: var(--brand-bg); color: var(--brand); }
+    .exchange-note {
+      font-size: 12px; color: var(--brand);
+      margin-top: 6px; padding-top: 6px;
+      border-top: 1px solid var(--cream-dark);
+      font-weight: 500;
+    }
+
     /* ── Сезонный челлендж ── */
     #challenge-banner { margin-bottom: 14px; }
     .challenge-card {
@@ -744,11 +770,13 @@
     <!-- Магазин -->
     <div id="tab-store" class="tab-content">
       <div class="store-tabs" style="margin-top:4px">
-        <button class="store-tab-btn active" id="store-tab-cards" onclick="switchStoreTab('cards')"><i data-lucide="layers"></i> За карточки</button>
-        <button class="store-tab-btn" id="store-tab-coins" onclick="switchStoreTab('coins')"><i data-lucide="coins"></i> За монеты</button>
+        <button class="store-tab-btn active" id="store-tab-cards" onclick="switchStoreTab('cards')"><i data-lucide="layers"></i> Карточки</button>
+        <button class="store-tab-btn" id="store-tab-coins" onclick="switchStoreTab('coins')"><i data-lucide="coins"></i> Монеты</button>
+        <button class="store-tab-btn" id="store-tab-mine" onclick="switchStoreTab('mine')"><i data-lucide="receipt"></i> Заявки</button>
       </div>
       <div id="store-goal"></div>
       <div id="store-prizes"><div class="empty"><div class="empty-icon"><i data-lucide="shopping-bag"></i></div><div class="empty-text">Загружаем...</div></div></div>
+      <div id="store-mine" style="display:none"></div>
     </div>
   </div>
 
@@ -773,6 +801,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="main.js?v=20260504i"></script>
+<script src="main.js?v=20260504j"></script>
 </body>
 </html>

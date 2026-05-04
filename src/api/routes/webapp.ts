@@ -6,7 +6,7 @@ import { getDailyQuestionsWithAnswers, submitAnswer } from '../../services/quiz.
 import { getStreak, doCheckin } from '../../services/streak.service';
 import { getActiveChallenge, checkAndCompleteChallenge } from '../../services/challenge.service';
 import { getAvailableCardCount } from '../../services/card.service';
-import { getPrizes, requestExchange } from '../../services/exchange.service';
+import { getPrizes, requestExchange, getExchangeHistory } from '../../services/exchange.service';
 import { notifyAdminNewExchange } from '../../bot/notifications/sender';
 import { getEmployeeLeaderboard } from '../../services/rating.service';
 import { markWebappAuth } from '../../diagnostics';
@@ -442,6 +442,16 @@ router.post('/challenge/check', async (req: Request, res: Response, next: NextFu
     if (!challengeId) { res.status(400).json({ error: 'challengeId обязателен' }); return; }
     const completed = await checkAndCompleteChallenge(auth.employee.id, challengeId);
     res.json({ completed });
+  } catch (err) { next(err); }
+});
+
+// GET /api/webapp/exchanges/my — история заявок сотрудника
+router.get('/exchanges/my', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const exchanges = await getExchangeHistory(auth.employee.id, 30);
+    res.json({ exchanges });
   } catch (err) { next(err); }
 });
 
