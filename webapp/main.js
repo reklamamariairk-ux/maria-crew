@@ -1015,7 +1015,9 @@ async function loadRating() {
       </div>`;
 
     const MEDALS = ['🥇','🥈','🥉'];
-    let html = scored.map((r, i) => {
+    // Показываем только топ-3 — своё место сотрудник видит в info-блоке сверху
+    const top3 = scored.slice(0, 3);
+    const html = top3.map((r, i) => {
       const isMe = r.employeeId === employee.id;
       const score = `${Number(r.mvpScore).toFixed(1)} ${pluralScore(Number(r.mvpScore))}`;
       return `<div class="lb-item${isMe ? ' lb-me' : ''}">
@@ -1024,18 +1026,6 @@ async function loadRating() {
         <div class="lb-score">${score}</div>
       </div>`;
     }).join('');
-
-    if (unscored.length > 0) {
-      html += `<div class="section-title" style="margin-top:18px;margin-bottom:8px">Без оценки</div>`;
-      html += unscored.map(r => {
-        const isMe = r.employeeId === employee.id;
-        return `<div class="lb-item${isMe ? ' lb-me' : ''}">
-          <div class="lb-rank">·</div>
-          <div class="lb-name">${escapeHtml(r.name)}</div>
-          <div class="lb-score">—</div>
-        </div>`;
-      }).join('');
-    }
 
     document.getElementById('rating-list').innerHTML = html;
   } catch (err) {
@@ -1054,8 +1044,7 @@ function renderStoresRating(stores, myStoreId) {
   if (!el) return;
 
   // Только точки с реально выставленным баллом — без него ранжировать нельзя
-  const ranked   = stores.filter(s => s.totalScore !== null && s.totalScore !== undefined);
-  const unranked = stores.filter(s => s.totalScore === null || s.totalScore === undefined);
+  const ranked = stores.filter(s => s.totalScore !== null && s.totalScore !== undefined);
 
   if (ranked.length === 0) {
     el.innerHTML = `
@@ -1067,7 +1056,9 @@ function renderStoresRating(stores, myStoreId) {
   }
 
   const MEDALS = ['🥇','🥈','🥉'];
-  let html = ranked.map((s, i) => {
+  // Топ-3: своё место точки сотрудник видит в мотивирующем блоке выше
+  const top3 = ranked.slice(0, 3);
+  let html = top3.map((s, i) => {
     const isMine = s.storeId === myStoreId;
     const score  = `${Number(s.totalScore).toFixed(1)} ${pluralScore(Number(s.totalScore))}`;
     const tag    = s.isTop ? ' <span class="lb-mvp">★ ЛУЧШАЯ</span>' : '';
@@ -1079,19 +1070,7 @@ function renderStoresRating(stores, myStoreId) {
     </div>`;
   }).join('');
 
-  if (unranked.length > 0) {
-    html += `<div class="section-title" style="margin-top:14px;margin-bottom:8px">Без оценки</div>`;
-    html += unranked.map(s => {
-      const isMine = s.storeId === myStoreId;
-      return `<div class="lb-item${isMine ? ' lb-me' : ''}">
-        <div class="lb-rank">·</div>
-        <div class="lb-name">${escapeHtml(s.storeName)}${isMine ? ' <span style="font-size:11px;color:var(--brand);font-weight:700">· твоя</span>' : ''}</div>
-        <div class="lb-score">—</div>
-      </div>`;
-    }).join('');
-  }
-
-  // Если своя точка ранжирована — добавим хинт о бонусах за лучшую
+  // Мотивирующий блок сверху (показывается всегда, даже если своя точка не в топ-3)
   const myStore = ranked.find(s => s.storeId === myStoreId);
   if (myStore) {
     const myRank = ranked.indexOf(myStore) + 1;
@@ -1101,7 +1080,7 @@ function renderStoresRating(stores, myStoreId) {
           <span class="rating-info-icon">🏆</span>
           <div class="rating-info-text"><strong>Твоя точка — лучшая!</strong> Каждому в команде по итогам месяца — бонусная карточка героя.</div>
         </div>` + html;
-    } else if (myRank > 1) {
+    } else {
       const top = ranked[0];
       const diff = (Number(top.totalScore) - Number(myStore.totalScore)).toFixed(1);
       html = `
@@ -1110,6 +1089,13 @@ function renderStoresRating(stores, myStoreId) {
           <div class="rating-info-text">Твоя точка на <strong>${myRank} месте</strong>. До лидера — <strong>${diff} ${pluralScore(parseFloat(diff))}</strong>. Если станете первыми — каждому бонусная карточка.</div>
         </div>` + html;
     }
+  } else {
+    // Своя точка ещё не оценена
+    html = `
+      <div class="rating-info" style="margin-bottom:10px">
+        <span class="rating-info-icon">⏳</span>
+        <div class="rating-info-text">Балл твоей точки пока не выставлен. Появится, когда руководитель внесёт показатели.</div>
+      </div>` + html;
   }
 
   el.innerHTML = html;
