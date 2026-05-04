@@ -975,9 +975,11 @@ async function loadRating() {
   document.getElementById('rating-list').innerHTML =
     '<div class="empty"><div class="empty-icon">⭐</div><div class="empty-text">Загружаем...</div></div>';
   document.getElementById('rating-info-block').innerHTML = '';
+  document.getElementById('stores-rating-list').innerHTML = '';
 
   try {
-    const { ranking } = await apiFetch('/rating');
+    const { ranking, stores, myStoreId } = await apiFetch('/rating');
+    renderStoresRating(stores || [], myStoreId);
 
     const hasScore = (r) => r.mvpScore !== null && r.mvpScore !== undefined;
     const scored   = ranking.filter(hasScore);
@@ -1045,6 +1047,72 @@ async function loadRating() {
 function pluralScore(n) {
   // Русское склонение для дробных значений считаем как для целой части
   return plural(Math.floor(Math.abs(n)), 'очко', 'очка', 'очков');
+}
+
+function renderStoresRating(stores, myStoreId) {
+  const el = document.getElementById('stores-rating-list');
+  if (!el) return;
+
+  // Только точки с реально выставленным баллом — без него ранжировать нельзя
+  const ranked   = stores.filter(s => s.totalScore !== null && s.totalScore !== undefined);
+  const unranked = stores.filter(s => s.totalScore === null || s.totalScore === undefined);
+
+  if (ranked.length === 0) {
+    el.innerHTML = `
+      <div class="empty" style="padding:20px 16px">
+        <div class="empty-icon" style="font-size:32px">🏪</div>
+        <div class="empty-text">Рейтинг точек ещё не сформирован.<br>Появится, когда руководители внесут показатели.</div>
+      </div>`;
+    return;
+  }
+
+  const MEDALS = ['🥇','🥈','🥉'];
+  let html = ranked.map((s, i) => {
+    const isMine = s.storeId === myStoreId;
+    const score  = `${Number(s.totalScore).toFixed(1)} ${pluralScore(Number(s.totalScore))}`;
+    const tag    = s.isTop ? ' <span class="lb-mvp">★ ЛУЧШАЯ</span>' : '';
+    const youTag = isMine ? ' <span style="font-size:11px;color:var(--brand);font-weight:700">· твоя</span>' : '';
+    return `<div class="lb-item${isMine ? ' lb-me' : ''}">
+      <div class="lb-rank">${MEDALS[i] || (i + 1)}</div>
+      <div class="lb-name">${escapeHtml(s.storeName)}${tag}${youTag}</div>
+      <div class="lb-score">${score}</div>
+    </div>`;
+  }).join('');
+
+  if (unranked.length > 0) {
+    html += `<div class="section-title" style="margin-top:14px;margin-bottom:8px">Без оценки</div>`;
+    html += unranked.map(s => {
+      const isMine = s.storeId === myStoreId;
+      return `<div class="lb-item${isMine ? ' lb-me' : ''}">
+        <div class="lb-rank">·</div>
+        <div class="lb-name">${escapeHtml(s.storeName)}${isMine ? ' <span style="font-size:11px;color:var(--brand);font-weight:700">· твоя</span>' : ''}</div>
+        <div class="lb-score">—</div>
+      </div>`;
+    }).join('');
+  }
+
+  // Если своя точка ранжирована — добавим хинт о бонусах за лучшую
+  const myStore = ranked.find(s => s.storeId === myStoreId);
+  if (myStore) {
+    const myRank = ranked.indexOf(myStore) + 1;
+    if (myStore.isTop) {
+      html = `
+        <div class="rating-info" style="background:linear-gradient(135deg,#fff8e1,var(--gold-bg));border:1.5px solid var(--gold);margin-bottom:10px">
+          <span class="rating-info-icon">🏆</span>
+          <div class="rating-info-text"><strong>Твоя точка — лучшая!</strong> Каждому в команде по итогам месяца — бонусная карточка героя.</div>
+        </div>` + html;
+    } else if (myRank > 1) {
+      const top = ranked[0];
+      const diff = (Number(top.totalScore) - Number(myStore.totalScore)).toFixed(1);
+      html = `
+        <div class="rating-info" style="margin-bottom:10px">
+          <span class="rating-info-icon">📈</span>
+          <div class="rating-info-text">Твоя точка на <strong>${myRank} месте</strong>. До лидера — <strong>${diff} ${pluralScore(parseFloat(diff))}</strong>. Если станете первыми — каждому бонусная карточка.</div>
+        </div>` + html;
+    }
+  }
+
+  el.innerHTML = html;
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────

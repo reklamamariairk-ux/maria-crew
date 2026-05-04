@@ -8,7 +8,7 @@ import { getActiveChallenge, checkAndCompleteChallenge } from '../../services/ch
 import { getAvailableCardCount } from '../../services/card.service';
 import { getPrizes, requestExchange, getExchangeHistory } from '../../services/exchange.service';
 import { notifyAdminNewExchange } from '../../bot/notifications/sender';
-import { getEmployeeLeaderboard } from '../../services/rating.service';
+import { getEmployeeLeaderboard, getStoreLeaderboard } from '../../services/rating.service';
 import { markWebappAuth } from '../../diagnostics';
 
 const router = Router();
@@ -388,13 +388,14 @@ router.get('/rating', async (req: Request, res: Response, next: NextFunction): P
     if (!auth) return;
 
     const now = new Date();
-    const ranking = await getEmployeeLeaderboard(
-      auth.employee.storeId, now.getFullYear(), now.getMonth() + 1
-    );
+    const [ranking, storesRanking] = await Promise.all([
+      getEmployeeLeaderboard(auth.employee.storeId, now.getFullYear(), now.getMonth() + 1),
+      getStoreLeaderboard(now.getFullYear(), now.getMonth() + 1),
+    ]);
     const idx = ranking.findIndex(r => r.employeeId === auth.employee.id);
     const myRank = idx >= 0 ? idx + 1 : null;
 
-    res.json({ ranking, myRank });
+    res.json({ ranking, myRank, stores: storesRanking, myStoreId: auth.employee.storeId });
   } catch (err) { next(err); }
 });
 
