@@ -608,7 +608,7 @@ async function loadCoins() {
         <div class="howto-card">
           <div class="howto-title">💰 Как зарабатывать монеты?</div>
           <div class="howto-row"><span class="howto-row-icon">🧩</span><div class="howto-row-text"><strong>Квиз каждый день</strong><span>5 вопросов — до +5 монет за все правильные ответы</span></div></div>
-          <div class="howto-row"><span class="howto-row-icon">🔥</span><div class="howto-row-text"><strong>Серия входов</strong><span>Нажми 🔥 в шапке каждый день. 7 дней = бонус ×4</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">🔥</span><div class="howto-row-text"><strong>Серия входов</strong><span>Нажми 🔥 в шапке каждый день. Каждый 7-й день подряд = +5 бонусом</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">✅</span><div class="howto-row-text"><strong>Чек-лист за смену</strong><span>Руководитель начисляет монеты за хороший день</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">⭐</span><div class="howto-row-text"><strong>Именной отзыв от гостя</strong><span>Тебя упомянули по имени в отзыве</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">🎂</span><div class="howto-row-text"><strong>Торт на заказ</strong><span>Провёл продажу торта на заказ</span></div></div>
