@@ -1,5 +1,6 @@
 import { pool } from '../db/pool';
 import { irkutskDate } from './streak.service';
+import { COIN_AMOUNTS } from './coin.service';
 
 /** Возвращает залоченный на сегодня набор вопросов сотрудника.
  *  При первом вызове за день генерирует случайный набор и сохраняет его,
@@ -118,25 +119,27 @@ export async function getDailyQuestions(employeeId: number): Promise<{ questions
 export async function getDailyQuestionsWithAnswers(employeeId: number): Promise<{ questions: QuizQuestion[]; alreadyDone: boolean }> {
   const today = irkutskDate();
 
-  const { rows: todayAttempts } = await pool.query<{ count: string }>(
-    `SELECT COUNT(*) AS count FROM quiz_attempts
+  const { rows: todayAttempts } = await pool.query<{ questionId: number }>(
+    `SELECT question_id AS "questionId" FROM quiz_attempts
      WHERE employee_id = $1
        AND (answered_at AT TIME ZONE 'Asia/Irkutsk')::date = $2::date`,
     [employeeId, today]
   );
-  const doneCount = parseInt(todayAttempts[0]?.count ?? '0', 10);
-  if (doneCount >= 5) return { questions: [], alreadyDone: true };
+  if (todayAttempts.length >= 5) return { questions: [], alreadyDone: true };
+  const answeredIds = new Set(todayAttempts.map(r => r.questionId));
 
   const questionIds = await getOrCreateDailySession(employeeId);
+  const remaining = questionIds.filter(id => !answeredIds.has(id));
+  if (remaining.length === 0) return { questions: [], alreadyDone: true };
 
   const { rows } = await pool.query<QuizQuestion>(
     `SELECT id, question, options, correct_index AS "correctIndex", category
      FROM quiz_questions
      WHERE id = ANY($1) AND is_active = true`,
-    [questionIds]
+    [remaining]
   );
 
-  const ordered = questionIds
+  const ordered = remaining
     .map(id => rows.find(r => r.id === id))
     .filter((q): q is QuizQuestion => q !== undefined);
 
@@ -156,13 +159,20 @@ export async function submitAnswer(
 
   const correctIndex = rows[0].correctIndex;
   const isCorrect = answerIndex === correctIndex;
-  const coinsEarned = isCorrect ? 1 : 0;
+  const reward = isCorrect ? COIN_AMOUNTS.quiz : 0;
 
-  await pool.query(
+  // UNIQUE-индекс на (employee_id, question_id, иркутский день) защищает от
+  // повторного ответа: ON CONFLICT DO NOTHING вернёт пустой rowCount, и тогда
+  // монеты не начислим (ни в первый, ни во второй раз — иначе задвоится).
+  const inserted = await pool.query(
     `INSERT INTO quiz_attempts (employee_id, question_id, is_correct, coins_earned)
-     VALUES ($1, $2, $3, $4)`,
-    [employeeId, questionId, isCorrect, coinsEarned]
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (employee_id, question_id, ((answered_at AT TIME ZONE 'Asia/Irkutsk')::date))
+     DO NOTHING`,
+    [employeeId, questionId, isCorrect, reward]
   );
+
+  const coinsEarned = (inserted.rowCount ?? 0) > 0 ? reward : 0;
 
   if (coinsEarned > 0) {
     await pool.query(

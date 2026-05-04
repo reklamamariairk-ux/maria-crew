@@ -30,16 +30,21 @@ const LIMITED_ICONS = {
   'Ice Breaker': '🏄', 'Upsale King': '🍂', 'Holiday Star': '⭐', 'Rookie of Season': '🌸',
 };
 const COIN_LABELS = {
-  checklist_day: 'Чек-лист выполнен',
-  review:        'Именной отзыв',
-  cake_order:    'Заказ торта',
-  substitution:  'Замена смены',
-  mentoring:     'Наставничество',
-  idea:          'Идея для компании',
-  manual:        'Начисление от руководителя',
-  spend:         'Обмен в Магазине',
-  quiz:          'Квиз — правильный ответ',
-  checkin:       'Ежедневный вход',
+  checklist_day:       'Чек-лист выполнен',
+  review:              'Именной отзыв',
+  cake_order:          'Заказ торта',
+  substitution:        'Замена смены',
+  mentoring:           'Наставничество',
+  idea:                'Идея для компании',
+  training_meeting:    'Учебная встреча',
+  knowledge_applied:   'Применил знания',
+  manual:              'Начисление от руководителя',
+  spend:               'Обмен в Магазине',
+  quiz:                'Квиз — правильный ответ',
+  checkin:             'Ежедневный вход',
+  bad_review:          'Плохой отзыв',
+  dirty_store:         'Не убрано в точке',
+  training_resistance: 'Уход от обучения',
 };
 const MONTHS = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
 
@@ -502,7 +507,7 @@ async function loadDailyActionsBar() {
         <div class="daily-action" onclick="switchTab('quiz')">
           <span class="daily-action-icon">🧩</span>
           <span class="daily-action-label">Пройти квиз</span>
-          <span class="daily-action-sub">+2 монеты за ответ</span>
+          <span class="daily-action-sub">+1 монета за ответ</span>
         </div>
       </div>`;
   } catch { el.innerHTML = ''; }
@@ -532,7 +537,7 @@ async function loadCollection() {
     const renderCard = (h) => {
       const isOwned = ownedSet.has(h.id);
       const isMvp   = mvpSet.has(h.id);
-      const icon = HERO_ICONS[h.id] || LIMITED_ICONS[h.name] || '🎴';
+      const emoji = HERO_ICONS[h.id] || LIMITED_ICONS[h.name] || '🎴';
       let cls = 'hero-card';
       if (isMvp) cls += ' mvp';
       else if (isOwned) cls += ' owned';
@@ -540,7 +545,11 @@ async function loadCollection() {
       const badge = isMvp
         ? '<div class="hero-badge">★</div>'
         : isOwned ? '<div class="hero-badge green">✓</div>' : '';
-      return `<div class="${cls}">${badge}<div class="hero-icon">${icon}</div><div class="hero-name">${escapeHtml(h.name)}</div></div>`;
+      // Если в админке загружена картинка героя — показываем её. Иначе fallback на эмодзи.
+      const iconHtml = h.imageUrl
+        ? `<div class="hero-icon hero-icon-img"><img src="${escapeAttr(h.imageUrl)}" alt="${escapeAttr(h.name)}" onerror="this.parentElement.textContent='${emoji}'"></div>`
+        : `<div class="hero-icon">${emoji}</div>`;
+      return `<div class="${cls}">${badge}${iconHtml}<div class="hero-name">${escapeHtml(h.name)}</div></div>`;
     };
 
     let html = mainHeroes.map(renderCard).join('');
@@ -598,7 +607,7 @@ async function loadCoins() {
       document.getElementById('coins-history').innerHTML = `
         <div class="howto-card">
           <div class="howto-title">💰 Как зарабатывать монеты?</div>
-          <div class="howto-row"><span class="howto-row-icon">🧩</span><div class="howto-row-text"><strong>Квиз каждый день</strong><span>5 вопросов — до +10 монет за все правильные ответы</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">🧩</span><div class="howto-row-text"><strong>Квиз каждый день</strong><span>5 вопросов — до +5 монет за все правильные ответы</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">🔥</span><div class="howto-row-text"><strong>Серия входов</strong><span>Нажми 🔥 в шапке каждый день. 7 дней = бонус ×4</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">✅</span><div class="howto-row-text"><strong>Чек-лист за смену</strong><span>Руководитель начисляет монеты за хороший день</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">⭐</span><div class="howto-row-text"><strong>Именной отзыв от гостя</strong><span>Тебя упомянули по имени в отзыве</span></div></div>
@@ -657,7 +666,7 @@ async function loadQuiz() {
           <div class="first-quiz-banner-icon">🎉</div>
           <div class="first-quiz-banner-text">
             <strong>Твой первый квиз!</strong>
-            <span>Ответь правильно на все 5 вопросов — получи +10 монет прямо сейчас</span>
+            <span>Ответь правильно на все 5 вопросов — получи +5 монет прямо сейчас</span>
           </div>
         </div>`;
     }

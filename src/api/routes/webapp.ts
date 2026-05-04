@@ -309,7 +309,11 @@ router.get('/collection', async (req: Request, res: Response, next: NextFunction
     if (!auth) return;
 
     const [heroRows, cardRows] = await Promise.all([
-      pool.query(`SELECT id, name, sort_order, is_limited FROM heroes ORDER BY sort_order`),
+      pool.query(
+        `SELECT id, name, sort_order AS "sortOrder",
+                is_limited AS "isLimited", image_url AS "imageUrl"
+         FROM heroes ORDER BY sort_order`
+      ),
       pool.query<{ heroId: number; hasMvp: boolean }>(
         `SELECT hero_id AS "heroId", bool_or(is_mvp) AS "hasMvp"
          FROM employee_cards WHERE employee_id = $1

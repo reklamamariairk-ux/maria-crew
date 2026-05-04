@@ -32,12 +32,13 @@ export async function handleCoins(ctx: BotContext): Promise<void> {
   }
 
   text += `\n<b>Как заработать монеты:</b>\n`;
+  text += `+${COIN_AMOUNTS.quiz} — каждый правильный ответ в квизе (до +${COIN_AMOUNTS.quiz * 5}/день)\n`;
+  text += `+${COIN_AMOUNTS.checkin} — ежедневный вход (бонус +20 за 7 дней подряд)\n`;
   text += `+${COIN_AMOUNTS.checklist_day} — чек-лист 100% за день\n`;
   text += `+${COIN_AMOUNTS.review} — именной отзыв гостя\n`;
-  text += `+${COIN_AMOUNTS.cake_order} — продажа торта на заказ\n`;
   text += `+${COIN_AMOUNTS.substitution} — подмена коллеги\n`;
   text += `+${COIN_AMOUNTS.mentoring} — наставничество\n\n`;
-  text += `Обменяй монеты в /store`;
+  text += `Открой Mini App, чтобы пройти квиз и отметиться. Обменяй монеты в /store`;
 
   const kb = new InlineKeyboard().text('🛍 Maria Store', 'menu:store').text('← Меню', 'menu:main');
   await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });

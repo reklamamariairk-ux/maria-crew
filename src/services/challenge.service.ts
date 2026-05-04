@@ -49,12 +49,33 @@ export async function getActiveChallenge(employeeId: number): Promise<ActiveChal
 
   const ch = rows[0];
 
-  const { rows: entryRows } = await pool.query<{ completedAt: string; cardAwarded: boolean }>(
+  let { rows: entryRows } = await pool.query<{ completedAt: string; cardAwarded: boolean }>(
     `SELECT completed_at::text AS "completedAt", card_awarded AS "cardAwarded"
      FROM seasonal_challenge_entries
      WHERE challenge_id = $1 AND employee_id = $2`,
     [ch.id, employeeId]
   );
+
+  // Если запись ещё не создана — пробуем завершить челлендж автоматически.
+  // Условие: серия >= 7 И всего правильных ответов >= 15.
+  // Раньше это вызывалось только из webapp endpoint, который никто не дёргал —
+  // поэтому челлендж никогда не «выполнялся».
+  if (!entryRows[0]) {
+    try {
+      const completed = await checkAndCompleteChallenge(employeeId, ch.id);
+      if (completed) {
+        const re = await pool.query<{ completedAt: string; cardAwarded: boolean }>(
+          `SELECT completed_at::text AS "completedAt", card_awarded AS "cardAwarded"
+           FROM seasonal_challenge_entries
+           WHERE challenge_id = $1 AND employee_id = $2`,
+          [ch.id, employeeId]
+        );
+        entryRows = re.rows;
+      }
+    } catch (err) {
+      console.error('[challenge] auto-complete failed:', err instanceof Error ? err.message : err);
+    }
+  }
 
   const entry = entryRows[0] ?? null;
   const endDate = new Date(ch.endDate);
