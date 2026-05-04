@@ -861,8 +861,10 @@ function showQuizQuestion(container) {
   const pct = Math.round(((globalN - 1) / total) * 100);
   const catLabel = CATEGORY_LABELS[q.category] || q.category || 'Вопрос';
 
+  // Категория хранится в data-атрибуте на контейнере вопроса, чтобы не передавать
+  // строку из БД через onclick-литерал (потенциальный XSS).
   c.innerHTML = `
-    <div class="quiz-card">
+    <div class="quiz-card" data-question-id="${q.id}" data-category="${escapeAttr(q.category || '')}">
       <div class="quiz-header">
         <span class="quiz-progress-text">Вопрос ${globalN} из ${total}</span>
         ${q.category ? `<span class="quiz-category">${escapeHtml(catLabel)}</span>` : ''}
@@ -871,7 +873,7 @@ function showQuizQuestion(container) {
       <div class="quiz-question">${escapeHtml(q.question)}</div>
       <div class="quiz-options">
         ${q.options.map((opt, i) => `
-          <button class="quiz-option" onclick="answerQuiz(${q.id},${i},this,'${q.category}')" data-index="${i}">
+          <button class="quiz-option" onclick="answerQuiz(${q.id},${i},this)" data-index="${i}">
             <span class="quiz-option-label">${QUIZ_LABELS[i]}</span>
             <span>${escapeHtml(opt)}</span>
           </button>`).join('')}
@@ -880,9 +882,13 @@ function showQuizQuestion(container) {
     </div>`;
 }
 
-window.answerQuiz = async function (questionId, answerIndex, btn, category) {
+window.answerQuiz = async function (questionId, answerIndex, btn) {
   document.querySelectorAll('.quiz-option').forEach(b => b.disabled = true);
   tg?.HapticFeedback?.selectionChanged();
+
+  // Категория берётся из data-атрибута на карточке вопроса (безопасно — без XSS)
+  const cardEl = btn.closest('.quiz-card');
+  const category = cardEl?.dataset.category || 'other';
 
   try {
     const result = await apiFetch('/quiz/answer', { method: 'POST', body: JSON.stringify({ questionId, answerIndex }) });
@@ -895,20 +901,25 @@ window.answerQuiz = async function (questionId, answerIndex, btn, category) {
     });
 
     // Считаем разбивку по категориям
-    const catKey = category || 'other';
-    if (!quizResults.byCategory[catKey]) quizResults.byCategory[catKey] = { correct: 0, total: 0 };
-    quizResults.byCategory[catKey].total++;
+    if (!quizResults.byCategory[category]) quizResults.byCategory[category] = { correct: 0, total: 0 };
+    quizResults.byCategory[category].total++;
 
     // Мгновенный фидбэк прямо на карточке вопроса
     const fb = document.getElementById('quiz-feedback');
     if (result.isCorrect) {
       quizResults.correct++;
       quizResults.coinsEarned += result.coinsEarned;
-      quizResults.byCategory[catKey].correct++;
+      quizResults.byCategory[category].correct++;
       tg?.HapticFeedback?.notificationOccurred('success');
       if (fb) fb.innerHTML = result.coinsEarned > 0
         ? `<span style="display:inline-block;background:var(--gold-bg);color:var(--gold);font-weight:900;padding:6px 14px;border-radius:20px;font-size:13px;animation:pop 0.4s ease">+${result.coinsEarned} ${plural(result.coinsEarned, 'монета', 'монеты', 'монет')} 🎉</span>`
         : `<span style="color:var(--green);font-weight:700;font-size:13px">✓ Правильно!</span>`;
+
+      // Обновляем баланс монет в шапке сразу — чтобы цифра в шапке не «отставала»
+      if (result.coinsEarned > 0 && myStatsCache) {
+        myStatsCache.coinBalance = (myStatsCache.coinBalance || 0) + result.coinsEarned;
+        document.getElementById('stat-coins').textContent = myStatsCache.coinBalance;
+      }
     } else {
       tg?.HapticFeedback?.notificationOccurred('error');
       if (fb) fb.innerHTML = `<span style="color:var(--brand);font-weight:700;font-size:13px">✗ Не угадал. Правильный ответ — ${QUIZ_LABELS[result.correctIndex]}</span>`;
@@ -924,13 +935,21 @@ window.answerQuiz = async function (questionId, answerIndex, btn, category) {
 
 function showQuizResults(container) {
   const { correct, coinsEarned, byCategory } = quizResults;
-  const total = quizQuestions.length;
-  // Градация: 0 — мотивация, 1-2 — норм, 3-4 — отлично, all correct — идеально
+  const sessionTotal = quizQuestions.length;            // отвечено в этой сессии
+  const dayTotal     = quizTotalToday;                  // вопросов в дневной серии (обычно 5)
+  const wasResumed   = quizAnsweredBefore > 0;          // сессия — продолжение прерванного квиза
+
+  // Градация считается по доле в этой сессии
   let emoji, title, sub;
-  if (correct === total && total > 0) { emoji = '🎉'; title = 'Идеально!';     sub = 'Все ответы верные'; }
-  else if (correct >= Math.ceil(total * 0.7)) { emoji = '👏'; title = 'Отлично!'; sub = 'Хороший результат'; }
-  else if (correct >= 1) { emoji = '💪'; title = 'Неплохо!';                       sub = 'В следующий раз будет ещё лучше'; }
-  else                   { emoji = '🤝'; title = 'Не сдавайся';                    sub = 'Главное — продолжать. Завтра новые вопросы!'; }
+  if (correct === sessionTotal && sessionTotal > 0) { emoji = '🎉'; title = 'Идеально!';   sub = 'Все ответы верные'; }
+  else if (correct >= Math.ceil(sessionTotal * 0.7)) { emoji = '👏'; title = 'Отлично!';   sub = 'Хороший результат'; }
+  else if (correct >= 1) { emoji = '💪'; title = 'Неплохо!';                                sub = 'В следующий раз будет ещё лучше'; }
+  else                   { emoji = '🤝'; title = 'Не сдавайся';                             sub = 'Главное — продолжать. Завтра новые вопросы!'; }
+
+  // Текст результата: если сессия была «продолжением», поясняем дневной итог
+  const scoreLine = wasResumed
+    ? `${correct} из ${sessionTotal} в этой сессии · за день: ${quizAnsweredBefore + correct}/${dayTotal}`
+    : `${correct} из ${sessionTotal} правильных${sub ? ` · ${sub}` : ''}`;
 
   // Разбивка по категориям
   const catEntries = Object.entries(byCategory).filter(([, v]) => v.total > 0);
@@ -952,7 +971,7 @@ function showQuizResults(container) {
     <div class="quiz-results-card">
       <div class="quiz-results-emoji">${emoji}</div>
       <div class="quiz-results-title">${title}</div>
-      <div class="quiz-results-score">${correct} из ${total} правильных${sub ? ` · ${sub}` : ''}</div>
+      <div class="quiz-results-score">${scoreLine}</div>
       ${coinsEarned > 0
         ? `<div class="quiz-results-coins">+${coinsEarned} ${plural(coinsEarned,'монета','монеты','монет')}</div>`
         : '<div style="font-size:14px;color:var(--hint);margin-bottom:16px">Монет за этот блок ответов нет — попробуй завтра</div>'}
@@ -960,7 +979,7 @@ function showQuizResults(container) {
       <div class="quiz-results-note" style="margin-top:14px">Новые вопросы появятся завтра 🌙</div>
     </div>`;
 
-  tg?.HapticFeedback?.notificationOccurred(correct === total && total > 0 ? 'success' : 'warning');
+  tg?.HapticFeedback?.notificationOccurred(correct === sessionTotal && sessionTotal > 0 ? 'success' : 'warning');
 
   // Обновляем шапку, если получили монеты
   if (coinsEarned > 0) {
