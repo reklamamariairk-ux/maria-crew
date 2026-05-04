@@ -311,6 +311,82 @@
       color: #fff; font-weight: 900;
     }
     .hero-badge.green { background: var(--green); }
+    .hero-count {
+      position: absolute; bottom: 5px; right: 5px;
+      min-width: 22px; height: 22px; padding: 0 6px;
+      background: var(--brand); color: #fff;
+      border-radius: 11px; font-size: 11px; font-weight: 900;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 1px 3px rgba(212,33,57,0.4);
+    }
+
+    /* ── Модалка героя ── */
+    .hero-modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(33,28,23,0.55);
+      display: none; z-index: 250;
+      align-items: flex-end; justify-content: center;
+    }
+    .hero-modal-backdrop.show { display: flex; animation: fadeUp 0.2s ease; }
+    .hero-modal {
+      background: var(--cream); width: 100%; max-width: 480px;
+      border-radius: 18px 18px 0 0;
+      padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
+      max-height: 85vh; overflow-y: auto;
+    }
+    .hero-modal-head {
+      display: flex; align-items: center; gap: 14px; margin-bottom: 14px;
+    }
+    .hero-modal-icon {
+      width: 64px; height: 64px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 36px; line-height: 1;
+    }
+    .hero-modal-icon img {
+      max-width: 100%; max-height: 100%;
+      object-fit: contain;
+    }
+    .hero-modal-title { font-size: 20px; font-weight: 900; line-height: 1.2; }
+    .hero-modal-sub   { font-size: 13px; color: var(--hint); margin-top: 4px; font-weight: 500; }
+    .hero-modal-desc  {
+      background: #fff; border-radius: 12px; padding: 12px 14px;
+      font-size: 13px; line-height: 1.45; color: var(--text);
+      margin-bottom: 14px;
+    }
+    .hero-modal-stats {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
+      margin-bottom: 14px;
+    }
+    .hero-modal-stat {
+      background: #fff; border-radius: 12px; padding: 10px 12px;
+      text-align: center;
+    }
+    .hero-modal-stat-val { font-size: 22px; font-weight: 900; color: var(--brand); }
+    .hero-modal-stat-lab { font-size: 11px; color: var(--hint); margin-top: 2px; font-weight: 600; }
+    .hero-modal-section { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; color: var(--hint); margin-bottom: 8px; }
+    .hero-card-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; background: #fff; border-radius: 10px;
+      margin-bottom: 6px; font-size: 13px;
+    }
+    .hero-card-row.spent { opacity: 0.55; }
+    .hero-card-row .hcr-emoji { font-size: 18px; flex-shrink: 0; }
+    .hero-card-row .hcr-source { flex: 1; font-weight: 600; }
+    .hero-card-row .hcr-date   { color: var(--hint); font-size: 12px; }
+    .hero-card-row .hcr-tag {
+      background: var(--cream-dark); color: var(--text);
+      font-size: 10px; font-weight: 800; padding: 2px 7px;
+      border-radius: 6px; margin-left: 6px;
+    }
+    .hero-card-row .hcr-tag.spent  { background: var(--cream-dark); color: var(--hint); }
+    .hero-card-row .hcr-tag.active { background: var(--green-bg); color: var(--green); }
+    .hero-card-row .hcr-tag.mvp    { background: var(--gold-bg); color: var(--gold); }
+    .hero-modal-close {
+      width: 100%; padding: 14px; border-radius: var(--radius);
+      background: var(--brand); color: #fff;
+      border: none; font-family: var(--font); font-size: 15px; font-weight: 800;
+      cursor: pointer; margin-top: 8px;
+    }
 
     .howto-card {
       background: #fff; border-radius: var(--radius);
@@ -807,8 +883,13 @@
   </nav>
 </div>
 
+<!-- Модалка героя -->
+<div class="hero-modal-backdrop" id="hero-modal" onclick="if(event.target===this)closeHeroModal()">
+  <div class="hero-modal" id="hero-modal-body"></div>
+</div>
+
 <div class="toast" id="toast"></div>
 
-<script src="main.js?v=20260504k"></script>
+<script src="main.js?v=20260504l"></script>
 </body>
 </html>

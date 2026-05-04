@@ -529,9 +529,10 @@ async function loadCollection() {
   loadChallengeBanner();
 
   try {
-    const { heroes, owned, mvpIds } = await apiFetch('/collection');
+    const { heroes, owned, mvpIds, counts } = await apiFetch('/collection');
     const ownedSet = new Set(owned);
     const mvpSet = new Set(mvpIds);
+    const cardCounts = counts || {};
 
     const mainHeroes    = heroes.filter(h => !h.isLimited);
     const limitedHeroes = heroes.filter(h =>  h.isLimited);
@@ -545,19 +546,24 @@ async function loadCollection() {
     const renderCard = (h) => {
       const isOwned = ownedSet.has(h.id);
       const isMvp   = mvpSet.has(h.id);
+      const cnt     = cardCounts[h.id];
+      const total   = cnt?.total || 0;
       const emoji = HERO_ICONS[h.id] || LIMITED_ICONS[h.name] || '🎴';
       let cls = 'hero-card';
       if (isMvp) cls += ' mvp';
       else if (isOwned) cls += ' owned';
       else cls += ' locked';
+      // Бейдж сверху-справа: ★ для лучшего, ✓ для остальных в коллекции
       const badge = isMvp
         ? '<div class="hero-badge">★</div>'
         : isOwned ? '<div class="hero-badge green">✓</div>' : '';
-      // Если в админке загружена картинка героя — показываем её. Иначе fallback на эмодзи.
+      // Счётчик снизу-справа: показываем только если карточек больше одной
+      const countBadge = total > 1 ? `<div class="hero-count">×${total}</div>` : '';
+      // Картинка из админки или fallback на эмодзи
       const iconHtml = h.imageUrl
         ? `<div class="hero-icon hero-icon-img"><img src="${escapeAttr(h.imageUrl)}" alt="${escapeAttr(h.name)}" onerror="this.parentElement.textContent='${emoji}'"></div>`
         : `<div class="hero-icon">${emoji}</div>`;
-      return `<div class="${cls}">${badge}${iconHtml}<div class="hero-name">${escapeHtml(h.name)}</div></div>`;
+      return `<div class="${cls}" onclick="openHeroModal(${h.id})">${badge}${countBadge}${iconHtml}<div class="hero-name">${escapeHtml(h.name)}</div></div>`;
     };
 
     let html = mainHeroes.map(renderCard).join('');
@@ -575,27 +581,133 @@ async function loadCollection() {
           <div class="howto-row"><span class="howto-row-icon">✅</span><div class="howto-row-text"><strong>Выполни чек-лист за смену</strong><span>Руководитель отмечает каждый день</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">⭐</span><div class="howto-row-text"><strong>Получи именной отзыв от гостя</strong><span>Упомянули тебя по имени в отзыве</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">📈</span><div class="howto-row-text"><strong>Выполни план продаж</strong><span>Хороший результат за месяц</span></div></div>
-          <div class="howto-row"><span class="howto-row-icon">👑</span><div class="howto-row-text"><strong>Стань лучшим сотрудником месяца</strong><span>Лучший результат точки — особая карточка</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">👑</span><div class="howto-row-text"><strong>Стань лучшим сотрудником месяца</strong><span>Лучший результат точки — особая карточка со звездой</span></div></div>
         </div>
-        <p style="font-size:12px;color:var(--hint);text-align:center;padding-bottom:4px">Карточки выдаёт руководитель по итогам месяца</p>`;
+        <div class="howto-card" style="background:linear-gradient(135deg,#fff4f5,var(--brand-bg));margin-top:10px">
+          <div style="font-size:14px;font-weight:800;margin-bottom:4px">🛍 Карточки можно тратить в Магазине</div>
+          <div style="font-size:13px;color:var(--hint)">Обменивай их на торты, сертификаты и денежные премии — раздел «Магазин» → «Карточки».</div>
+        </div>
+        <p style="font-size:12px;color:var(--hint);text-align:center;padding-bottom:4px;margin-top:8px">Карточки выдаёт руководитель по итогам месяца</p>`;
     } else if (ownedMain < totalMain) {
       const need = totalMain - ownedMain;
       howtoEl.innerHTML = `
         <div class="howto-card" style="background:linear-gradient(135deg,#fff4f5,var(--brand-bg))">
-          <div style="font-size:14px;font-weight:800;margin-bottom:6px">🏆 Соберёшь всех героев — откроется особый приз!</div>
+          <div style="font-size:14px;font-weight:800;margin-bottom:6px">🏆 Собери всех 12 героев → «Золотой бейдж» + 7 000 ₽</div>
           <div style="font-size:13px;color:var(--hint)">Осталось ещё <strong style="color:var(--brand)">${need} ${plural(need,'герой','героя','героев')}</strong>. Продолжай в том же духе!</div>
-        </div>`;
+        </div>
+        <p style="font-size:12px;color:var(--hint);text-align:center;padding-top:8px;padding-bottom:4px">💡 Нажми на карточку, чтобы посмотреть детали. Карточки можно тратить в Магазине.</p>`;
     } else {
       howtoEl.innerHTML = `
         <div class="howto-card" style="background:linear-gradient(135deg,#e6f7ee,var(--green-bg));text-align:center">
           <div style="font-size:32px;margin-bottom:6px">🎊</div>
           <div style="font-size:16px;font-weight:900;color:var(--green)">Полная коллекция!</div>
-          <div style="font-size:13px;color:var(--hint);margin-top:4px">Ты собрал всех 12 героев. Легенда команды!</div>
+          <div style="font-size:13px;color:var(--hint);margin-top:4px">Все ${totalMain} ${plural(totalMain, 'герой', 'героя', 'героев')} собраны. Загляни в Магазин — открыт «Золотой бейдж» + 7 000 ₽!</div>
         </div>`;
     }
   } catch (err) {
     grid.innerHTML = `<div class="empty"><div class="empty-icon">😕</div><div class="empty-text">${err.message}</div></div>`;
   }
+}
+
+// ── Модалка героя ─────────────────────────────────────────────────────────────
+
+const SOURCE_LABELS = {
+  mystery_shopper: { label: 'Тайный покупатель', icon: '🔍' },
+  review:          { label: 'Именной отзыв',     icon: '⭐' },
+  checklist:       { label: 'Чек-лист 100%',     icon: '✅' },
+  plan:            { label: 'Выполнение плана',  icon: '📈' },
+  mvp:             { label: 'Лучший сотрудник',  icon: '👑' },
+  team_bonus:      { label: 'Лучшая точка',      icon: '🏆' },
+  seasonal:        { label: 'Сезонный челлендж', icon: '🌸' },
+  certification:   { label: 'Аттестация',        icon: '🎓' },
+  manual:          { label: 'Вручную',           icon: '✋' },
+};
+
+window.openHeroModal = async function (heroId) {
+  const backdrop = document.getElementById('hero-modal');
+  const body = document.getElementById('hero-modal-body');
+  body.innerHTML = '<div class="empty"><div class="empty-icon">⏳</div><div class="empty-text">Загружаем…</div></div>';
+  backdrop.classList.add('show');
+  try {
+    const { hero, cards } = await apiFetch(`/collection/hero/${heroId}`);
+    renderHeroModal(hero, cards);
+  } catch (err) {
+    body.innerHTML = `<div class="empty"><div class="empty-icon">😕</div><div class="empty-text">${err.message}</div><button class="hero-modal-close" style="margin-top:12px" onclick="closeHeroModal()">Закрыть</button></div>`;
+  }
+};
+
+window.closeHeroModal = function () {
+  document.getElementById('hero-modal').classList.remove('show');
+};
+
+function renderHeroModal(hero, cards) {
+  const body = document.getElementById('hero-modal-body');
+  const emoji = HERO_ICONS[hero.id] || LIMITED_ICONS[hero.name] || '🎴';
+  const iconHtml = hero.imageUrl
+    ? `<img src="${escapeAttr(hero.imageUrl)}" alt="${escapeAttr(hero.name)}" onerror="this.parentElement.textContent='${emoji}'">`
+    : emoji;
+
+  const total     = cards.length;
+  const available = cards.filter(c => !c.isSpent).length;
+  const subText = total === 0
+    ? 'У тебя пока нет этой карточки'
+    : `Карточек всего: ${total} · доступно: ${available}`;
+
+  let cardsHtml = '';
+  if (cards.length === 0) {
+    cardsHtml = `
+      <div class="hero-modal-section">Как получить</div>
+      <div class="howto-card">
+        <div class="howto-row"><span class="howto-row-icon">✅</span><div class="howto-row-text"><strong>Выполни чек-лист 100%</strong><span>За месяц без замечаний</span></div></div>
+        <div class="howto-row"><span class="howto-row-icon">⭐</span><div class="howto-row-text"><strong>Именной отзыв</strong><span>Гость упомянул тебя по имени</span></div></div>
+        <div class="howto-row"><span class="howto-row-icon">🔍</span><div class="howto-row-text"><strong>Тайный покупатель ≥ 90/100</strong><span>Высокая оценка по проверке</span></div></div>
+        <div class="howto-row"><span class="howto-row-icon">📈</span><div class="howto-row-text"><strong>Выполнение плана ≥ 105%</strong><span>Перевыполнил план продаж</span></div></div>
+        <div class="howto-row"><span class="howto-row-icon">👑</span><div class="howto-row-text"><strong>Лучший сотрудник месяца</strong><span>Получишь именно особую карточку (со звездой)</span></div></div>
+      </div>`;
+  } else {
+    cardsHtml = `<div class="hero-modal-section">История этой карточки</div>` + cards.map(c => {
+      const src   = SOURCE_LABELS[c.source] || { label: c.source, icon: '🃏' };
+      const period = `${String(c.month).padStart(2,'0')}.${c.year}`;
+      const tag    = c.isSpent
+        ? '<span class="hcr-tag spent">Потрачена</span>'
+        : c.isMvp
+          ? '<span class="hcr-tag mvp">★ Особая</span>'
+          : '<span class="hcr-tag active">Доступна</span>';
+      return `
+        <div class="hero-card-row${c.isSpent ? ' spent' : ''}">
+          <span class="hcr-emoji">${src.icon}</span>
+          <div style="flex:1;min-width:0">
+            <div class="hcr-source">${escapeHtml(src.label)}</div>
+            <div class="hcr-date">за ${period}</div>
+          </div>
+          ${tag}
+        </div>`;
+    }).join('');
+  }
+
+  body.innerHTML = `
+    <div class="hero-modal-head">
+      <div class="hero-modal-icon">${iconHtml}</div>
+      <div style="flex:1;min-width:0">
+        <div class="hero-modal-title">${escapeHtml(hero.name)}</div>
+        <div class="hero-modal-sub">${escapeHtml(subText)}</div>
+      </div>
+    </div>
+    ${hero.description ? `<div class="hero-modal-desc">${escapeHtml(hero.description)}</div>` : ''}
+    ${total > 0 ? `
+    <div class="hero-modal-stats">
+      <div class="hero-modal-stat">
+        <div class="hero-modal-stat-val">${total}</div>
+        <div class="hero-modal-stat-lab">Всего получено</div>
+      </div>
+      <div class="hero-modal-stat">
+        <div class="hero-modal-stat-val">${available}</div>
+        <div class="hero-modal-stat-lab">Можно потратить</div>
+      </div>
+    </div>` : ''}
+    ${cardsHtml}
+    <button class="hero-modal-close" onclick="closeHeroModal()">Закрыть</button>
+  `;
 }
 
 // ── Coins ─────────────────────────────────────────────────────────────────────

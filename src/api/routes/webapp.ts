@@ -310,23 +310,57 @@ router.get('/collection', async (req: Request, res: Response, next: NextFunction
 
     const [heroRows, cardRows] = await Promise.all([
       pool.query(
-        `SELECT id, name, sort_order AS "sortOrder",
+        `SELECT id, name, description, sort_order AS "sortOrder",
                 is_limited AS "isLimited", image_url AS "imageUrl"
          FROM heroes ORDER BY sort_order`
       ),
-      pool.query<{ heroId: number; hasMvp: boolean }>(
-        `SELECT hero_id AS "heroId", bool_or(is_mvp) AS "hasMvp"
+      pool.query<{ heroId: number; total: number; available: number; hasMvp: boolean }>(
+        `SELECT hero_id                                    AS "heroId",
+                COUNT(*)::int                              AS total,
+                COUNT(*) FILTER (WHERE is_spent = false)::int AS available,
+                bool_or(is_mvp)                            AS "hasMvp"
          FROM employee_cards WHERE employee_id = $1
          GROUP BY hero_id`,
         [auth.employee.id]
       ),
     ]);
 
-    const ownedMap = new Map(cardRows.rows.map(c => [c.heroId, c.hasMvp]));
-    const owned = [...ownedMap.keys()];
+    const counts = Object.fromEntries(
+      cardRows.rows.map(c => [c.heroId, { total: c.total, available: c.available }])
+    );
+    const owned  = cardRows.rows.map(c => c.heroId);
     const mvpIds = cardRows.rows.filter(c => c.hasMvp).map(c => c.heroId);
 
-    res.json({ heroes: heroRows.rows, owned, mvpIds });
+    res.json({ heroes: heroRows.rows, owned, mvpIds, counts });
+  } catch (err) { next(err); }
+});
+
+// GET /api/webapp/collection/hero/:id — детали по конкретному герою
+router.get('/collection/hero/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const heroId = parseInt(req.params.id, 10);
+    if (Number.isNaN(heroId)) { res.status(400).json({ error: 'Неверный id' }); return; }
+
+    const [heroRows, cardRows] = await Promise.all([
+      pool.query(
+        `SELECT id, name, description, is_limited AS "isLimited", image_url AS "imageUrl"
+         FROM heroes WHERE id = $1`,
+        [heroId]
+      ),
+      pool.query(
+        `SELECT id, source, is_mvp AS "isMvp", is_spent AS "isSpent",
+                year, month, earned_at AS "earnedAt"
+         FROM employee_cards
+         WHERE employee_id = $1 AND hero_id = $2
+         ORDER BY earned_at DESC`,
+        [auth.employee.id, heroId]
+      ),
+    ]);
+
+    if (!heroRows.rows[0]) { res.status(404).json({ error: 'Герой не найден' }); return; }
+    res.json({ hero: heroRows.rows[0], cards: cardRows.rows });
   } catch (err) { next(err); }
 });
 
