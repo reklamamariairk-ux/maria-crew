@@ -786,23 +786,78 @@ async function loadCoins() {
       return;
     }
 
-    document.getElementById('coins-history').innerHTML = history.map(tx => {
-      const pos   = tx.amount > 0;
-      const icon  = COIN_ICONS[tx.reason] || (pos ? '+' : '−');
-      const label = COIN_LABELS[tx.reason] || tx.reason;
-      return `<div class="tx-item">
-        <div class="tx-icon ${pos ? 'pos' : 'neg'}">${icon}</div>
-        <div style="flex:1;min-width:0">
-          <div class="tx-label">${escapeHtml(label)}</div>
-          <div class="tx-date">${fmt(tx.createdAt)}</div>
-        </div>
-        <div class="tx-amount ${pos ? 'pos' : 'neg'}">${pos ? '+' : ''}${tx.amount}</div>
-      </div>`;
-    }).join('');
+    document.getElementById('coins-history').innerHTML = renderCoinsHistory(history);
   } catch (err) {
     document.getElementById('coins-history').innerHTML =
       `<div class="empty"><div class="empty-icon">😕</div><div class="empty-text">${err.message}</div></div>`;
   }
+}
+
+/** Группа дня для транзакции — «Сегодня», «Вчера» или дата.
+ *  Считается по иркутскому дню (как и серверная агрегация). */
+function txDayGroup(dateStr) {
+  const d = new Date(dateStr);
+  const irk    = new Date(d.getTime() + 8 * 60 * 60 * 1000);
+  const today  = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  const irkY = irk.getUTCFullYear(), irkM = irk.getUTCMonth(), irkD = irk.getUTCDate();
+  const tY = today.getUTCFullYear(), tM = today.getUTCMonth(), tD = today.getUTCDate();
+  if (irkY === tY && irkM === tM && irkD === tD) return 'Сегодня';
+  // Вчера: вычитаем сутки от today (ирк)
+  const yest = new Date(Date.UTC(tY, tM, tD - 1));
+  if (irkY === yest.getUTCFullYear() && irkM === yest.getUTCMonth() && irkD === yest.getUTCDate()) return 'Вчера';
+  // Прошлые годы — добавляем год
+  return irkY === tY
+    ? `${irkD} ${MONTHS[irkM]}`
+    : `${irkD} ${MONTHS[irkM]} ${irkY}`;
+}
+
+function renderCoinsHistory(history) {
+  // Группируем по дню (с дневной суммой), сохраняя порядок (сначала свежие)
+  const groups = [];
+  const indexByLabel = new Map();
+  for (const tx of history) {
+    const label = txDayGroup(tx.createdAt);
+    if (!indexByLabel.has(label)) {
+      indexByLabel.set(label, groups.length);
+      groups.push({ label, items: [], total: 0 });
+    }
+    const g = groups[indexByLabel.get(label)];
+    g.items.push(tx);
+    g.total += Number(tx.amount) || 0;
+  }
+
+  return groups.map(g => {
+    const totalStr = g.total > 0
+      ? `<span style="color:var(--green);font-weight:800">+${g.total}</span>`
+      : g.total < 0
+        ? `<span style="color:var(--brand);font-weight:800">${g.total}</span>`
+        : `<span style="color:var(--hint);font-weight:600">±0</span>`;
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin:14px 0 6px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.6px;color:var(--hint)">
+        <span>${escapeHtml(g.label)}</span>
+        <span>${totalStr}</span>
+      </div>
+      ${g.items.map(renderTxItem).join('')}`;
+  }).join('');
+}
+
+function renderTxItem(tx) {
+  const pos   = tx.amount > 0;
+  const icon  = COIN_ICONS[tx.reason] || (pos ? '+' : '−');
+  const label = COIN_LABELS[tx.reason] || tx.reason;
+  // Note из БД может содержать конкретику — «Обмен на "Кофе в Марии"», «Серия 7 дней!»,
+  // «Возврат: заявка отклонена», ручной комментарий руководителя.
+  const noteLine = tx.note
+    ? `<div class="tx-date" style="color:var(--text-3,var(--hint));margin-top:1px">${escapeHtml(tx.note)}</div>`
+    : '';
+  return `<div class="tx-item">
+    <div class="tx-icon ${pos ? 'pos' : 'neg'}">${icon}</div>
+    <div style="flex:1;min-width:0">
+      <div class="tx-label">${escapeHtml(label)}</div>
+      ${noteLine}
+    </div>
+    <div class="tx-amount ${pos ? 'pos' : 'neg'}">${pos ? '+' : ''}${tx.amount}</div>
+  </div>`;
 }
 
 // ── Quiz ──────────────────────────────────────────────────────────────────────
