@@ -875,56 +875,90 @@ async function loadStore() {
   }
 }
 
+function pluralCards(n) { return plural(n, 'карточка', 'карточки', 'карточек'); }
+function pluralCoins(n) { return plural(n, 'монета', 'монеты', 'монет'); }
+
+/** Полная стоимость приза в формате "3 карточки + 50 монет" или одиночно. */
+function priceLabel(p) {
+  const parts = [];
+  if (p.cardsRequired > 0) parts.push(`${p.cardsRequired} ${pluralCards(p.cardsRequired)}`);
+  if (p.coinsRequired > 0) parts.push(`${p.coinsRequired} ${pluralCoins(p.coinsRequired)}`);
+  return parts.join(' + ');
+}
+
+/** Хватает ли ресурсов на приз (с учётом микс-стоимости карточки + монеты). */
+function canAffordPrize(p, stats) {
+  const cards = stats.availableCards || 0;
+  const coins = stats.coinBalance || 0;
+  if (p.cardsRequired > 0 && cards < p.cardsRequired) return false;
+  if (p.coinsRequired > 0 && coins < p.coinsRequired) return false;
+  return true;
+}
+
 function renderPrizes() {
   if (!prizesCache || !myStatsCache) return;
   const isCards = storeTab === 'cards';
   const prizes  = isCards ? prizesCache.filter(p => p.cardsRequired > 0) : prizesCache.filter(p => p.coinsRequired > 0);
-  const balance  = isCards ? (myStatsCache.availableCards || 0) : (myStatsCache.coinBalance || 0);
-  const unit     = isCards ? 'карточек' : 'монет';
+  const balance = isCards ? (myStatsCache.availableCards || 0) : (myStatsCache.coinBalance || 0);
+  const pluralUnit = isCards ? pluralCards : pluralCoins;
+  const unitMany   = isCards ? 'карточек' : 'монет';
 
-  const goalEl   = document.getElementById('store-goal');
-  const nextPrize = prizes.find(p => (isCards ? p.cardsRequired : p.coinsRequired) > balance);
+  const goalEl    = document.getElementById('store-goal');
+  // «Следующий приз» — самый дешёвый по основной валюте вкладки, на который ещё не хватает.
+  // Mixed-призы (карточки+монеты) учитывают canAfford полностью.
+  const nextPrize = prizes
+    .filter(p => !canAffordPrize(p, myStatsCache))
+    .sort((a, b) => (isCards ? a.cardsRequired - b.cardsRequired : a.coinsRequired - b.coinsRequired))[0];
 
   if (nextPrize) {
     const cost = isCards ? nextPrize.cardsRequired : nextPrize.coinsRequired;
     const pct  = Math.min(100, Math.round((balance / cost) * 100));
-    const need = cost - balance;
+    const need = Math.max(0, cost - balance);
     goalEl.innerHTML = `
       <div class="goal-card">
         <div class="goal-card-title">🎯 До следующего приза</div>
         <div class="goal-card-prize">${escapeHtml(nextPrize.name)}</div>
         <div class="goal-bar-wrap"><div class="goal-bar-fill" style="width:${pct}%"></div></div>
-        <div class="goal-card-sub">${balance} / ${cost} ${unit} — ещё <strong>${need}</strong></div>
+        <div class="goal-card-sub">${balance} / ${cost} ${pluralUnit(cost)}${need > 0 ? ` — ещё <strong>${need} ${pluralUnit(need)}</strong>` : ''}</div>
       </div>`;
   } else if (prizes.length > 0) {
     goalEl.innerHTML = `
       <div class="goal-card" style="background:var(--green-bg)">
         <div style="font-size:24px;margin-bottom:6px">🎉</div>
         <div style="font-size:15px;font-weight:900;color:var(--green)">Можешь обменять!</div>
-        <div style="font-size:13px;color:var(--hint);margin-top:4px">У тебя достаточно ${unit}. Выбирай приз!</div>
+        <div style="font-size:13px;color:var(--hint);margin-top:4px">У тебя достаточно ${unitMany}. Выбирай приз!</div>
       </div>`;
   } else {
     goalEl.innerHTML = '';
   }
 
   if (!prizes.length) {
-    document.getElementById('store-prizes').innerHTML =
-      '<div class="empty"><div class="empty-icon">🛍</div><div class="empty-text">Призов пока нет</div></div>';
+    document.getElementById('store-prizes').innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">🛍</div>
+        <div class="empty-text">Здесь пока призов нет.<br>Загляни на вкладку «${isCards ? 'За монеты' : 'За карточки'}».</div>
+      </div>`;
     return;
   }
 
   document.getElementById('store-prizes').innerHTML = prizes.map(p => {
+    const canAfford = canAffordPrize(p, myStatsCache);
     const cost      = isCards ? p.cardsRequired : p.coinsRequired;
-    const canAfford = balance >= cost;
-    const need      = cost - balance;
+    const need      = Math.max(0, cost - balance);
+    // Если приз mixed — показываем полную стоимость в подзаголовке, чтобы не вводить в заблуждение
+    const isMixed = p.cardsRequired > 0 && p.coinsRequired > 0;
+    const costLine = isMixed
+      ? priceLabel(p)
+      : `${cost} ${pluralUnit(cost)}`;
     return `<div class="prize-item${canAfford ? ' can-afford' : ''}">
       <div style="flex:1;min-width:0">
         <div class="prize-name">${escapeHtml(p.name)}</div>
-        <div class="prize-cost">${cost} ${unit}</div>
-        ${!canAfford ? `<div class="prize-need">ещё ${need} ${unit}</div>` : ''}
+        <div class="prize-cost">${costLine}</div>
+        ${!canAfford && !isMixed ? `<div class="prize-need">ещё ${need} ${pluralUnit(need)}</div>` : ''}
+        ${!canAfford && isMixed ? `<div class="prize-need">пока не хватает</div>` : ''}
       </div>
       <button class="prize-btn ${canAfford ? 'can' : 'cant'}"
-              onclick="${canAfford ? `doExchange(${p.id})` : ''}"
+              onclick="${canAfford ? `doExchange(${p.id}, this)` : ''}"
               ${canAfford ? '' : 'disabled'}>
         ${canAfford ? 'Обменять' : 'Мало'}
       </button>
@@ -932,16 +966,25 @@ function renderPrizes() {
   }).join('');
 }
 
-async function doExchange(prizeId) {
-  const prize = prizesCache && prizesCache.find(p => p.id === prizeId);
-  const name = prize ? prize.name : 'приз';
-  const confirmed = await new Promise(resolve => {
-    if (tg && tg.showConfirm) tg.showConfirm(`Обменять на «${name}»?\n\nЗаявка уйдёт руководителю на подтверждение.`, resolve);
-    else resolve(window.confirm(`Обменять на «${name}»? Заявка уйдёт руководителю.`));
-  });
-  if (!confirmed) return;
+let exchangeInFlight = false;
+
+async function doExchange(prizeId, btn) {
+  if (exchangeInFlight) return; // защита от двойного клика до показа модалки
+  exchangeInFlight = true;
+  // Сразу блокируем все кнопки обмена визуально
+  document.querySelectorAll('.prize-btn').forEach(b => { b.disabled = true; });
 
   try {
+    const prize = prizesCache && prizesCache.find(p => p.id === prizeId);
+    const name  = prize ? prize.name : 'приз';
+    const cost  = prize ? priceLabel(prize) : '';
+    const msg   = `Обменять на «${name}»?\n\n${cost ? `Стоимость: ${cost}\n\n` : ''}Заявка уйдёт руководителю на подтверждение.`;
+    const confirmed = await new Promise(resolve => {
+      if (tg && tg.showConfirm) tg.showConfirm(msg, resolve);
+      else resolve(window.confirm(msg));
+    });
+    if (!confirmed) return;
+
     await apiFetch('/exchange', { method: 'POST', body: JSON.stringify({ prizeId }) });
     showToast('✅ Заявка отправлена! Руководитель скоро подтвердит.');
     tg?.HapticFeedback?.notificationOccurred('success');
@@ -958,6 +1001,11 @@ async function doExchange(prizeId) {
   } catch (err) {
     showToast(err.message || 'Ошибка. Попробуй ещё раз.');
     tg?.HapticFeedback?.notificationOccurred('error');
+  } finally {
+    exchangeInFlight = false;
+    // renderPrizes (вызванный в loadStore) перерисует кнопки заново — но если мы вышли по cancel,
+    // нужно вернуть состояние кнопок вручную
+    if (prizesCache) renderPrizes();
   }
 }
 
