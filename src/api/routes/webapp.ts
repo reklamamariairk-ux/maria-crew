@@ -446,7 +446,16 @@ router.get('/streak', async (req: Request, res: Response, next: NextFunction): P
     const auth = await requireAuth(req, res);
     if (!auth) return;
     const streak = await getStreak(auth.employee.id);
-    res.json(streak);
+    // Заодно проверяем, прошёл ли сотрудник квиз сегодня — нужно для daily-actions-bar.
+    // Считаем по иркутскому дню, как и сам квиз.
+    const { rows } = await pool.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM quiz_attempts
+       WHERE employee_id = $1
+         AND (answered_at AT TIME ZONE 'Asia/Irkutsk')::date = (NOW() AT TIME ZONE 'Asia/Irkutsk')::date`,
+      [auth.employee.id]
+    );
+    const quizAnsweredToday = parseInt(rows[0]?.count ?? '0', 10);
+    res.json({ ...streak, quizAnsweredToday, quizDoneToday: quizAnsweredToday >= 5 });
   } catch (err) { next(err); }
 });
 

@@ -509,6 +509,8 @@ async function loadDailyActionsBar() {
     const streak = await apiFetch('/streak');
     const checkedIn = streak.checkedInToday;
     const days = streak.currentStreak || 0;
+    const quizDone = !!streak.quizDoneToday;
+    const quizPartial = !quizDone && (streak.quizAnsweredToday || 0) > 0;
     el.innerHTML = `
       <div class="daily-actions">
         <div class="daily-action${checkedIn ? ' done' : ''}" onclick="${checkedIn ? '' : 'doCheckin()'}">
@@ -516,10 +518,10 @@ async function loadDailyActionsBar() {
           <span class="daily-action-label">${checkedIn ? 'Отметился' : 'Отметиться'}</span>
           <span class="daily-action-sub">${days} ${plural(days, 'день', 'дня', 'дней')} подряд</span>
         </div>
-        <div class="daily-action" onclick="switchTab('quiz')">
-          <span class="daily-action-icon">🧩</span>
-          <span class="daily-action-label">Пройти квиз</span>
-          <span class="daily-action-sub">+1 монета за ответ</span>
+        <div class="daily-action${quizDone ? ' done' : ''}" onclick="switchTab('quiz')">
+          <span class="daily-action-icon">${quizDone ? '✅' : '🧩'}</span>
+          <span class="daily-action-label">${quizDone ? 'Квиз пройден' : (quizPartial ? 'Продолжи квиз' : 'Пройти квиз')}</span>
+          <span class="daily-action-sub">${quizDone ? 'до завтра' : (quizPartial ? `${streak.quizAnsweredToday} из 5 уже отвечено` : '+1 монета за ответ')}</span>
         </div>
       </div>`;
   } catch { el.innerHTML = ''; }
@@ -546,6 +548,9 @@ async function loadCollection() {
     const pct = totalMain > 0 ? Math.round((ownedMain / totalMain) * 100) : 0;
     document.getElementById('collection-progress-text').textContent = `${ownedMain} из ${totalMain}`;
     document.getElementById('collection-progress-fill').style.width = pct + '%';
+    // Подпись «из N героев» в шапке тоже синхронизируем — если в БД число героев изменили
+    const heroesLabel = document.getElementById('stat-heroes-label');
+    if (heroesLabel) heroesLabel.textContent = `из ${totalMain} ${plural(totalMain, 'героя', 'героев', 'героев')}`;
 
     const renderCard = (h) => {
       const isOwned = ownedSet.has(h.id);
@@ -596,7 +601,7 @@ async function loadCollection() {
       const need = totalMain - ownedMain;
       howtoEl.innerHTML = `
         <div class="howto-card" style="background:linear-gradient(135deg,#fff4f5,var(--brand-bg))">
-          <div style="font-size:14px;font-weight:800;margin-bottom:6px">🏆 Собери всех 12 героев → «Золотой бейдж» + 7 000 ₽</div>
+          <div style="font-size:14px;font-weight:800;margin-bottom:6px">🏆 Собери всех ${totalMain} ${plural(totalMain, 'героя', 'героев', 'героев')} → «Золотой бейдж» + 7 000 ₽</div>
           <div style="font-size:13px;color:var(--hint)">Осталось ещё <strong style="color:var(--brand)">${need} ${plural(need,'герой','героя','героев')}</strong>. Продолжай в том же духе!</div>
         </div>
         <p style="font-size:12px;color:var(--hint);text-align:center;padding-top:8px;padding-bottom:4px">💡 Нажми на карточку, чтобы посмотреть детали. Карточки можно тратить в Магазине.</p>`;
@@ -632,6 +637,14 @@ window.openHeroModal = async function (heroId) {
   const body = document.getElementById('hero-modal-body');
   body.innerHTML = '<div class="empty"><div class="empty-icon">⏳</div><div class="empty-text">Загружаем…</div></div>';
   backdrop.classList.add('show');
+  // Включаем системный BackButton Telegram — пользователь сможет закрыть модалку
+  // привычным жестом. Колбэк отписывается при закрытии.
+  try {
+    if (tg?.BackButton) {
+      tg.BackButton.show();
+      tg.BackButton.onClick(closeHeroModalFromTg);
+    }
+  } catch { /* старый клиент Telegram без BackButton */ }
   try {
     const { hero, cards } = await apiFetch(`/collection/hero/${heroId}`);
     renderHeroModal(hero, cards);
@@ -640,8 +653,16 @@ window.openHeroModal = async function (heroId) {
   }
 };
 
+function closeHeroModalFromTg() { closeHeroModal(); }
+
 window.closeHeroModal = function () {
   document.getElementById('hero-modal').classList.remove('show');
+  try {
+    if (tg?.BackButton) {
+      tg.BackButton.offClick(closeHeroModalFromTg);
+      tg.BackButton.hide();
+    }
+  } catch { /* ignore */ }
 };
 
 function renderHeroModal(hero, cards) {
