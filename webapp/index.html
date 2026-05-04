@@ -291,6 +291,13 @@
     }
     .hero-card.locked .hero-icon { opacity: 0.2; filter: grayscale(1); }
     .hero-card.locked .hero-name { color: var(--hint); }
+    .hero-card.faded { opacity: 0.55; }
+    .hero-card.faded .hero-name::after {
+      content: ' · потрачено';
+      color: var(--hint);
+      font-weight: 500;
+      font-size: 9px;
+    }
     .hero-icon { font-size: 28px; margin-bottom: 5px; line-height: 1; }
     .hero-icon-img {
       width: 64px; height: 64px; margin: 0 auto 4px;
@@ -893,6 +900,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="main.js?v=20260504w"></script>
+<script src="main.js?v=20260504x"></script>
 </body>
 </html>

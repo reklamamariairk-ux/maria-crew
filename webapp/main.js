@@ -557,21 +557,28 @@ async function loadCollection() {
     if (heroesLabel) heroesLabel.textContent = `из ${totalMain} ${plural(totalMain, 'героя', 'героев', 'героев')}`;
 
     const renderCard = (h) => {
-      const isOwned = ownedSet.has(h.id);
-      const isMvp   = mvpSet.has(h.id);
-      const cnt     = cardCounts[h.id];
-      const total   = cnt?.total || 0;
+      const isOwned   = ownedSet.has(h.id);
+      const isMvp     = mvpSet.has(h.id);
+      const cnt       = cardCounts[h.id];
+      const total     = cnt?.total     || 0;
+      const available = cnt?.available || 0;
       const emoji = HERO_ICONS[h.id] || LIMITED_ICONS[h.name] || '🎴';
+      // Все карточки этого героя уже потрачены — карточка остаётся в коллекции
+      // (✓ сверху не убираем — герой собран), но визуально приглушаем,
+      // чтобы было понятно: «была, но больше нет в наличии»
+      const allSpent = isOwned && available === 0 && total > 0;
       let cls = 'hero-card';
       if (isMvp) cls += ' mvp';
       else if (isOwned) cls += ' owned';
       else cls += ' locked';
+      if (allSpent) cls += ' faded';
       // Бейдж сверху-справа: ★ для лучшего, ✓ для остальных в коллекции
       const badge = isMvp
         ? '<div class="hero-badge">★</div>'
         : isOwned ? '<div class="hero-badge green">✓</div>' : '';
-      // Счётчик снизу-справа: показываем только если карточек больше одной
-      const countBadge = total > 1 ? `<div class="hero-count">×${total}</div>` : '';
+      // Счётчик снизу-справа отражает доступное к обмену (не общее за всю историю):
+      // показываем только если доступно больше одной — иначе достаточно бейджа сверху
+      const countBadge = available > 1 ? `<div class="hero-count">×${available}</div>` : '';
       // Картинка из админки или fallback на эмодзи
       const iconHtml = h.imageUrl
         ? `<div class="hero-icon hero-icon-img"><img src="${escapeAttr(h.imageUrl)}" alt="${escapeAttr(h.name)}" onerror="this.parentElement.textContent='${emoji}'"></div>`
