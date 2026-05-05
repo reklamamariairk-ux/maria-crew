@@ -51,12 +51,16 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
          JOIN latest l ON l.year = mm.year AND l.month = mm.month
          WHERE e.is_active = true`
       ),
+      // Месяц считаем по иркутскому времени — синхронно с getMonthlySummary
+      // и месячными агрегациями на фронте Mini App. Без AT TIME ZONE EXTRACT
+      // работает в UTC, и транзакция 1 числа в 02:00 Иркутска (18:00 UTC
+      // прошлого дня) попадала бы в прошлый месяц.
       pool.query<{ total: string }>(
         `SELECT COALESCE(SUM(amount), 0)::text AS total
          FROM coin_transactions
          WHERE amount > 0
-           AND EXTRACT(YEAR FROM created_at) = $1
-           AND EXTRACT(MONTH FROM created_at) = $2`,
+           AND EXTRACT(YEAR  FROM created_at AT TIME ZONE 'Asia/Irkutsk') = $1
+           AND EXTRACT(MONTH FROM created_at AT TIME ZONE 'Asia/Irkutsk') = $2`,
         [year, month]
       ),
       pool.query<{ id: number; name: string; season: string; year: number; endDate: string; completedCount: string }>(

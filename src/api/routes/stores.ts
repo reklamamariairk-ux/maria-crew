@@ -44,6 +44,10 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
   try {
     const { name, address } = req.body as { name: string; address?: string };
     if (!name || !name.trim()) { res.status(400).json({ error: 'name обязателен' }); return; }
+    if (name.trim().length > 100) {
+      res.status(400).json({ error: 'name слишком длинный (максимум 100 символов)' });
+      return;
+    }
     const { rows } = await pool.query(
       `INSERT INTO stores (name, address) VALUES ($1, $2)
        RETURNING id, name, address, is_active AS "isActive"`,
@@ -57,8 +61,11 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
 // GET /api/stores/:id/gis2-rating — получить текущий рейтинг из 2ГИС
 router.get('/:id/gis2-rating', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { rows } = await pool.query(`SELECT gis2_id FROM stores WHERE id = $1`, [req.params.id]);
-    const gis2Id = rows[0]?.gis2_id as string | null;
+    // pool.query auto-camelize'ит ключи: колонка gis2_id приходит как gis2Id
+    const { rows } = await pool.query<{ gis2Id: string | null }>(
+      `SELECT gis2_id FROM stores WHERE id = $1`, [req.params.id]
+    );
+    const gis2Id = rows[0]?.gis2Id ?? null;
     if (!gis2Id) { res.status(400).json({ error: 'У точки не задан 2ГИС ID' }); return; }
     if (!process.env.GIS2_API_KEY) { res.status(500).json({ error: 'GIS2_API_KEY не задан на сервере' }); return; }
     const rating = await fetchGis2Rating(gis2Id);
@@ -75,7 +82,13 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     const vals: (string | boolean | null)[] = [];
 
     if ('name' in body && body.name !== undefined) {
-      vals.push(body.name); sets.push(`name = $${vals.length}`);
+      const trimmed = body.name.trim();
+      if (!trimmed) { res.status(400).json({ error: 'name не может быть пустым' }); return; }
+      if (trimmed.length > 100) {
+        res.status(400).json({ error: 'name слишком длинный (максимум 100 символов)' });
+        return;
+      }
+      vals.push(trimmed); sets.push(`name = $${vals.length}`);
     }
     if ('address' in body) {
       vals.push(body.address ?? null); sets.push(`address = $${vals.length}`);

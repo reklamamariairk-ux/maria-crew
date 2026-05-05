@@ -88,14 +88,20 @@ router.get('/analytics', async (_req: Request, res: Response, next: NextFunction
          GROUP BY qq.category
          ORDER BY "successRate" ASC`
       ),
-      // Общая сводка
+      // Общая сводка. Колонка в БД — answered_at (не attempted_at).
+      // Считаем по иркутскому дню — синхронно с тем, как день определяется
+      // во всех остальных местах системы.
       pool.query<{
         totalAttempts: string; uniqueEmployees: string; avgDailyAttempts: string;
       }>(
         `SELECT
-           COUNT(*)                                                     AS "totalAttempts",
-           COUNT(DISTINCT employee_id)                                  AS "uniqueEmployees",
-           ROUND(COUNT(*)::numeric / NULLIF(COUNT(DISTINCT DATE(attempted_at)), 0), 1) AS "avgDailyAttempts"
+           COUNT(*)                    AS "totalAttempts",
+           COUNT(DISTINCT employee_id) AS "uniqueEmployees",
+           ROUND(
+             COUNT(*)::numeric
+             / NULLIF(COUNT(DISTINCT (answered_at AT TIME ZONE 'Asia/Irkutsk')::date), 0),
+             1
+           ) AS "avgDailyAttempts"
          FROM quiz_attempts`
       ),
     ]);

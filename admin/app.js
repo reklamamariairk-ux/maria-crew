@@ -1502,7 +1502,17 @@ const AUDIT_ACTION_LABELS = {
   quiz_question_update:     '🧩 Вопрос изменён',
   quiz_question_delete:     '🧩 Вопрос удалён',
   config_update:            '⚙️ Настройки изменены',
+  hero_create:              '🎨 Герой создан',
   hero_update:              '🎨 Герой обновлён',
+  hero_delete:              '🎨 Герой удалён',
+  challenge_create:         '🌸 Челлендж создан',
+  challenge_update:         '🌸 Челлендж изменён',
+  challenge_delete:         '🌸 Челлендж удалён',
+  challenge_award:          '🌸 Карточка за челлендж выдана',
+  broadcast:                '📢 Рассылка',
+  admin_user_create:        '🛡 Админ создан',
+  admin_user_update:        '🛡 Админ изменён',
+  admin_user_delete:        '🛡 Админ удалён',
 };
 
 function formatAuditDateTime(iso) {

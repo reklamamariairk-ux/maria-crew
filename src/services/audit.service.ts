@@ -33,6 +33,7 @@ export type AuditAction =
   | 'challenge_create'
   | 'challenge_update'
   | 'challenge_delete'
+  | 'challenge_award'
   | 'admin_user_create'
   | 'admin_user_update'
   | 'admin_user_delete';
