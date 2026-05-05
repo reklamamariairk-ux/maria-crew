@@ -59,6 +59,7 @@ export interface Store {
 export interface Employee {
   id: number;
   telegramId: bigint | null;
+  telegramUsername: string | null;
   name: string;
   storeId: number;
   role: Role;

@@ -18,12 +18,25 @@ export async function authMiddleware(ctx: BotContext, next: NextFunction): Promi
         const username = ctx.from.username.toLowerCase();
         const linked = await pool.query<Employee>(
           `UPDATE employees
-           SET telegram_id = $1
+           SET telegram_id = $1, telegram_username = $2
            WHERE LOWER(telegram_username) = $2 AND is_active = true AND telegram_id IS NULL
            RETURNING *`,
           [telegramId, username]
         );
         rows = linked.rows;
+      }
+
+      // 3. Нашли по id — но Telegram username мог измениться. Синхронизируем
+      // (без блокировки запроса — fire and forget)
+      if (rows[0] && ctx.from.username) {
+        const currentUsername = ctx.from.username.toLowerCase();
+        const dbUsername = (rows[0].telegramUsername ?? '').toLowerCase();
+        if (currentUsername !== dbUsername) {
+          pool.query(
+            `UPDATE employees SET telegram_username = $1 WHERE id = $2`,
+            [currentUsername, rows[0].id]
+          ).catch(err => console.error('[auth] sync username failed:', err instanceof Error ? err.message : err));
+        }
       }
 
       ctx.employee = rows[0];
