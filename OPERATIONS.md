@@ -198,10 +198,43 @@ git revert <bad-commit>
 git push
 ```
 
+### ⚠️ render.yaml НЕ применяется к существующему сервису
+
+**Важная гочча Render**: при изменении `render.yaml` для уже созданного
+сервиса — изменения **не подтягиваются автоматически**. У dashboard-настроек
+приоритет над файлом. Это касается `buildCommand`, `startCommand`,
+`envVars`.
+
+**Симптом:** push с заведомо ломаным тестом успешно деплоится за 30-90
+секунд (вместо обычных 5 минут), потому что `npm test` фактически не
+выполняется.
+
+**Как проверить, какой `buildCommand` реально используется:**
+
+1. Сделай эксперимент: добавь временно `expect(true).toBe(false)` в
+   любой `*.test.ts`, push
+2. Если деплой прошёл (сервис передеплоился, `startedAt` обновился) —
+   `npm test` НЕ запускается
+3. Если деплой упал (старый процесс остался) — `npm test` работает
+
+**Как починить — обновить Build Command в Render Dashboard:**
+
+1. https://dashboard.render.com → service `maria-crew`
+2. **Settings** → **Build & Deploy**
+3. В поле **Build Command** замени на:
+   ```
+   npm install --include=dev && npm test -- --ci && npm run build
+   ```
+4. Save Changes
+5. Push любой коммит → Render запустит build с тестами (5+ минут)
+6. Любой `failing test` теперь остановит деплой
+
+После этого render.yaml в репо просто **дублирует** настройку для
+документации — реальное поведение определяет dashboard.
+
 ### Тесты упали в Render build → деплой остановлен
 
-`render.yaml` запускает `npm test` перед `npm run build`. Если коммит ломает
-тесты, деплой не выполнится (старая версия продолжит работать).
+(Работает только если в Render dashboard правильно настроен Build Command — см. секцию выше.)
 
 **Что увидишь:** в Render Logs `Test Suites: X failed, Y total`.
 
@@ -211,8 +244,9 @@ git push
 3. Закоммить + push — Render передеплоит
 
 **Если очень срочно нужно задеплоить, минуя тесты** (НЕ рекомендуется):
-- В `render.yaml` временно убери `&& npm test -- --ci`
-- Запушь
+- В Render Dashboard → Settings → Build Command → временно убери
+  `&& npm test -- --ci`
+- Запушь хотфикс
 - После хотфикса верни строку обратно
 
 ---
