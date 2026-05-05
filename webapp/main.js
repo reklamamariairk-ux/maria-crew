@@ -691,15 +691,27 @@ function renderHeroModal(hero, cards) {
 
   let cardsHtml = '';
   if (cards.length === 0) {
-    cardsHtml = `
-      <div class="hero-modal-section">Как получить</div>
-      <div class="howto-card">
-        <div class="howto-row"><span class="howto-row-icon">✅</span><div class="howto-row-text"><strong>Выполни чек-лист 100%</strong><span>За месяц без замечаний</span></div></div>
-        <div class="howto-row"><span class="howto-row-icon">⭐</span><div class="howto-row-text"><strong>Именной отзыв</strong><span>Гость упомянул тебя по имени</span></div></div>
-        <div class="howto-row"><span class="howto-row-icon">🔍</span><div class="howto-row-text"><strong>Тайный покупатель ≥ 90/100</strong><span>Высокая оценка по проверке</span></div></div>
-        <div class="howto-row"><span class="howto-row-icon">📈</span><div class="howto-row-text"><strong>Выполнение плана ≥ 105%</strong><span>Перевыполнил план продаж</span></div></div>
-        <div class="howto-row"><span class="howto-row-icon">👑</span><div class="howto-row-text"><strong>Лучший сотрудник месяца</strong><span>Получишь именно особую карточку (со звездой)</span></div></div>
-      </div>`;
+    // Для лимитных героев условия получения отличаются — это сезонные карточки
+    // (Ice Breaker, Holiday Star и др.), которые выдаются только за выполнение
+    // сезонного челленджа.
+    cardsHtml = hero.isLimited
+      ? `
+        <div class="hero-modal-section">Как получить</div>
+        <div class="howto-card">
+          <div class="howto-row"><span class="howto-row-icon">🌸</span><div class="howto-row-text"><strong>Сезонный челлендж</strong><span>Лимитная карточка выдаётся за выполнение текущего сезонного челленджа</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">🔥</span><div class="howto-row-text"><strong>Серия входов ≥ 7 дней</strong><span>Не прерывай ежедневный вход</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">🧩</span><div class="howto-row-text"><strong>Правильных ответов в квизе ≥ 15</strong><span>Накопи правильных ответов суммарно</span></div></div>
+        </div>
+        <p style="font-size:12px;color:var(--hint);text-align:center;padding:8px 4px 0">Сезонные карточки появляются только в активный сезон. Условия и срок — на главной во вкладке «Карточки».</p>`
+      : `
+        <div class="hero-modal-section">Как получить</div>
+        <div class="howto-card">
+          <div class="howto-row"><span class="howto-row-icon">✅</span><div class="howto-row-text"><strong>Выполни чек-лист 100%</strong><span>За месяц без замечаний</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">⭐</span><div class="howto-row-text"><strong>Именной отзыв</strong><span>Гость упомянул тебя по имени</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">🔍</span><div class="howto-row-text"><strong>Тайный покупатель ≥ 90/100</strong><span>Высокая оценка по проверке</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">📈</span><div class="howto-row-text"><strong>Выполнение плана ≥ 105%</strong><span>Перевыполнил план продаж</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">👑</span><div class="howto-row-text"><strong>Лучший сотрудник месяца</strong><span>Получишь именно особую карточку (со звездой)</span></div></div>
+        </div>`;
   } else {
     cardsHtml = `<div class="hero-modal-section">История этой карточки</div>` + cards.map(c => {
       const src   = SOURCE_LABELS[c.source] || { label: c.source, icon: '🃏' };
