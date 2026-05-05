@@ -16,8 +16,14 @@
   "jest": {
     "preset": "ts-jest",
     "testEnvironment": "node",
-    "testMatch": ["**/__tests__/**/*.test.ts"],
-    "moduleFileExtensions": ["ts", "js", "json"]
+    "testMatch": [
+      "**/__tests__/**/*.test.ts"
+    ],
+    "moduleFileExtensions": [
+      "ts",
+      "js",
+      "json"
+    ]
   },
   "engines": {
     "node": ">=18.0.0"
@@ -39,6 +45,7 @@
     "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.11.6",
     "jest": "^30.3.0",
+    "pg-mem": "^3.0.14",
     "ts-jest": "^29.4.9",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.4.5"
