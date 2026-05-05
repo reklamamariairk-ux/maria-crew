@@ -1264,10 +1264,18 @@ function renderStoresRating(stores, myStoreId) {
   if (myStore) {
     const myRank = ranked.indexOf(myStore) + 1;
     if (myStore.isTop) {
+      // Месяц обработан, точка официально лучшая
       html = `
         <div class="rating-info" style="background:linear-gradient(135deg,#fff8e1,var(--gold-bg));border:1.5px solid var(--gold);margin-bottom:10px">
           <span class="rating-info-icon">🏆</span>
           <div class="rating-info-text"><strong>Твоя точка — лучшая!</strong> Каждому в команде по итогам месяца — бонусная карточка героя.</div>
+        </div>` + html;
+    } else if (myRank === 1) {
+      // Точка лидирует по баллам, но месяц ещё не обработан (isTop=false для всех)
+      html = `
+        <div class="rating-info" style="background:linear-gradient(135deg,#fff8e1,var(--gold-bg));border:1.5px solid var(--gold);margin-bottom:10px">
+          <span class="rating-info-icon">📈</span>
+          <div class="rating-info-text"><strong>Твоя точка лидирует!</strong> Удержите первое место до конца месяца — каждому в команде бонусная карточка.</div>
         </div>` + html;
     } else {
       const top = ranked[0];
