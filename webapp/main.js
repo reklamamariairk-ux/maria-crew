@@ -1113,6 +1113,14 @@ async function loadRating() {
   document.getElementById('rating-info-block').innerHTML = '';
   document.getElementById('stores-rating-list').innerHTML = '';
 
+  // Заголовки секций — конкретный месяц вместо «этот месяц»
+  const monthIdx = currentIrkutskMonth();
+  const monthLabel = MONTH_NOMINATIVE[monthIdx];
+  const titleEl = document.getElementById('rating-list-title');
+  if (titleEl) titleEl.textContent = `Рейтинг точки — ${monthLabel}`;
+  const storesTitleEl = document.getElementById('stores-rating-title');
+  if (storesTitleEl) storesTitleEl.textContent = `🏆 Лучшие точки — ${monthLabel}`;
+
   try {
     const { ranking, stores, myStoreId } = await apiFetch('/rating');
     renderStoresRating(stores || [], myStoreId);
@@ -1131,7 +1139,7 @@ async function loadRating() {
       document.getElementById('rating-list').innerHTML = `
         <div class="empty">
           <div class="empty-icon">📊</div>
-          <div class="empty-text">Рейтинг за этот месяц ещё не сформирован.<br><br>Баллы появятся, когда руководитель внесёт показатели или нажмёт «Обработать месяц».</div>
+          <div class="empty-text">Рейтинг за ${MONTH_GENITIVE[monthIdx]} ещё не сформирован.<br><br>Баллы появятся, когда руководитель внесёт показатели или нажмёт «Обработать месяц».</div>
         </div>`;
       return;
     }
@@ -1146,7 +1154,7 @@ async function loadRating() {
 
     let myInfo = '';
     if (myEntry && myIdx < 3) {
-      myInfo = `<strong>Ты на ${myIdx + 1} месте</strong> — ${Number(myEntry.mvpScore).toFixed(1)} ${pluralScore(Number(myEntry.mvpScore))}${myEntry.isMvp ? ' · ★ Лучший сотрудник' : ''}`;
+      myInfo = `<strong>Ты на ${myIdx + 1} месте</strong> — ${fmtScore(myEntry.mvpScore)} ${pluralScore(Number(myEntry.mvpScore))}${myEntry.isMvp ? ' · ★ Лучший сотрудник' : ''}`;
     } else if (myEntry && myEntry.isMvp) {
       // Лучший сотрудник, назначенный руководителем вручную (не первый по score)
       myInfo = '<strong>★ Ты лучший сотрудник месяца!</strong> Поздравляем 🎉';
@@ -1166,7 +1174,7 @@ async function loadRating() {
     const top3 = scored.slice(0, 3);
     const html = top3.map((r, i) => {
       const isMe = r.employeeId === employee.id;
-      const score = `${Number(r.mvpScore).toFixed(1)} ${pluralScore(Number(r.mvpScore))}`;
+      const score = `${fmtScore(r.mvpScore)} ${pluralScore(Number(r.mvpScore))}`;
       return `<div class="lb-item${isMe ? ' lb-me' : ''}">
         <div class="lb-rank">${MEDALS[i] || (i + 1)}</div>
         <div class="lb-name">${escapeHtml(r.name)}${r.isMvp ? ' <span class="lb-mvp">★ ЛУЧШИЙ</span>' : ''}</div>
@@ -1184,6 +1192,12 @@ async function loadRating() {
 function pluralScore(n) {
   // Русское склонение для дробных значений считаем как для целой части
   return plural(Math.floor(Math.abs(n)), 'очко', 'очка', 'очков');
+}
+
+/** Форматирование балла: целое — без дроби (50), дробное — одна цифра (12.5). */
+function fmtScore(n) {
+  const v = Number(n);
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
 function renderStoresRating(stores, myStoreId) {
@@ -1207,7 +1221,7 @@ function renderStoresRating(stores, myStoreId) {
   const top3 = ranked.slice(0, 3);
   let html = top3.map((s, i) => {
     const isMine = s.storeId === myStoreId;
-    const score  = `${Number(s.totalScore).toFixed(1)} ${pluralScore(Number(s.totalScore))}`;
+    const score  = `${fmtScore(s.totalScore)} ${pluralScore(Number(s.totalScore))}`;
     const tag    = s.isTop ? ' <span class="lb-mvp">★ ЛУЧШАЯ</span>' : '';
     const youTag = isMine ? ' <span style="font-size:11px;color:var(--brand);font-weight:700">· твоя</span>' : '';
     return `<div class="lb-item${isMine ? ' lb-me' : ''}">
@@ -1230,9 +1244,8 @@ function renderStoresRating(stores, myStoreId) {
     } else {
       const top = ranked[0];
       const diffNum = Number(top.totalScore) - Number(myStore.totalScore);
-      const diff = diffNum.toFixed(1);
       const diffPart = diffNum > 0
-        ? `До лидера — <strong>${diff} ${pluralScore(diffNum)}</strong>.`
+        ? `До лидера — <strong>${fmtScore(diffNum)} ${pluralScore(diffNum)}</strong>.`
         : `Балл такой же, как у лидера — <strong>идёте ноздря в ноздрю!</strong>`;
       html = `
         <div class="rating-info" style="margin-bottom:10px">
