@@ -1080,9 +1080,11 @@ function showQuizResults(container) {
   else if (correct >= 1) { emoji = '💪'; title = 'Неплохо!';                                sub = 'В следующий раз будет ещё лучше'; }
   else                   { emoji = '🤝'; title = 'Не сдавайся';                             sub = 'Главное — продолжать. Завтра новые вопросы!'; }
 
-  // Текст результата: если сессия была «продолжением», поясняем дневной итог
+  // Текст результата: если сессия была «продолжением», поясняем дневной итог.
+  // «5/5 отвечено» (а не «5 правильных за день» — у сотрудника утром могли быть ошибки).
+  const dayAnswered = quizAnsweredBefore + sessionTotal;
   const scoreLine = wasResumed
-    ? `${correct} из ${sessionTotal} в этой сессии · за день: ${quizAnsweredBefore + correct}/${dayTotal}`
+    ? `${correct} из ${sessionTotal} в этой сессии · за день отвечено ${dayAnswered}/${dayTotal}`
     : `${correct} из ${sessionTotal} правильных${sub ? ` · ${sub}` : ''}`;
 
   // Разбивка по категориям
@@ -1101,8 +1103,8 @@ function showQuizResults(container) {
        </div>`
     : '';
 
-  // Если за день ещё остались вопросы — кнопка «Дальше», иначе «На главную»
-  const dayDone = (quizAnsweredBefore + correct + (sessionTotal - correct)) >= dayTotal;
+  // Если за день ещё остались вопросы — кнопка «Продолжить», иначе «На карточки»
+  const dayDone = dayAnswered >= dayTotal;
   const actionBtn = dayDone
     ? `<button class="btn-quiz-retry" onclick="switchTab('collection')">На карточки</button>`
     : `<button class="btn-quiz-retry" onclick="loadQuiz()">Продолжить квиз</button>`;
