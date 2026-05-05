@@ -224,17 +224,30 @@ export async function notifyAdminNewExchange(
   await Promise.allSettled(admins.map(a => send(a.telegramId, text)));
 }
 
-/** Массовая рассылка произвольного сообщения списку telegram_id */
+/** Массовая рассылка произвольного сообщения списку telegram_id.
+ *  Ограничение Telegram: ~30 msg/sec для бота. Поэтому шлём батчами по 25
+ *  с паузой 1.1 сек между батчами — иначе при 200+ получателях большая
+ *  часть упадёт с 429 (rate limit). */
 export async function sendBroadcast(
   telegramIds: string[],
   message: string
 ): Promise<{ sent: number; failed: number }> {
   if (!_bot) return { sent: 0, failed: telegramIds.length };
-  const results = await Promise.allSettled(
-    telegramIds.map(tgId => _bot!.api.sendMessage(tgId, message))
-  );
-  const sent   = results.filter(r => r.status === 'fulfilled').length;
-  const failed = results.filter(r => r.status === 'rejected').length;
+  const BATCH = 25;
+  const PAUSE_MS = 1100;
+
+  let sent = 0, failed = 0;
+  for (let i = 0; i < telegramIds.length; i += BATCH) {
+    const batch = telegramIds.slice(i, i + BATCH);
+    const results = await Promise.allSettled(
+      batch.map(tgId => _bot!.api.sendMessage(tgId, message))
+    );
+    sent   += results.filter(r => r.status === 'fulfilled').length;
+    failed += results.filter(r => r.status === 'rejected').length;
+    if (i + BATCH < telegramIds.length) {
+      await new Promise(resolve => setTimeout(resolve, PAUSE_MS));
+    }
+  }
   return { sent, failed };
 }
 

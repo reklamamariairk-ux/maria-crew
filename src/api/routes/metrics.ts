@@ -75,6 +75,11 @@ router.post('/process', async (req: Request, res: Response, next: NextFunction):
       storeRatings?: Array<{ storeId: number; avgRatingScore: number; revenuePercent: number }>;
     };
     if (!year || !month) { res.status(400).json({ error: 'year и month обязательны' }); return; }
+    // Здравомыслящие границы — отсекают опечатки в UI (2030 на 3030 и т.п.)
+    if (year < 2024 || year > 2100 || month < 1 || month > 12) {
+      res.status(400).json({ error: 'Некорректные year/month' });
+      return;
+    }
 
     const scoresMap = new Map(
       (storeRatings ?? []).map(s => [
@@ -85,19 +90,32 @@ router.post('/process', async (req: Request, res: Response, next: NextFunction):
 
     const results = await processMonthAllStores(year, month, scoresMap);
 
-    for (const result of results) {
-      const { rows: storeRows } = await pool.query<{ name: string }>(
-        `SELECT name FROM stores WHERE id = $1`, [result.storeId]
-      );
-      const storeName = storeRows[0]?.name ?? '';
-      const mvp = result.employees.find(e => e.isMvp);
-      if (mvp) await notifyMvp(mvp.employeeId, storeName, month, year, mvp.mvpScore);
-      if (result.topStore) await notifyTopStore(result.storeId, storeName, month, year, result.storeScore);
-    }
-
-    await publishMonthResults(results, month, year);
+    // Отвечаем сразу — данные уже сохранены. Уведомления улетают в фоне:
+    // запросы к Telegram могут занять секунды × 16 точек × N сотрудников;
+    // не должны блокировать UI админа.
     res.json({ ok: true, processed: results.length, results });
     logAudit('metrics_process', { year, month, storeIds: results.map(r => r.storeId) }).catch(() => {});
+
+    // Background fan-out уведомлений — все параллельно, ошибки изолированы.
+    const storeIds = results.map(r => r.storeId);
+    const { rows: storeRows } = await pool.query<{ id: number; name: string }>(
+      `SELECT id, name FROM stores WHERE id = ANY($1)`, [storeIds]
+    );
+    const storeNames = new Map(storeRows.map(s => [s.id, s.name]));
+
+    const notifications: Promise<unknown>[] = [];
+    for (const result of results) {
+      const storeName = storeNames.get(result.storeId) ?? '';
+      const mvp = result.employees.find(e => e.isMvp);
+      if (mvp) notifications.push(notifyMvp(mvp.employeeId, storeName, month, year, mvp.mvpScore));
+      if (result.topStore) notifications.push(notifyTopStore(result.storeId, storeName, month, year, result.storeScore));
+    }
+    notifications.push(publishMonthResults(results, month, year));
+
+    Promise.allSettled(notifications).then(rs => {
+      const failed = rs.filter(r => r.status === 'rejected').length;
+      if (failed > 0) console.warn(`[metrics/process] ${failed} уведомлений не доставлено`);
+    });
   } catch (err) { next(err); }
 });
 

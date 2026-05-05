@@ -18,6 +18,11 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
     if (!message || !message.trim()) {
       res.status(400).json({ error: 'message обязателен' }); return;
     }
+    // Telegram limit на одно сообщение — 4096 символов
+    if (message.length > 4000) {
+      res.status(400).json({ error: 'Сообщение слишком длинное (максимум 4000 символов)' });
+      return;
+    }
     if (!['all', 'store', 'employee'].includes(target)) {
       res.status(400).json({ error: 'target должен быть: all, store, employee' }); return;
     }

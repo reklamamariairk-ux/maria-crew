@@ -120,13 +120,21 @@ router.get('/:id/summary', async (req: Request, res: Response, next: NextFunctio
   } catch (err) { next(err); }
 });
 
+const VALID_EMPLOYEE_ROLES = new Set(['employee', 'manager', 'admin']);
+
 // POST /api/employees
 router.post('/', denyCoinAdminForWrites, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { name, storeId, role = 'employee', joinedAt, telegramUsername } = req.body as {
       name: string; storeId: number; role?: string; joinedAt?: string; telegramUsername?: string;
     };
-    if (!name || !storeId) { res.status(400).json({ error: 'name и storeId обязательны' }); return; }
+    if (!name || !name.trim()) { res.status(400).json({ error: 'name обязателен' }); return; }
+    if (name.trim().length > 100) { res.status(400).json({ error: 'name слишком длинный (максимум 100 символов)' }); return; }
+    if (!storeId) { res.status(400).json({ error: 'storeId обязателен' }); return; }
+    if (!VALID_EMPLOYEE_ROLES.has(role)) {
+      res.status(400).json({ error: `role должен быть: ${[...VALID_EMPLOYEE_ROLES].join(', ')}` });
+      return;
+    }
     const username = telegramUsername ? telegramUsername.replace(/^@/, '').toLowerCase() : null;
     const { rows } = await pool.query(
       `INSERT INTO employees (name, store_id, role, joined_at, telegram_username)
@@ -145,6 +153,14 @@ router.put('/:id', denyCoinAdminForWrites, async (req: Request, res: Response, n
       name?: string; storeId?: number; role?: string; isActive?: boolean;
       telegramUsername?: string; phone?: string | null;
     };
+    if (role !== undefined && !VALID_EMPLOYEE_ROLES.has(role)) {
+      res.status(400).json({ error: `role должен быть: ${[...VALID_EMPLOYEE_ROLES].join(', ')}` });
+      return;
+    }
+    if (name !== undefined && (!name.trim() || name.trim().length > 100)) {
+      res.status(400).json({ error: 'name пустой или слишком длинный' });
+      return;
+    }
     const username = telegramUsername !== undefined
       ? (telegramUsername ? telegramUsername.replace(/^@/, '').toLowerCase() : null)
       : undefined;

@@ -49,16 +49,29 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
   } catch (err) { next(err); }
 });
 
-// DELETE /api/cards/:id — отозвать (удалить) карточку
+// DELETE /api/cards/:id — отозвать (удалить) карточку.
+// Защита: не удаляем потраченные карточки — на них ссылается store_exchanges.card_ids;
+// удаление сломает возможность возврата при отклонении заявки и историю обменов.
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = parseInt(req.params.id, 10);
+    const { rows: existing } = await pool.query<{ isSpent: boolean }>(
+      `SELECT is_spent AS "isSpent" FROM employee_cards WHERE id = $1`,
+      [id]
+    );
+    if (!existing[0]) { res.status(404).json({ error: 'Карточка не найдена' }); return; }
+    if (existing[0].isSpent) {
+      res.status(409).json({
+        error: 'Нельзя удалить потраченную карточку — она связана с заявкой на приз. Если нужно «отменить» обмен, отклони соответствующую заявку.',
+      });
+      return;
+    }
+
     const { rows } = await pool.query<{ employeeId: number; heroId: number }>(
       `DELETE FROM employee_cards WHERE id = $1
        RETURNING employee_id AS "employeeId", hero_id AS "heroId"`,
       [id]
     );
-    if (!rows[0]) { res.status(404).json({ error: 'Карточка не найдена' }); return; }
     res.json({ ok: true });
     logAudit('card_revoke', { cardId: id, employeeId: rows[0].employeeId, heroId: rows[0].heroId }).catch(() => {});
   } catch (err) { next(err); }

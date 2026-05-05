@@ -122,6 +122,19 @@ export async function processExchange(
   try {
     await client.query('BEGIN');
 
+    // Блокируем строку и читаем текущий статус — нельзя обрабатывать уже
+    // обработанную заявку (например, два админа параллельно или последовательно
+    // нажали «Отклонить» и «Выдать» — иначе ресурсы и приз раздадутся вместе).
+    const { rows: current } = await client.query<{ status: string }>(
+      `SELECT status FROM store_exchanges WHERE id = $1 FOR UPDATE`,
+      [exchangeId]
+    );
+    if (!current[0]) throw new Error('Заявка не найдена');
+    // Финальные состояния — менять нельзя. approved — промежуточный, можно довести до fulfilled.
+    if (current[0].status === 'fulfilled' || current[0].status === 'rejected') {
+      throw new Error(`Заявка уже обработана (статус: ${current[0].status === 'fulfilled' ? 'выдана' : 'отклонена'})`);
+    }
+
     const { rows } = await client.query<StoreExchange>(
       `UPDATE store_exchanges
        SET status = $1, processed_by = $2, notes = COALESCE($3, notes), processed_at = NOW()

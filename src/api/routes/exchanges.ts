@@ -42,17 +42,17 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
 // PUT /api/exchanges/:id
 router.put('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { status, processedBy, notes } = req.body as {
-      status: ExchangeStatus; processedBy?: number | null; notes?: string;
-    };
+    const { status, notes } = req.body as { status: ExchangeStatus; notes?: string };
     const allowed: ExchangeStatus[] = ['approved', 'rejected', 'fulfilled'];
     if (!allowed.includes(status)) {
       res.status(400).json({ error: `status должен быть: ${allowed.join(', ')}` }); return;
     }
+    // processed_by берём из server-side — кто на самом деле обработал, не из body
+    // (раньше body.processedBy игнорировался клиентом, теперь явно заполняем)
     const exchange = await processExchange(
       parseInt(req.params.id, 10),
       status as 'approved' | 'rejected' | 'fulfilled',
-      processedBy ?? null,
+      req.adminUserId ?? null,
       notes
     );
     res.json(exchange);
@@ -70,9 +70,16 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
         }
       }).catch(() => {});
       const action = status === 'fulfilled' ? 'exchange_fulfill' : 'exchange_reject';
-      logAudit(action, { exchangeId: parseInt(req.params.id, 10) }).catch(() => {});
+      logAudit(action, { exchangeId: parseInt(req.params.id, 10), processedBy: req.adminUserId }).catch(() => {});
     }
-  } catch (err) { next(err); }
+  } catch (err) {
+    // «Уже обработана» — клиентская ошибка, отдаём 409 (а не 500)
+    if (err instanceof Error && /уже обработана/i.test(err.message)) {
+      res.status(409).json({ error: err.message });
+      return;
+    }
+    next(err);
+  }
 });
 
 export default router;
