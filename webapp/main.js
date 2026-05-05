@@ -1139,13 +1139,13 @@ async function loadRating() {
   document.getElementById('rating-info-block').innerHTML = '';
   document.getElementById('stores-rating-list').innerHTML = '';
 
-  // Заголовки секций — конкретный месяц вместо «этот месяц»
+  // Заголовки секций — конкретный месяц + точное название (показываем топ-3)
   const monthIdx = currentIrkutskMonth();
   const monthLabel = MONTH_NOMINATIVE[monthIdx];
   const titleEl = document.getElementById('rating-list-title');
-  if (titleEl) titleEl.textContent = `Рейтинг точки — ${monthLabel}`;
+  if (titleEl) titleEl.textContent = `🏅 Топ-3 сотрудников точки — ${monthLabel}`;
   const storesTitleEl = document.getElementById('stores-rating-title');
-  if (storesTitleEl) storesTitleEl.textContent = `🏆 Лучшие точки — ${monthLabel}`;
+  if (storesTitleEl) storesTitleEl.textContent = `🏆 Топ-3 точек — ${monthLabel}`;
 
   try {
     const { ranking, stores, myStoreId } = await apiFetch('/rating');
