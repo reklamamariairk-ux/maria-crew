@@ -804,9 +804,20 @@ async function loadCoins() {
     document.getElementById('coins-balance').textContent = balance;
     document.getElementById('coins-balance-unit').textContent = pluralCoins(Number(balance) || 0);
 
-    document.getElementById('coins-monthly').textContent = '+' + monthly;
-    document.getElementById('coins-monthly-sub').textContent =
-      monthlySpent > 0 ? `заработано · потрачено −${monthlySpent}` : 'заработано';
+    // Цифра: «+150», «0», без минусов в основном поле (списания пишем в подзаголовке)
+    const monthlyEl    = document.getElementById('coins-monthly');
+    const monthlySubEl = document.getElementById('coins-monthly-sub');
+    if (monthly > 0) {
+      monthlyEl.textContent = '+' + monthly;
+      monthlySubEl.textContent = monthlySpent > 0
+        ? `заработано · потрачено −${monthlySpent}`
+        : 'заработано';
+    } else {
+      monthlyEl.textContent = '0';
+      monthlySubEl.textContent = monthlySpent > 0
+        ? `пока без начислений · потрачено −${monthlySpent}`
+        : 'пока пусто';
+    }
 
     if (!history.length) {
       document.getElementById('coins-history').innerHTML = `
