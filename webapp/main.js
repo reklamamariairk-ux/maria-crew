@@ -1322,6 +1322,18 @@ async function loadStore() {
 function pluralCards(n) { return plural(n, 'карточка', 'карточки', 'карточек'); }
 function pluralCoins(n) { return plural(n, 'монета', 'монеты', 'монет'); }
 
+const PRIZE_ICONS = {
+  cake:         '🎂',
+  certificate:  '🎫',
+  cash:         '💵',
+  coffee:       '☕',
+  shift_choice: '📅',
+  golden_badge: '🏅',
+  discount:     '🏷',
+  merch:        '👕',
+  break:        '🍰',
+};
+
 /** Полная стоимость приза в формате "3 карточки + 50 монет" или одиночно. */
 function priceLabel(p) {
   const parts = [];
@@ -1415,7 +1427,9 @@ function renderPrizes() {
     const costLine = isMixed
       ? priceLabel(p)
       : `${cost} ${pluralUnit(cost)}`;
+    const icon = PRIZE_ICONS[p.prizeType] || '🎁';
     return `<div class="prize-item${canAfford ? ' can-afford' : ''}">
+      <div style="font-size:24px;line-height:1;flex-shrink:0">${icon}</div>
       <div style="flex:1;min-width:0">
         <div class="prize-name">${escapeHtml(p.name)}</div>
         <div class="prize-cost">${costLine}</div>
@@ -1506,12 +1520,14 @@ function renderExchangeItem(ex) {
   const coins  = ex.coinsSpent > 0 ? `${ex.coinsSpent} ${pluralCoins(ex.coinsSpent)}` : '';
   const cost   = [cards, coins].filter(Boolean).join(' + ');
   const date   = fmt(ex.createdAt);
+  const icon   = PRIZE_ICONS[ex.prizeType] || '🎁';
   const noteBlock = ex.status === 'rejected' && ex.notes
     ? `<div class="exchange-note">Причина: ${escapeHtml(ex.notes)}</div>`
     : '';
   return `
     <div class="exchange-item">
       <div class="exchange-head">
+        <div style="font-size:22px;line-height:1;flex-shrink:0;align-self:flex-start">${icon}</div>
         <div style="flex:1;min-width:0">
           <div class="exchange-name">${escapeHtml(ex.prizeName)}</div>
           <div class="exchange-cost">${cost || '—'}</div>

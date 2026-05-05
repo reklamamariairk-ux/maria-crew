@@ -167,14 +167,14 @@ export async function processExchange(
 export async function getExchangeHistory(
   employeeId: number,
   limit = 10
-): Promise<(StoreExchange & { prizeName: string })[]> {
-  const { rows } = await pool.query<StoreExchange & { prizeName: string }>(
+): Promise<(StoreExchange & { prizeName: string; prizeType: string })[]> {
+  const { rows } = await pool.query<StoreExchange & { prizeName: string; prizeType: string }>(
     `SELECT se.id, se.employee_id AS "employeeId", se.prize_id AS "prizeId",
             se.cards_spent AS "cardsSpent", se.coins_spent AS "coinsSpent",
             se.card_ids AS "cardIds", se.status, se.notes,
             se.processed_by AS "processedBy", se.created_at AS "createdAt",
             se.processed_at AS "processedAt",
-            p.name AS "prizeName"
+            p.name AS "prizeName", p.prize_type AS "prizeType"
      FROM store_exchanges se
      JOIN prizes p ON p.id = se.prize_id
      WHERE se.employee_id = $1
