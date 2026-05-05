@@ -1450,7 +1450,20 @@ function renderMyExchanges() {
   const archived = myExchangesCache.filter(e => e.status === 'fulfilled' || e.status === 'rejected');
 
   let html = '';
+
+  // Если есть активные заявки — подсказка про процесс. Чтобы сотрудник понимал
+  // разницу между «Ждёт подтверждения», «Подтверждено» и «Приз выдан».
   if (active.length) {
+    html += `
+      <div class="rating-info" style="margin-top:4px;margin-bottom:10px">
+        <span class="rating-info-icon">ℹ️</span>
+        <div class="rating-info-text">
+          <strong>⏳ Ждёт подтверждения</strong> — заявка у руководителя.<br>
+          <strong>✅ Подтверждено</strong> — руководитель согласился, готовит приз.<br>
+          <strong>🎁 Приз выдан</strong> — забери у руководителя.<br>
+          <strong>❌ Отклонено</strong> — карточки и монеты вернулись на баланс.
+        </div>
+      </div>`;
     html += `<div class="section-title" style="margin-top:4px;margin-bottom:8px">В работе</div>`;
     html += active.map(renderExchangeItem).join('');
   }
@@ -1508,6 +1521,17 @@ async function doExchange(prizeId, btn) {
     await apiFetch('/exchange', { method: 'POST', body: JSON.stringify({ prizeId }) });
     showToast('✅ Заявка отправлена! Руководитель скоро подтвердит.');
     tg?.HapticFeedback?.notificationOccurred('success');
+    // Оптимистичное обновление шапки — чтобы цифры не «отставали» пока
+    // идёт запрос за свежими данными. После loadStore() они перезапишутся
+    // авторитетными значениями с сервера.
+    if (prize && myStatsCache) {
+      const optimistic = {
+        availableCards: Math.max(0, (myStatsCache.availableCards || 0) - (prize.cardsRequired || 0)),
+        coinBalance:    Math.max(0, (myStatsCache.coinBalance    || 0) - (prize.coinsRequired || 0)),
+        uniqueHeroes:   myStatsCache.uniqueHeroes,
+      };
+      updateHeaderStats(optimistic);
+    }
     // Сбрасываем кэш и пере-загружаем призы, баланс и историю заявок
     prizesCache = null; myStatsCache = null; myExchangesCache = null;
     await loadStore();
