@@ -88,6 +88,47 @@ router.get('/engagement', async (req: Request, res: Response, next: NextFunction
   } catch (err) { next(err); }
 });
 
+// GET /api/employees/summaries — batch-сводка по списку сотрудников.
+// Используется в админке вместо N+1 цикла отдельных /summary-запросов.
+// ?storeId=N — для фильтра, иначе по всем.
+router.get('/summaries', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const storeId = req.query.storeId ? parseInt(String(req.query.storeId), 10) : null;
+    const params: number[] = [];
+    let where = '';
+    if (storeId) { params.push(storeId); where = `WHERE e.store_id = $${params.length}`; }
+
+    // Один запрос — все агрегации сразу через LATERAL/подзапросы.
+    // Если 200 сотрудников: одна SQL вместо 600 (200 HTTP × 3 SQL).
+    const { rows } = await pool.query<{
+      id: number;
+      availableCards: string;
+      coinBalance: string;
+      uniqueHeroes: string;
+    }>(
+      `SELECT e.id,
+              COALESCE((SELECT COUNT(*) FROM employee_cards WHERE employee_id = e.id AND is_spent = false), 0)::text AS "availableCards",
+              COALESCE((SELECT SUM(amount) FROM coin_transactions WHERE employee_id = e.id), 0)::text AS "coinBalance",
+              COALESCE((SELECT COUNT(DISTINCT ec.hero_id) FROM employee_cards ec
+                        JOIN heroes h ON h.id = ec.hero_id
+                        WHERE ec.employee_id = e.id AND h.is_limited = false), 0)::text AS "uniqueHeroes"
+       FROM employees e
+       ${where}`,
+      params
+    );
+
+    const summaries: Record<number, { availableCards: number; coinBalance: number; uniqueHeroes: number }> = {};
+    for (const r of rows) {
+      summaries[r.id] = {
+        availableCards: parseInt(r.availableCards, 10),
+        coinBalance:    parseInt(r.coinBalance, 10),
+        uniqueHeroes:   parseInt(r.uniqueHeroes, 10),
+      };
+    }
+    res.json(summaries);
+  } catch (err) { next(err); }
+});
+
 // GET /api/employees/:id/summary
 router.get('/:id/summary', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {

@@ -27,25 +27,27 @@ export async function handleCrew(ctx: BotContext): Promise<void> {
     return;
   }
 
-  // Для каждого — количество уникальных основных героев и доступных карточек
-  const stats = await Promise.all(
-    members.map(async m => {
-      const { rows } = await pool.query<{ uniqueHeroes: string; available: string }>(
-        `SELECT
-           COUNT(DISTINCT ec.hero_id) FILTER (WHERE h.is_limited = false) AS "uniqueHeroes",
-           COUNT(ec.id) FILTER (WHERE ec.is_spent = false)                AS available
-         FROM employee_cards ec
-         JOIN heroes h ON h.id = ec.hero_id
-         WHERE ec.employee_id = $1`,
-        [m.id]
-      );
-      return {
-        ...m,
-        uniqueHeroes: parseInt(rows[0].uniqueHeroes, 10),
-        available: parseInt(rows[0].available, 10),
-      };
-    })
+  // Один запрос со GROUP BY вместо N+1 (для команды 10+ человек экономия ощутимая)
+  const memberIds = members.map(m => m.id);
+  const { rows: aggRows } = await pool.query<{ employeeId: number; uniqueHeroes: string; available: string }>(
+    `SELECT ec.employee_id AS "employeeId",
+            COUNT(DISTINCT ec.hero_id) FILTER (WHERE h.is_limited = false) AS "uniqueHeroes",
+            COUNT(ec.id) FILTER (WHERE ec.is_spent = false)                AS available
+     FROM employee_cards ec
+     JOIN heroes h ON h.id = ec.hero_id
+     WHERE ec.employee_id = ANY($1)
+     GROUP BY ec.employee_id`,
+    [memberIds]
   );
+  const aggMap = new Map(aggRows.map(r => [r.employeeId, r]));
+  const stats = members.map(m => {
+    const a = aggMap.get(m.id);
+    return {
+      ...m,
+      uniqueHeroes: a ? parseInt(a.uniqueHeroes, 10) : 0,
+      available:    a ? parseInt(a.available, 10) : 0,
+    };
+  });
 
   // Сортируем по uniqueHeroes DESC
   stats.sort((a, b) => b.uniqueHeroes - a.uniqueHeroes);

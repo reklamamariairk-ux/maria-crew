@@ -723,10 +723,9 @@ async function loadEmployees() {
     return;
   }
 
-  // Подгружаем сводки параллельно (карточки/монеты/герои)
-  const summaries = await Promise.all(list.map(e => api('GET', `/employees/${e.id}/summary`).catch(() => null)));
-  employeeSummaries = {};
-  summaries.forEach((sum, i) => { if (sum) employeeSummaries[list[i].id] = sum; });
+  // Batch-запрос вместо N+1: одним вызовом получаем сводки по всем сотрудникам
+  const path2 = state.storeId ? `/employees/summaries?storeId=${state.storeId}` : '/employees/summaries';
+  employeeSummaries = await api('GET', path2).catch(() => ({})) || {};
 
   renderEmployees();
 }
