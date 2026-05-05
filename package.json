@@ -9,7 +9,15 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "migrate": "ts-node src/db/migrate.ts",
     "migrate:rollback": "ts-node src/db/migrate.ts rollback",
-    "seed": "ts-node src/db/seed.ts"
+    "seed": "ts-node src/db/seed.ts",
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "testMatch": ["**/__tests__/**/*.test.ts"],
+    "moduleFileExtensions": ["ts", "js", "json"]
   },
   "engines": {
     "node": ">=18.0.0"
@@ -26,9 +34,12 @@
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.12.7",
     "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.11.6",
+    "jest": "^30.3.0",
+    "ts-jest": "^29.4.9",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.4.5"
   }

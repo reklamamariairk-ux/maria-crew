@@ -84,6 +84,10 @@ npm start
 
 # Только миграции
 npm run migrate
+
+# Тесты (jest, unit-тесты на критичную бизнес-логику)
+npm test
+npm run test:watch
 ```
 
 При первом запуске:
