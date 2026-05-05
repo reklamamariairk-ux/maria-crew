@@ -9,9 +9,13 @@ import { monthName } from '../../bot/helpers';
 export async function weeklyDigest(
   publishToChannel: (html: string) => Promise<void>
 ): Promise<void> {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
+  // Иркутское время — синхронно с месячными агрегациями в остальной системе.
+  // Cron запускается в пятницу 18:00 Иркутск, но если когда-нибудь сместится
+  // ближе к границе месяца, без timezone был бы риск выбора соседнего месяца.
+  const irk = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  const year = irk.getUTCFullYear();
+  const month = irk.getUTCMonth() + 1;
+  const day = irk.getUTCDate();
 
   // Топ-5 по карточкам в текущем месяце
   const { rows: topCards } = await pool.query<{
@@ -37,8 +41,8 @@ export async function weeklyDigest(
      FROM coin_transactions ct
      JOIN employees e ON e.id = ct.employee_id
      JOIN stores s ON s.id = e.store_id
-     WHERE EXTRACT(YEAR  FROM ct.created_at) = $1
-       AND EXTRACT(MONTH FROM ct.created_at) = $2
+     WHERE EXTRACT(YEAR  FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $1
+       AND EXTRACT(MONTH FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $2
      GROUP BY e.id, e.name, s.name
      ORDER BY earned DESC NULLS LAST
      LIMIT 5`,
@@ -67,9 +71,9 @@ export async function weeklyDigest(
     text += '\n';
   }
 
-  // Сколько дней до конца месяца
+  // Сколько дней до конца месяца — считаем по иркутской дате
   const daysInMonth = new Date(year, month, 0).getDate();
-  const daysLeft = daysInMonth - now.getDate();
+  const daysLeft = daysInMonth - day;
   text += `⏳ До конца месяца: <b>${daysLeft} ${dayWord(daysLeft)}</b>\n`;
   text += `Смотри свой рейтинг: /rating`;
 

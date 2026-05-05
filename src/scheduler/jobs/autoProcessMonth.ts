@@ -24,21 +24,34 @@ export async function autoProcessMonth(): Promise<void> {
   // Используем существующие рейтинги точек, если есть; пустая Map — processMonth подтянет из БД
   const results = await processMonthAllStores(year, month, new Map());
 
+  // Имена точек одним запросом (раньше делали по одному в цикле)
+  const storeIds = results.map(r => r.storeId);
+  const { rows: storeRows } = await pool.query<{ id: number; name: string }>(
+    `SELECT id, name FROM stores WHERE id = ANY($1)`, [storeIds]
+  );
+  const storeNames = new Map(storeRows.map(s => [s.id, s.name]));
+
+  // Уведомления — параллельно через Promise.allSettled.
+  // Иначе при 16 точках × секунда на каждый push последовательная отправка
+  // может растянуться на минуту+, блокируя cron-слот.
+  const tasks: Promise<unknown>[] = [];
   for (const result of results) {
-    const { rows: storeRows } = await pool.query<{ name: string }>(
-      `SELECT name FROM stores WHERE id = $1`, [result.storeId]
-    );
-    const storeName = storeRows[0]?.name ?? '';
+    const storeName = storeNames.get(result.storeId) ?? '';
     const mvp = result.employees.find(e => e.isMvp);
-    if (mvp) await notifyMvp(mvp.employeeId, storeName, month, year, mvp.mvpScore).catch(err =>
-      console.error('[auto-process] notifyMvp failed:', err instanceof Error ? err.message : err));
-    if (result.topStore) await notifyTopStore(result.storeId, storeName, month, year, result.storeScore).catch(err =>
-      console.error('[auto-process] notifyTopStore failed:', err instanceof Error ? err.message : err));
+    if (mvp) tasks.push(notifyMvp(mvp.employeeId, storeName, month, year, mvp.mvpScore));
+    if (result.topStore) tasks.push(notifyTopStore(result.storeId, storeName, month, year, result.storeScore));
+  }
+  tasks.push(publishMonthResults(results, month, year));
+
+  const outcomes = await Promise.allSettled(tasks);
+  const failed = outcomes.filter(r => r.status === 'rejected').length;
+  if (failed > 0) {
+    console.warn(`[auto-process] ${failed} уведомлений не доставлено (см. предыдущие логи)`);
+    outcomes.forEach((r, i) => {
+      if (r.status === 'rejected') console.error(`[auto-process] notify[${i}] failed:`, r.reason);
+    });
   }
 
-  await publishMonthResults(results, month, year).catch(err =>
-    console.error('[auto-process] publishMonthResults failed:', err instanceof Error ? err.message : err));
-
-  console.log(`[auto-process] done: ${results.length} stores processed`);
-  logAudit('metrics_process', { auto: true, year, month, storeIds: results.map(r => r.storeId) }).catch(() => {});
+  console.log(`[auto-process] done: ${results.length} stores processed, ${tasks.length - failed}/${tasks.length} notifications sent`);
+  logAudit('metrics_process', { auto: true, year, month, storeIds }).catch(() => {});
 }

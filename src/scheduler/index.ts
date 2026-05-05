@@ -36,8 +36,8 @@ export function initScheduler(bot: Bot<BotContext>): void {
     await remindQuiz(publishToChannel);
   }, { timezone: 'Asia/Irkutsk' });
 
-  // ── 1. Ежемесячное напоминание руководителям ──────────────────────────────
-  cron.schedule('0 2 1 * *', async () => {
+  // ── 1. Ежемесячное напоминание руководителям (1-го числа в 10:00 Иркутск) ─
+  cron.schedule('0 10 1 * *', async () => {
     console.log('[scheduler] remindMetrics — запуск');
     await remindMetrics(sendMessage);
   }, { timezone: 'Asia/Irkutsk' });

@@ -1,4 +1,5 @@
 import { pool } from '../../db/pool';
+import { irkutskDate } from '../../services/streak.service';
 
 /**
  * Запускается каждый будний день в 20:00.
@@ -10,7 +11,7 @@ export async function remindDailyCoins(
   const { rows: managers } = await pool.query<{
     telegramId: string; storeId: number; storeName: string;
   }>(
-    `SELECT e.telegram_id AS "telegramId", e.store_id AS "storeId", s.name AS "storeName"
+    `SELECT e.telegram_id::text AS "telegramId", e.store_id AS "storeId", s.name AS "storeName"
      FROM employees e
      JOIN stores s ON s.id = e.store_id
      WHERE e.role IN ('manager', 'admin')
@@ -20,11 +21,13 @@ export async function remindDailyCoins(
 
   if (managers.length === 0) return;
 
-  // Для каждой точки — сколько сотрудников ещё не получили монету за чек-лист сегодня
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  // Для каждой точки — сколько сотрудников ещё не получили монету за чек-лист сегодня.
+  // Используем иркутский день — иначе на стыке дней по UTC сотрудник, получивший
+  // монету вечером (уже после 16:00 UTC), мог бы попасть «в завтра» и руководитель
+  // получил бы напоминание, что сотруднику не начислено.
+  const today = irkutskDate();
 
-  const notified: string[] = [];
-
+  let sent = 0;
   for (const manager of managers) {
     const { rows } = await pool.query<{ count: string }>(
       `SELECT COUNT(*) AS count
@@ -35,7 +38,7 @@ export async function remindDailyCoins(
            SELECT 1 FROM coin_transactions ct
            WHERE ct.employee_id = e.id
              AND ct.reason = 'checklist_day'
-             AND ct.created_at::date = $2::date
+             AND (ct.created_at AT TIME ZONE 'Asia/Irkutsk')::date = $2::date
          )`,
       [manager.storeId, today]
     );
@@ -49,12 +52,14 @@ export async function remindDailyCoins(
       `ещё не получили монету за чек-лист.\n\n` +
       `Начислите через Admin Panel → вкладка <b>Монеты</b>.`;
 
-    await sendMessage(manager.telegramId, text).catch(() => {});
-    notified.push(manager.telegramId);
+    try {
+      await sendMessage(manager.telegramId, text);
+      sent++;
+    } catch { /* пользователь заблокировал бота — игнорируем */ }
   }
 
-  if (notified.length > 0) {
-    console.log(`[scheduler] remindDailyCoins: отправлено ${notified.length} напоминаний`);
+  if (sent > 0) {
+    console.log(`[scheduler] remindDailyCoins: отправлено ${sent} напоминаний`);
   }
 }
 
