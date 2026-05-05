@@ -86,8 +86,10 @@ export async function ensureBootstrapSuperadmin(): Promise<void> {
 
 export async function authenticate(username: string, password: string): Promise<{ uid: number; role: AdminRole; mustChangePassword: boolean } | null> {
   // pool auto-camelizes колонки: password_hash → passwordHash
+  // username — регистронезависимый (LOWER, чтобы 'Admin' и 'admin' были равны)
   const { rows } = await pool.query<{ id: number; passwordHash: string; role: AdminRole; mustChangePassword: boolean | null }>(
-    `SELECT id, password_hash, role, must_change_password FROM admin_users WHERE username = $1 AND is_active = true`,
+    `SELECT id, password_hash, role, must_change_password FROM admin_users
+     WHERE LOWER(username) = LOWER($1) AND is_active = true`,
     [username]
   );
   if (!rows[0]) return null;

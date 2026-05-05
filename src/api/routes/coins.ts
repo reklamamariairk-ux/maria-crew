@@ -21,20 +21,28 @@ router.post('/award', requireRole('superadmin', 'coin_admin'), async (req: Reque
 
     let actualAmount: number;
     let tx: { id?: number };
+    const performer = req.adminUserId ?? createdBy ?? null;
 
-    // Manual может быть отрицательным (списание) — пишем напрямую
+    // Manual может быть отрицательным (списание) — пишем напрямую.
+    // Защита от ухода баланса ниже 0: списываем максимум сколько есть.
     if (reason === 'manual' && typeof amount === 'number' && amount < 0) {
+      const balance = await getBalance(employeeId);
+      if (balance === 0) {
+        res.status(400).json({ error: 'Нечего списывать — баланс сотрудника 0' });
+        return;
+      }
+      const adjusted = -Math.min(Math.abs(amount), balance);
       const { rows } = await pool.query<{ id: number }>(
         `INSERT INTO coin_transactions (employee_id, amount, reason, note, created_by)
          VALUES ($1, $2, 'manual', $3, $4)
          RETURNING id`,
-        [employeeId, amount, note ?? null, createdBy ?? null]
+        [employeeId, adjusted, note ?? null, performer]
       );
       tx = rows[0];
-      actualAmount = amount;
+      actualAmount = adjusted;
       res.status(201).json(tx);
     } else {
-      const created = await earn({ employeeId, reason, amount, createdBy, note });
+      const created = await earn({ employeeId, reason, amount, createdBy: performer ?? undefined, note });
       tx = created;
       actualAmount = created.amount;
       res.status(201).json(tx);
@@ -75,6 +83,22 @@ router.get('/export', async (req: Request, res: Response, next: NextFunction): P
     const dateRe = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRe.test(from) || !dateRe.test(to)) {
       res.status(400).json({ error: 'from и to обязательны в формате YYYY-MM-DD' });
+      return;
+    }
+    // Ограничение диапазона: максимум 1 год — иначе можно ненароком выгрузить
+    // миллионы строк и положить процесс по памяти.
+    const fromMs = Date.parse(from);
+    const toMs   = Date.parse(to);
+    if (isNaN(fromMs) || isNaN(toMs)) {
+      res.status(400).json({ error: 'Некорректные даты' });
+      return;
+    }
+    if (toMs < fromMs) {
+      res.status(400).json({ error: 'to должен быть >= from' });
+      return;
+    }
+    if (toMs - fromMs > 366 * 24 * 60 * 60 * 1000) {
+      res.status(400).json({ error: 'Диапазон слишком большой (максимум 1 год)' });
       return;
     }
 

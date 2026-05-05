@@ -17,6 +17,8 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
   } catch (err) { next(err); }
 });
 
+const VALID_SEASONS_HERO = new Set(['spring', 'summer', 'autumn', 'winter']);
+
 // POST /api/heroes — создать нового героя
 router.post('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -25,6 +27,14 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
       isLimited?: boolean; season?: string; sortOrder?: number;
     };
     if (!name?.trim()) { res.status(400).json({ error: 'Имя обязательно' }); return; }
+    if (name.trim().length > 100) {
+      res.status(400).json({ error: 'Имя слишком длинное (максимум 100 символов)' });
+      return;
+    }
+    if (season && !VALID_SEASONS_HERO.has(season)) {
+      res.status(400).json({ error: `season должен быть: ${[...VALID_SEASONS_HERO].join(', ')}` });
+      return;
+    }
 
     const { rows } = await pool.query(
       `INSERT INTO heroes (name, description, image_url, is_limited, season, sort_order)

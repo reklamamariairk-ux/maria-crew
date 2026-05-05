@@ -131,20 +131,41 @@ export async function awardChallengeCard(employeeId: number, challengeId: number
   );
   if (!ch[0]?.heroId) return false;
 
-  const now = new Date();
-
-  await pool.query(
-    `INSERT INTO employee_cards (employee_id, hero_id, source, year, month)
-     VALUES ($1, $2, 'seasonal', $3, $4)
-     ON CONFLICT DO NOTHING`,
-    [employeeId, ch[0].heroId, now.getFullYear(), now.getMonth() + 1]
-  );
-
-  await pool.query(
-    `UPDATE seasonal_challenge_entries SET card_awarded = true
+  // Идемпотентность: проверяем что entry существует и карточка ещё не выдана.
+  // На employee_cards нет UNIQUE на (employee, hero) — один герой может быть
+  // у сотрудника несколько раз. Поэтому ON CONFLICT не защитит, проверяем
+  // через флаг card_awarded в entries.
+  const { rows: entry } = await pool.query<{ cardAwarded: boolean }>(
+    `SELECT card_awarded AS "cardAwarded" FROM seasonal_challenge_entries
      WHERE challenge_id = $1 AND employee_id = $2`,
     [challengeId, employeeId]
   );
+  if (!entry[0]) return false;             // нет записи о выполнении — нечего выдавать
+  if (entry[0].cardAwarded) return false;  // уже выдано — не дублируем
+
+  const now = new Date();
+
+  // Транзакция: вставка карточки + флаг card_awarded атомарно.
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO employee_cards (employee_id, hero_id, source, year, month)
+       VALUES ($1, $2, 'seasonal', $3, $4)`,
+      [employeeId, ch[0].heroId, now.getFullYear(), now.getMonth() + 1]
+    );
+    await client.query(
+      `UPDATE seasonal_challenge_entries SET card_awarded = true
+       WHERE challenge_id = $1 AND employee_id = $2`,
+      [challengeId, employeeId]
+    );
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 
   return true;
 }
