@@ -61,6 +61,38 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     if (isNaN(id)) { res.status(400).json({ error: 'Неверный id' }); return; }
 
     const { role, isActive, password } = req.body as { role?: AdminRole; isActive?: boolean; password?: string };
+
+    // Защита от self-lock-out и потери последнего суперадмина.
+    // Если меняется role на не-superadmin или isActive на false — проверяем,
+    // что после этого останется хотя бы один активный суперадмин.
+    const isDemotion = (role !== undefined && role !== 'superadmin') || isActive === false;
+    if (isDemotion) {
+      const { rows: target } = await pool.query<{ role: AdminRole; isActive: boolean }>(
+        `SELECT role, is_active AS "isActive" FROM admin_users WHERE id = $1`, [id]
+      );
+      if (!target[0]) { res.status(404).json({ error: 'Не найден' }); return; }
+
+      // Только если цель — действующий суперадмин и понижается/деактивируется
+      if (target[0].role === 'superadmin' && target[0].isActive) {
+        const { rows: count } = await pool.query<{ n: string }>(
+          `SELECT COUNT(*)::text AS n FROM admin_users
+           WHERE role = 'superadmin' AND is_active = true AND id <> $1`,
+          [id]
+        );
+        if (parseInt(count[0].n, 10) === 0) {
+          res.status(400).json({ error: 'Нельзя понизить или отключить последнего активного суперадмина' });
+          return;
+        }
+      }
+
+      // Защита от self-lock-out: запрещаем менять СВОЮ роль или активность
+      // (себя нельзя ни понизить, ни выключить — даже если есть другие супера)
+      if (req.adminUserId === id) {
+        res.status(400).json({ error: 'Нельзя изменить свою роль или статус — попроси другого суперадмина' });
+        return;
+      }
+    }
+
     const sets: string[] = [];
     const vals: (string | boolean | number)[] = [];
 

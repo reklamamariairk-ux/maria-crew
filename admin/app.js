@@ -241,13 +241,16 @@ async function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').classList.add('visible');
 
-  // Если роли нет в сессии (старый токен) — узнаём её с сервера
-  if (!state.role) {
-    const meta = await api('GET', '/me/admin').catch(() => null);
-    if (meta && meta.role) {
+  // Всегда подтягиваем метаданные (id + role) — id нужен, чтобы заблокировать
+  // суперадмину возможность менять СВОЮ же роль (UI-страховка; сервер тоже это
+  // не позволит, но кнопка в UI должна сразу быть disabled)
+  const meta = await api('GET', '/me/admin').catch(() => null);
+  if (meta) {
+    if (meta.role) {
       state.role = meta.role;
       sessionStorage.setItem('mc_role', state.role);
     }
+    if (meta.id) state.adminUserId = meta.id;
   }
   applyRoleVisibility();
 
@@ -1043,8 +1046,16 @@ function toast(msg) {
   setTimeout(() => el.classList.remove('show'), 3000);
 }
 
+// Экранируем не только < > &, но и кавычки + апостроф — функция используется
+// и в текстовом контенте, и в атрибутах (value, placeholder, title, alt).
+// Без экранирования кавычки имя «Анна "X"» сломало бы атрибут.
 function esc(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function formatDate(d) {
@@ -2177,11 +2188,14 @@ async function loadAdminUsers() {
     tbody.innerHTML = emptyRow(6, 'shield', 'Нет учётных записей');
     renderIcons(); return;
   }
-  tbody.innerHTML = list.map(u => `<tr>
+  tbody.innerHTML = list.map(u => {
+    const isMe = u.id === state.adminUserId;
+    const meTag = isMe ? ' <span class="badge badge-neutral" style="font-size:10px">это ты</span>' : '';
+    return `<tr data-uid="${u.id}" data-username="${esc(u.username)}">
     <td style="color:var(--muted);font-size:12px">${u.id}</td>
-    <td><strong>${esc(u.username)}</strong></td>
+    <td><strong>${esc(u.username)}</strong>${meTag}</td>
     <td>
-      <select onchange="updateAdminUserRole(${u.id}, this.value)" ${u.id === state.adminUserId ? 'disabled' : ''}>
+      <select onchange="updateAdminUserRole(${u.id}, this.value)" ${isMe ? 'disabled title="Нельзя менять свою роль"' : ''}>
         <option value="superadmin"${u.role === 'superadmin' ? ' selected' : ''}>Суперадмин</option>
         <option value="editor"${u.role === 'editor' ? ' selected' : ''}>Админище — всё кроме монет</option>
         <option value="coin_admin"${u.role === 'coin_admin' ? ' selected' : ''}>Администратор — только монеты</option>
@@ -2192,13 +2206,14 @@ async function loadAdminUsers() {
       ? '<span class="badge badge-approved">Активен</span>'
       : '<span class="badge badge-neutral">Отключён</span>'}</td>
     <td style="display:flex;gap:4px;flex-wrap:wrap">
-      <button class="btn btn-ghost btn-sm" onclick="resetAdminPassword(${u.id})" title="Сменить пароль"><i data-lucide="key"></i></button>
+      <button class="btn btn-ghost btn-sm" onclick="resetAdminPassword(${u.id})" title="Сменить пароль"${isMe ? ' disabled' : ''}><i data-lucide="key"></i></button>
       ${u.isActive
-        ? `<button class="btn btn-ghost btn-sm" onclick="toggleAdminActive(${u.id}, false)"><i data-lucide="user-x"></i> Отключить</button>`
+        ? `<button class="btn btn-ghost btn-sm" onclick="toggleAdminActive(${u.id}, false)"${isMe ? ' disabled title="Нельзя отключить себя"' : ''}><i data-lucide="user-x"></i> Отключить</button>`
         : `<button class="btn btn-ghost btn-sm" onclick="toggleAdminActive(${u.id}, true)"><i data-lucide="user-check"></i> Включить</button>`}
-      <button class="btn btn-danger btn-sm btn-icon" onclick="deleteAdminUser(${u.id})" title="Удалить"><i data-lucide="trash-2"></i></button>
+      <button class="btn btn-danger btn-sm btn-icon" onclick="deleteAdminUser(${u.id})" title="Удалить"${isMe ? ' disabled' : ''}><i data-lucide="trash-2"></i></button>
     </td>
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
   renderIcons();
 }
 
@@ -2233,13 +2248,35 @@ async function toggleAdminActive(id, isActive) {
   } catch (e) { toast('❌ ' + e.message); }
 }
 
-async function resetAdminPassword(id) {
-  const password = prompt('Введи новый пароль (минимум 4 символа):');
-  if (!password) return;
-  if (password.length < 4) { toast('Пароль минимум 4 символа'); return; }
+// id и username админа, которому сейчас сбрасываем пароль (для модалки)
+let _resetPwTargetId = null;
+
+function resetAdminPassword(id) {
+  // Находим username из текущего списка для подзаголовка модалки
+  const row = document.querySelector(`#admin-users-tbody tr[data-uid="${id}"]`);
+  const username = row?.dataset.username || '';
+  _resetPwTargetId = id;
+  document.getElementById('rpw-username').textContent = username || `id ${id}`;
+  document.getElementById('rpw-input').value = '';
+  document.getElementById('modal-reset-password').classList.remove('hidden');
+  setTimeout(() => document.getElementById('rpw-input').focus(), 80);
+  renderIcons();
+}
+
+function closeResetPasswordModal() {
+  _resetPwTargetId = null;
+  document.getElementById('modal-reset-password').classList.add('hidden');
+}
+
+async function confirmResetPassword() {
+  const password = document.getElementById('rpw-input').value;
+  if (!password || password.length < 4) { toast('Пароль минимум 4 символа'); return; }
+  const id = _resetPwTargetId;
+  if (!id) return;
   try {
     await api('PUT', `/admin-users/${id}`, { password });
-    toast('✅ Пароль обновлён');
+    closeResetPasswordModal();
+    toast('✅ Пароль обновлён. Пользователь сменит его при первом входе');
   } catch (e) { toast('❌ ' + e.message); }
 }
 

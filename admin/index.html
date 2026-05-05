@@ -1026,6 +1026,29 @@
   </div>
 </div>
 
+<!-- ── Модалка: Сброс пароля админ-пользователя ─────────────────────────── -->
+<div id="modal-reset-password" class="modal-overlay hidden" onclick="if(event.target===this)closeResetPasswordModal()">
+  <div class="modal-box" style="max-width:420px;width:95%">
+    <div class="modal-header">
+      <h2 class="modal-title">Сменить пароль</h2>
+      <button class="modal-close" onclick="closeResetPasswordModal()"><i data-lucide="x"></i></button>
+    </div>
+    <div style="padding:16px">
+      <p class="text-muted" style="font-size:13px;margin-bottom:12px">
+        Новый пароль для <strong id="rpw-username">—</strong>.<br>
+        Минимум 4 символа. Пользователю придётся сменить его при первом входе.
+      </p>
+      <label style="display:block;margin-bottom:14px">Новый пароль
+        <input type="password" id="rpw-input" class="input" style="width:100%;margin-top:4px" autocomplete="new-password">
+      </label>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="closeResetPasswordModal()">Отмена</button>
+        <button class="btn btn-primary" onclick="confirmResetPassword()"><i data-lucide="key"></i> Сохранить</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── Модалка: Причина отклонения заявки ───────────────────────────────── -->
 <div id="modal-reject" class="modal-overlay hidden" onclick="if(event.target===this)closeRejectModal()">
   <div class="modal-box" style="max-width:420px;width:95%">
