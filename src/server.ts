@@ -6,7 +6,8 @@ import { webhookCallback } from 'grammy';
 import type { Bot } from 'grammy';
 import type { BotContext } from './bot/context';
 import apiRouter from './api/router';
-import { getDiagnostics, markBotError, markWebhookHit } from './diagnostics';
+import { getDiagnostics, getCronStatus, markBotError, markWebhookHit } from './diagnostics';
+import { pool } from './db/pool';
 
 export function createServer(bot: Bot<BotContext>, webhookSecret: string): express.Application {
   const app = express();
@@ -54,6 +55,60 @@ export function createServer(bot: Bot<BotContext>, webhookSecret: string): expre
     mode: 'webhook',
     diagnostics: getDiagnostics(),
   }));
+
+  // Детальный health-check для UptimeRobot/мониторинга. Возвращает 503 если:
+  //   - БД не отвечает
+  //   - cron autoProcessMonth не запускался > 35 дней (должен раз в месяц)
+  //   - последняя ошибка бота свежее 5 минут назад
+  app.get('/api/health/detailed', async (_req, res) => {
+    const checks: Record<string, { ok: boolean; detail?: string }> = {};
+    let overallOk = true;
+
+    // 1. БД
+    try {
+      await pool.query('SELECT 1');
+      checks.db = { ok: true };
+    } catch (err) {
+      checks.db = { ok: false, detail: err instanceof Error ? err.message : String(err) };
+      overallOk = false;
+    }
+
+    // 2. Cron-статусы — какие задачи давно не запускались (но только те, что должны были)
+    const cronStatuses = getCronStatus();
+    const now = Date.now();
+    const cronChecks: Record<string, { lastRunAt?: string; lastSuccess: boolean; ageHours?: number }> = {};
+    for (const [name, status] of Object.entries(cronStatuses)) {
+      const ageMs = now - new Date(status.lastRunAt).getTime();
+      cronChecks[name] = {
+        lastRunAt: status.lastRunAt,
+        lastSuccess: status.lastSuccess,
+        ageHours: Math.round(ageMs / 3600_000 * 10) / 10,
+      };
+      if (!status.lastSuccess) overallOk = false;
+    }
+    checks.crons = { ok: Object.values(cronStatuses).every(s => s.lastSuccess), detail: JSON.stringify(cronChecks) };
+
+    // 3. Бот — была ли свежая ошибка
+    const diag = getDiagnostics();
+    const lastBotError = diag.lastBotError as { at: string; message: string } | null;
+    if (lastBotError) {
+      const ageMs = now - new Date(lastBotError.at).getTime();
+      if (ageMs < 5 * 60 * 1000) {
+        checks.bot = { ok: false, detail: `Recent error: ${lastBotError.message}` };
+        overallOk = false;
+      } else {
+        checks.bot = { ok: true, detail: `Last error: ${Math.round(ageMs / 60_000)} min ago` };
+      }
+    } else {
+      checks.bot = { ok: true };
+    }
+
+    res.status(overallOk ? 200 : 503).json({
+      ok: overallOk,
+      checks,
+      diagnostics: diag,
+    });
+  });
 
   app.use('/api', apiRouter);
 

@@ -224,6 +224,40 @@ export async function notifyAdminNewExchange(
   await Promise.allSettled(admins.map(a => send(a.telegramId, text)));
 }
 
+/** Отправить алерт владельцу системы (в Telegram).
+ *  Используется при критических ошибках: упал cron, бот выкинул unhandled error,
+ *  миграция не применилась.
+ *
+ *  Чтобы алерты приходили — задай ENV OWNER_TELEGRAM_ID (число — ID владельца
+ *  в Telegram). Узнать его можно через @userinfobot.
+ *
+ *  Защита от спама: дедупликация по тексту сообщения за 1 час. */
+const _alertHistory = new Map<string, number>();
+export async function alertOwner(message: string, throttleMs = 60 * 60 * 1000): Promise<void> {
+  if (!_bot) return;
+  const ownerId = process.env.OWNER_TELEGRAM_ID;
+  if (!ownerId) return; // не настроен — тихо игнорируем
+
+  const now = Date.now();
+  const last = _alertHistory.get(message);
+  if (last && now - last < throttleMs) return; // дедупликация
+  _alertHistory.set(message, now);
+
+  // Чистка старых записей чтобы Map не рос бесконечно
+  if (_alertHistory.size > 100) {
+    for (const [k, t] of _alertHistory.entries()) {
+      if (now - t > throttleMs * 2) _alertHistory.delete(k);
+    }
+  }
+
+  try {
+    const text = `🚨 <b>Maria Crew Alert</b>\n\n${message}\n\n<i>${new Date().toLocaleString('ru')}</i>`;
+    await _bot.api.sendMessage(ownerId, text, { parse_mode: 'HTML' });
+  } catch (err) {
+    console.error('[alertOwner] failed to send:', err instanceof Error ? err.message : err);
+  }
+}
+
 /** Массовая рассылка произвольного сообщения списку telegram_id.
  *  Ограничение Telegram: ~30 msg/sec для бота. Поэтому шлём батчами по 25
  *  с паузой 1.1 сек между батчами — иначе при 200+ получателях большая

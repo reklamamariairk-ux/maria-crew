@@ -145,8 +145,15 @@ export function createBot(token: string): Bot<BotContext> {
   // ── Глобальный обработчик ошибок ──────────────────────────────────────────────
   bot.catch(async (err: BotError<BotContext>) => {
     const ctx = err.ctx;
+    const msg = err.error instanceof Error ? err.error.message : String(err.error);
     console.error(`[bot] Ошибка update#${ctx.update.update_id}:`, err.error);
-    markBotError(err.error instanceof Error ? err.error.message : String(err.error));
+    markBotError(msg);
+    // Алерт владельцу — но throttle 1 час чтобы не заспамить если ошибка
+    // повторяется при каждом сообщении
+    try {
+      const { alertOwner } = await import('./notifications/sender');
+      alertOwner(`Bot error: ${msg}\nUpdate: #${ctx.update.update_id}, from ${ctx.from?.id}`).catch(() => {});
+    } catch { /* ignore */ }
     try {
       if (ctx.callbackQuery) {
         await ctx.answerCallbackQuery('Ошибка, попробуй снова').catch(() => {});

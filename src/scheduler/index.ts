@@ -12,6 +12,25 @@ import { remindStreak } from './jobs/remindStreak';
 import { autoProcessMonth } from './jobs/autoProcessMonth';
 import { auditRetention } from './jobs/auditRetention';
 import { digestPendingExchanges } from './jobs/digestPendingExchanges';
+import { markCronRun } from '../diagnostics';
+import { alertOwner } from '../bot/notifications/sender';
+
+/** Обёртка над cron-задачей: ловит ошибки, обновляет статус, шлёт алерт владельцу */
+function safeRun(name: string, fn: () => Promise<void>, alertOnError = false): () => Promise<void> {
+  return async () => {
+    try {
+      await fn();
+      markCronRun(name, true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[scheduler] ${name} error:`, err);
+      markCronRun(name, false, msg);
+      if (alertOnError) {
+        alertOwner(`Cron ${name} упал:\n${msg}`).catch(() => {});
+      }
+    }
+  };
+}
 
 export function initScheduler(bot: Bot<BotContext>): void {
   const sendMessage = async (telegramId: string, html: string): Promise<void> => {
@@ -31,52 +50,37 @@ export function initScheduler(bot: Bot<BotContext>): void {
   };
 
   // ── 0. Утреннее напоминание квиза в канал (Пн–Сб 09:00) ─────────────────
-  cron.schedule('0 9 * * 1-6', async () => {
-    console.log('[scheduler] remindQuiz — запуск');
-    await remindQuiz(publishToChannel);
-  }, { timezone: 'Asia/Irkutsk' });
+  cron.schedule('0 9 * * 1-6', safeRun('remindQuiz', () => remindQuiz(publishToChannel)),
+    { timezone: 'Asia/Irkutsk' });
 
   // ── 1. Ежемесячное напоминание руководителям (1-го числа в 10:00 Иркутск) ─
-  cron.schedule('0 10 1 * *', async () => {
-    console.log('[scheduler] remindMetrics — запуск');
-    await remindMetrics(sendMessage);
-  }, { timezone: 'Asia/Irkutsk' });
+  cron.schedule('0 10 1 * *', safeRun('remindMetrics', () => remindMetrics(sendMessage), true),
+    { timezone: 'Asia/Irkutsk' });
 
   // ── 2. Ежедневное напоминание про монеты ─────────────────────────────────
-  cron.schedule('0 20 * * 1-6', async () => {
-    console.log('[scheduler] remindDailyCoins — запуск');
-    await remindDailyCoins(sendMessage);
-  }, { timezone: 'Asia/Irkutsk' });
+  cron.schedule('0 20 * * 1-6', safeRun('remindDailyCoins', () => remindDailyCoins(sendMessage)),
+    { timezone: 'Asia/Irkutsk' });
 
   // ── 3. Еженедельный дайджест в канал ─────────────────────────────────────
-  cron.schedule('0 18 * * 5', async () => {
-    console.log('[scheduler] weeklyDigest — запуск');
-    await weeklyDigest(publishToChannel);
-  }, { timezone: 'Asia/Irkutsk' });
+  cron.schedule('0 18 * * 5', safeRun('weeklyDigest', () => weeklyDigest(publishToChannel)),
+    { timezone: 'Asia/Irkutsk' });
 
   // ── 3b. Личное напоминание про серию (21:00 ежедневно) ───────────────────
-  cron.schedule('0 21 * * *', async () => {
-    console.log('[scheduler] remindStreak — запуск');
-    await remindStreak(sendMessage);
-  }, { timezone: 'Asia/Irkutsk' });
+  cron.schedule('0 21 * * *', safeRun('remindStreak', () => remindStreak(sendMessage)),
+    { timezone: 'Asia/Irkutsk' });
 
   // ── 3c. Авто-обработка прошедшего месяца (1-го числа в 03:00) ────────────
-  cron.schedule('0 3 1 * *', async () => {
-    console.log('[scheduler] autoProcessMonth — запуск');
-    try { await autoProcessMonth(); }
-    catch (err) { console.error('[scheduler] autoProcessMonth error:', err); }
-  }, { timezone: 'Asia/Irkutsk' });
+  // alertOnError=true — если упадёт, владельцу прилетит push в Telegram
+  cron.schedule('0 3 1 * *', safeRun('autoProcessMonth', autoProcessMonth, true),
+    { timezone: 'Asia/Irkutsk' });
 
   // ── 3d. Чистка журнала старше 6 месяцев (ежедневно в 03:30) ──────────────
-  cron.schedule('30 3 * * *', async () => {
-    await auditRetention();
-  }, { timezone: 'Asia/Irkutsk' });
+  cron.schedule('30 3 * * *', safeRun('auditRetention', auditRetention),
+    { timezone: 'Asia/Irkutsk' });
 
   // ── 3e. Дайджест непогашенных заявок (ежедневно в 10:00) ─────────────────
-  cron.schedule('0 10 * * *', async () => {
-    console.log('[scheduler] digestPendingExchanges — запуск');
-    await digestPendingExchanges(sendMessage);
-  }, { timezone: 'Asia/Irkutsk' });
+  cron.schedule('0 10 * * *', safeRun('digestPendingExchanges', () => digestPendingExchanges(sendMessage)),
+    { timezone: 'Asia/Irkutsk' });
 
   const serviceUrl = (
     process.env.WEBHOOK_URL ??

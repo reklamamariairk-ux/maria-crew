@@ -17,6 +17,16 @@ type WebappAuthSummary = {
   details?: Record<string, unknown>;
 };
 
+type CronStatus = {
+  lastRunAt: string;
+  lastSuccess: boolean;
+  lastError?: string;
+  successCount: number;
+  errorCount: number;
+};
+
+const cronStatus = new Map<string, CronStatus>();
+
 const state: {
   lastWebhookHitAt?: string;
   lastWebhookPayload?: unknown;
@@ -31,6 +41,23 @@ const state: {
   dbReady: false,
   startedAt: new Date().toISOString(),
 };
+
+/** Помечает запуск cron-задачи с результатом. Доступно через /api/health/detailed
+ *  и через alertOwner если несколько запусков подряд упали. */
+export function markCronRun(jobName: string, success: boolean, error?: string): void {
+  const prev = cronStatus.get(jobName);
+  cronStatus.set(jobName, {
+    lastRunAt: new Date().toISOString(),
+    lastSuccess: success,
+    lastError: success ? undefined : (error ?? prev?.lastError),
+    successCount: (prev?.successCount ?? 0) + (success ? 1 : 0),
+    errorCount:   (prev?.errorCount ?? 0) + (success ? 0 : 1),
+  });
+}
+
+export function getCronStatus(): Record<string, CronStatus> {
+  return Object.fromEntries(cronStatus.entries());
+}
 
 export function markWebhookHit(payload: unknown): void {
   state.lastWebhookHitAt = new Date().toISOString();
