@@ -67,3 +67,23 @@ export function shortDate(d: Date): string {
 export function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+
+/** Русское склонение по количеству.
+ *  plural(1, 'монета', 'монеты', 'монет') → 'монета'
+ *  plural(2, ...) → 'монеты'
+ *  plural(5, ...) → 'монет'
+ *  plural(11, ...) → 'монет' (11-14 особые)
+ *  plural(21, ...) → 'монета' (n%10=1, кроме 11) */
+export function plural(n: number, one: string, few: string, many: string): string {
+  const abs = Math.abs(n);
+  const m10 = abs % 10;
+  const m100 = abs % 100;
+  if (m100 >= 11 && m100 <= 19) return many;
+  if (m10 === 1) return one;
+  if (m10 >= 2 && m10 <= 4) return few;
+  return many;
+}
+
+export function coinWord(n: number): string { return plural(n, 'монета', 'монеты', 'монет'); }
+export function dayWord(n: number): string  { return plural(n, 'день', 'дня', 'дней'); }
+export function cardWord(n: number): string { return plural(n, 'карточка', 'карточки', 'карточек'); }

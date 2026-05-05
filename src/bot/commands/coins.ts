@@ -2,7 +2,7 @@ import { InlineKeyboard } from 'grammy';
 import { getBalance, getHistory, getMonthlySummary, COIN_AMOUNTS } from '../../services/coin.service';
 import type { BotContext } from '../context';
 import { requireAuth } from '../middleware/auth';
-import { coinReasonLabel, shortDate, currentPeriod } from '../helpers';
+import { coinReasonLabel, shortDate, currentPeriod, coinWord } from '../helpers';
 
 export async function handleCoins(ctx: BotContext): Promise<void> {
   if (!(await requireAuth(ctx))) return;
@@ -42,11 +42,4 @@ export async function handleCoins(ctx: BotContext): Promise<void> {
 
   const kb = new InlineKeyboard().text('🛍 Maria Store', 'menu:store').text('← Меню', 'menu:main');
   await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
-}
-
-function coinWord(n: number): string {
-  const abs = Math.abs(n);
-  if (abs === 1) return 'монета';
-  if (abs >= 2 && abs <= 4) return 'монеты';
-  return 'монет';
 }

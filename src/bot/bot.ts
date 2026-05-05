@@ -102,20 +102,40 @@ export function createBot(token: string): Bot<BotContext> {
       return;
     }
     try {
-      const { rowCount } = await pool.query(
-        `UPDATE employees SET phone = $1
-         WHERE telegram_id = $2 AND (phone IS NULL OR phone = '')`,
-        [contact.phone_number, tgId]
+      // Нормализуем номер к формату +XXXXXXXXXXX (Telegram иногда без плюса)
+      const phoneNorm = contact.phone_number.startsWith('+')
+        ? contact.phone_number
+        : `+${contact.phone_number}`;
+
+      // Проверяем что сотрудник вообще зарегистрирован
+      const { rows: emp } = await pool.query<{ phone: string | null }>(
+        `SELECT phone FROM employees WHERE telegram_id = $1 AND is_active = true`,
+        [tgId]
       );
-      if (rowCount && rowCount > 0) {
-        await ctx.reply('✅ Номер сохранён, спасибо!', {
-          reply_markup: { remove_keyboard: true },
-        });
-      } else {
-        await ctx.reply('Номер уже сохранён ранее.', {
-          reply_markup: { remove_keyboard: true },
-        });
+      if (!emp[0]) {
+        await ctx.reply(
+          'Сначала пройди регистрацию — отправь /start и выбери свою точку.',
+          { reply_markup: { remove_keyboard: true } }
+        );
+        return;
       }
+
+      // Уже есть номер? Не перезаписываем — телефон в 1С менять только через админку
+      if (emp[0].phone && emp[0].phone.trim()) {
+        await ctx.reply(
+          'Номер уже сохранён ранее. Если нужно изменить — обратись к руководителю.',
+          { reply_markup: { remove_keyboard: true } }
+        );
+        return;
+      }
+
+      await pool.query(
+        `UPDATE employees SET phone = $1 WHERE telegram_id = $2`,
+        [phoneNorm, tgId]
+      );
+      await ctx.reply('✅ Номер сохранён, спасибо!', {
+        reply_markup: { remove_keyboard: true },
+      });
     } catch (err) {
       console.error('[contact] save error:', err);
       await ctx.reply('Не удалось сохранить номер, попробуй позже.');
