@@ -967,7 +967,10 @@ function showQuizQuestion(container) {
   const total   = quizTotalToday;
   // Прогресс — после ответа на N вопросов (т.е. бар у первого = 0%, у пятого = 80%, после ответа = 100%)
   const pct = Math.round(((globalN - 1) / total) * 100);
-  const catLabel = CATEGORY_LABELS[q.category] || q.category || 'Вопрос';
+  // Бейдж категории показываем только для известных категорий (product/service/crew),
+  // иначе сотрудник увидит сырое слово из БД вроде «service»
+  const catLabel = CATEGORY_LABELS[q.category];
+  const catBadge = catLabel ? `<span class="quiz-category">${escapeHtml(catLabel)}</span>` : '';
 
   // Категория хранится в data-атрибуте на контейнере вопроса, чтобы не передавать
   // строку из БД через onclick-литерал (потенциальный XSS).
@@ -975,7 +978,7 @@ function showQuizQuestion(container) {
     <div class="quiz-card" data-question-id="${q.id}" data-category="${escapeAttr(q.category || '')}">
       <div class="quiz-header">
         <span class="quiz-progress-text">Вопрос ${globalN} из ${total}</span>
-        ${q.category ? `<span class="quiz-category">${escapeHtml(catLabel)}</span>` : ''}
+        ${catBadge}
       </div>
       <div class="quiz-bar-wrap"><div class="quiz-bar-fill" style="width:${pct}%"></div></div>
       <div class="quiz-question">${escapeHtml(q.question)}</div>
