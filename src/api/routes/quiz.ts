@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { listQuestions, createQuestion, updateQuestion, deleteQuestion } from '../../services/quiz.service';
+import express from 'express';
+import { listQuestions, createQuestion, updateQuestion, deleteQuestion, importQuestionsFromCsv } from '../../services/quiz.service';
 import { logAudit } from '../../services/audit.service';
 import { pool } from '../../db/pool';
 
@@ -46,6 +47,29 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction): P
     logAudit('quiz_question_delete', { questionId: id }, req.ip).catch(() => {});
   } catch (err) { next(err); }
 });
+
+// POST /api/quiz/import — массовый импорт из CSV.
+// Body: { csv: string }. Принимаем как JSON, так и text/csv. Лимит 2MB —
+// глобальный express.json() стоит на 100kb, для импорта поднимаем.
+router.post(
+  '/import',
+  express.json({ limit: '2mb' }),
+  express.text({ type: ['text/csv', 'text/plain'], limit: '2mb' }),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const csv = typeof req.body === 'string'
+        ? req.body
+        : (req.body as { csv?: string })?.csv;
+      if (typeof csv !== 'string' || !csv.trim()) {
+        res.status(400).json({ error: 'Пустой CSV' });
+        return;
+      }
+      const result = await importQuestionsFromCsv(csv);
+      res.json(result);
+      logAudit('quiz_question_import', { added: result.added, total: result.total, errorCount: result.errors.length }, req.ip).catch(() => {});
+    } catch (err) { next(err); }
+  }
+);
 
 // GET /api/quiz/analytics — статистика: самые сложные вопросы, результаты по категориям
 router.get('/analytics', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {

@@ -25,6 +25,7 @@ export type AuditAction =
   | 'quiz_question_create'
   | 'quiz_question_update'
   | 'quiz_question_delete'
+  | 'quiz_question_import'
   | 'config_update'
   | 'hero_create'
   | 'hero_update'

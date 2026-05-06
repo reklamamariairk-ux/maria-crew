@@ -233,3 +233,165 @@ export async function updateQuestion(
 export async function deleteQuestion(id: number): Promise<void> {
   await pool.query(`DELETE FROM quiz_questions WHERE id = $1`, [id]);
 }
+
+// ── CSV-импорт ────────────────────────────────────────────────────────────
+
+const VALID_CATEGORIES = new Set([
+  'product', 'service', 'crew', 'brand',
+  'sales', 'upsell', 'loyalty', 'cashier', 'display',
+]);
+
+// Принимаемые обозначения правильного ответа: А-Г, A-D, 1-4, 0-3.
+// Возвращает 0-based индекс или null, если значение невалидно.
+function parseCorrectIndex(raw: string): number | null {
+  const v = raw.trim().toUpperCase();
+  const ruMap: Record<string, number> = { 'А': 0, 'Б': 1, 'В': 2, 'Г': 3 };
+  if (v in ruMap) return ruMap[v];
+  const enMap: Record<string, number> = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 };
+  if (v in enMap) return enMap[v];
+  if (v === '1') return 0;
+  if (v === '2') return 1;
+  if (v === '3') return 2;
+  if (v === '4') return 3;
+  if (v === '0') return 0;
+  return null;
+}
+
+/**
+ * Минимальный RFC 4180 парсер без зависимостей.
+ * Поддерживает кавычки, удвоенные кавычки внутри кавычек, переносы внутри кавычек,
+ * \r\n и \n. BOM в начале срезается.
+ */
+export function parseCsv(input: string): string[][] {
+  const text = input.replace(/^﻿/, '');
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let inQuotes = false;
+  let i = 0;
+
+  while (i < text.length) {
+    const ch = text[i];
+
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+        inQuotes = false; i++; continue;
+      }
+      field += ch; i++; continue;
+    }
+
+    if (ch === '"') { inQuotes = true; i++; continue; }
+    if (ch === ',') { row.push(field); field = ''; i++; continue; }
+    if (ch === '\r') { i++; continue; }
+    if (ch === '\n') {
+      row.push(field); rows.push(row);
+      row = []; field = ''; i++; continue;
+    }
+    field += ch; i++;
+  }
+
+  // Последняя строка без trailing \n
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  // Отбрасываем полностью пустые строки (например, лишний \n в конце)
+  return rows.filter(r => r.some(c => c.trim() !== ''));
+}
+
+export interface CsvImportError {
+  line: number;
+  message: string;
+}
+export interface CsvImportResult {
+  added: number;
+  total: number;
+  errors: CsvImportError[];
+}
+
+/**
+ * Импорт вопросов из CSV. Шапка обязательна, ожидаемые колонки:
+ *   question,option_a,option_b,option_c,option_d,correct,category
+ * Значения correct: А/Б/В/Г (или A-D / 1-4 / 0-3). Категория из VALID_CATEGORIES.
+ * Невалидные строки пропускаются, но возвращаются в errors[].
+ */
+export async function importQuestionsFromCsv(csv: string): Promise<CsvImportResult> {
+  const rows = parseCsv(csv);
+  if (rows.length === 0) {
+    return { added: 0, total: 0, errors: [{ line: 0, message: 'Файл пуст' }] };
+  }
+
+  // Шапка — нормализуем и валидируем
+  const header = rows[0].map(c => c.trim().toLowerCase());
+  const expected = ['question', 'option_a', 'option_b', 'option_c', 'option_d', 'correct', 'category'];
+  for (const col of expected) {
+    if (!header.includes(col)) {
+      return {
+        added: 0,
+        total: 0,
+        errors: [{ line: 1, message: `В шапке нет колонки "${col}". Ожидается: ${expected.join(', ')}` }],
+      };
+    }
+  }
+  const idx: Record<string, number> = {};
+  expected.forEach(c => { idx[c] = header.indexOf(c); });
+
+  const errors: CsvImportError[] = [];
+  const valid: { question: string; options: string[]; correctIndex: number; category: string }[] = [];
+
+  for (let r = 1; r < rows.length; r++) {
+    const cells = rows[r];
+    const lineNumber = r + 1; // в файле строки 1-based, шапка = 1
+    const question = (cells[idx.question] ?? '').trim();
+    const options = [
+      (cells[idx.option_a] ?? '').trim(),
+      (cells[idx.option_b] ?? '').trim(),
+      (cells[idx.option_c] ?? '').trim(),
+      (cells[idx.option_d] ?? '').trim(),
+    ];
+    const correctRaw = (cells[idx.correct] ?? '').trim();
+    const category = (cells[idx.category] ?? '').trim().toLowerCase();
+
+    if (!question) { errors.push({ line: lineNumber, message: 'Пустой вопрос' }); continue; }
+    if (options.some(o => !o)) { errors.push({ line: lineNumber, message: 'Не все варианты ответов заполнены' }); continue; }
+
+    const correctIndex = parseCorrectIndex(correctRaw);
+    if (correctIndex === null) {
+      errors.push({ line: lineNumber, message: `Некорректный correct: "${correctRaw}". Ожидается А/Б/В/Г` });
+      continue;
+    }
+    if (!VALID_CATEGORIES.has(category)) {
+      errors.push({ line: lineNumber, message: `Неизвестная категория: "${category}". Доступные: ${[...VALID_CATEGORIES].join(', ')}` });
+      continue;
+    }
+
+    valid.push({ question, options, correctIndex, category });
+  }
+
+  // Bulk INSERT одной транзакцией — либо все валидные сохраняются, либо ничего
+  let added = 0;
+  if (valid.length > 0) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const q of valid) {
+        await client.query(
+          `INSERT INTO quiz_questions (question, options, correct_index, category)
+           VALUES ($1, $2, $3, $4)`,
+          [q.question, JSON.stringify(q.options), q.correctIndex, q.category]
+        );
+        added++;
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+      added = 0;
+      errors.push({ line: 0, message: `Ошибка БД: ${err instanceof Error ? err.message : String(err)}` });
+    } finally {
+      client.release();
+    }
+  }
+
+  return { added, total: rows.length - 1, errors };
+}

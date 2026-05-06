@@ -540,13 +540,33 @@
           <h1 class="page-title">Квиз</h1>
           <p class="page-subtitle">База вопросов для ежедневного квиза</p>
         </div>
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-ghost" onclick="loadQuizAnalytics()"><i data-lucide="bar-chart-2"></i> Аналитика</button>
+          <button class="btn btn-ghost" onclick="downloadQuizCsvTemplate()"><i data-lucide="download"></i> Шаблон CSV</button>
+          <button class="btn btn-ghost" onclick="showImportQuiz()"><i data-lucide="upload"></i> Импорт CSV</button>
           <button class="btn btn-primary" onclick="showAddQuestion()"><i data-lucide="plus"></i> Добавить вопрос</button>
         </div>
       </div>
 
       <div id="quiz-analytics" class="hidden" style="margin-bottom:20px"></div>
+
+      <div id="import-quiz-form" class="hidden card card-pad" style="margin-bottom:16px">
+        <p class="section-title">Импорт вопросов из CSV</p>
+        <p style="color:var(--text-2);font-size:13px;line-height:1.5">
+          Колонки (в этом порядке): <code>question, option_a, option_b, option_c, option_d, correct, category</code>.<br>
+          <code>correct</code> — буква правильного варианта: <b>А, Б, В, Г</b> (или A-D / 1-4).<br>
+          <code>category</code> — один из кодов: <code>product, service, crew, brand, sales, upsell, loyalty, cashier, display</code>.<br>
+          Жми «Шаблон CSV» сверху, чтобы скачать пример. Файл сохраняй в UTF-8.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+          <input type="file" id="quiz-import-file" accept=".csv,text/csv,text/plain" class="input">
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="importQuizCsv()"><i data-lucide="upload"></i> Загрузить</button>
+            <button class="btn btn-ghost" onclick="document.getElementById('import-quiz-form').classList.add('hidden')">Отмена</button>
+          </div>
+          <div id="quiz-import-result" style="font-size:13px"></div>
+        </div>
+      </div>
 
       <div id="add-question-form" class="hidden card card-pad" style="margin-bottom:16px">
         <p class="section-title">Новый вопрос</p>

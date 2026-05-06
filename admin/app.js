@@ -1190,6 +1190,72 @@ async function deleteQuestion(id) {
   } catch (e) { toast('❌ ' + e.message); }
 }
 
+// ── CSV-импорт квиза ─────────────────────────────────────────────────────
+function showImportQuiz() {
+  const form = document.getElementById('import-quiz-form');
+  form.classList.toggle('hidden');
+  document.getElementById('quiz-import-result').innerHTML = '';
+  document.getElementById('quiz-import-file').value = '';
+  renderIcons();
+}
+
+function downloadQuizCsvTemplate() {
+  // Скачиваем шаблон с парой примеров. BOM в начале — чтобы Excel сразу распознал UTF-8.
+  const lines = [
+    'question,option_a,option_b,option_c,option_d,correct,category',
+    'Какой главный ингредиент торта «Прага»?,Шоколад,Ваниль,Карамель,Кофе,А,product',
+    '"Сколько граммов в стандартной порции муссового торта?",100,150,180,250,Б,product',
+    'Что делать если гость недоволен?,Молча отдать сдачу,Выслушать и решить,Позвать менеджера,Дать скидку всегда,Б,service',
+  ];
+  const blob = new Blob(['﻿' + lines.join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'quiz_template.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function importQuizCsv() {
+  const fileInput = document.getElementById('quiz-import-file');
+  const resultEl  = document.getElementById('quiz-import-result');
+  const file = fileInput.files?.[0];
+  if (!file) { toast('Выбери CSV-файл'); return; }
+  if (file.size > 2 * 1024 * 1024) { toast('Файл больше 2 МБ'); return; }
+
+  resultEl.innerHTML = '<span style="color:var(--muted)">Загрузка...</span>';
+  let csv;
+  try {
+    csv = await file.text();
+  } catch (e) {
+    resultEl.innerHTML = `<span style="color:var(--red)">Не удалось прочитать файл: ${esc(e.message)}</span>`;
+    return;
+  }
+
+  try {
+    const res = await api('POST', '/quiz/import', { csv });
+    const errs = res.errors || [];
+    const lines = [];
+    if (res.added > 0) {
+      lines.push(`<div style="color:var(--green);font-weight:600">✅ Добавлено: ${res.added} из ${res.total}</div>`);
+    } else {
+      lines.push(`<div style="color:var(--red);font-weight:600">❌ Не добавлено ничего из ${res.total}</div>`);
+    }
+    if (errs.length > 0) {
+      const items = errs.slice(0, 50).map(e =>
+        `<li>Строка ${e.line}: ${esc(e.message)}</li>`
+      ).join('');
+      const more = errs.length > 50 ? `<li>… и ещё ${errs.length - 50}</li>` : '';
+      lines.push(`<details style="margin-top:8px"><summary style="cursor:pointer;color:var(--text-2)">Ошибок: ${errs.length}</summary><ul style="margin:6px 0 0 18px;padding:0;color:var(--text-2)">${items}${more}</ul></details>`);
+    }
+    resultEl.innerHTML = lines.join('');
+    if (res.added > 0) {
+      toast(`✅ Добавлено: ${res.added}`);
+      loadQuizQuestions();
+    }
+  } catch (e) {
+    resultEl.innerHTML = `<span style="color:var(--red)">❌ ${esc(e.message)}</span>`;
+  }
+}
+
 // ── Карточки ─────────────────────────────────────────────────────────────────
 const CARD_SOURCE_LABELS = {
   mystery_shopper: 'Тайный покупатель',
