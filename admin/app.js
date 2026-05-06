@@ -504,10 +504,15 @@ async function processMonth() {
 
 // ── Монеты ────────────────────────────────────────────────────────────────────
 async function loadCoinEmployees() {
-  // Список сотрудников: либо точки, либо все
+  // Список сотрудников: либо точки, либо все. Показываем и скрытых — чтобы видеть
+  // их историю и при необходимости начислить/списать. Скрытые помечены «(скрыт)».
   const path = state.storeId ? `/employees?storeId=${state.storeId}` : '/employees';
   const emps = await api('GET', path) || [];
-  state.employees = emps.filter(e => e.isActive);
+  // Сначала активные, потом скрытые — чтобы свежие пользователи были вверху
+  state.employees = (emps || []).slice().sort((a, b) => {
+    if (a.isActive === b.isActive) return 0;
+    return a.isActive ? -1 : 1;
+  });
 
   document.getElementById('coins-history-tbody').innerHTML =
     '<tr><td colspan="4" class="empty">Выберите сотрудника</td></tr>';
@@ -518,7 +523,8 @@ async function loadCoinEmployees() {
   state.employees.forEach(e => {
     const opt = document.createElement('option');
     opt.value = e.id;
-    opt.textContent = state.storeId ? e.name : `${e.name} — ${e.storeName ?? ''}`;
+    const base = state.storeId ? e.name : `${e.name} — ${e.storeName ?? ''}`;
+    opt.textContent = e.isActive ? base : `${base} (скрыт)`;
     sel.appendChild(opt);
   });
   sel.onchange = loadCoinHistory;
@@ -1169,14 +1175,19 @@ async function loadCardEmployees() {
     cardHeroes ? Promise.resolve(cardHeroes) : api('GET', '/heroes'),
   ]);
   cardHeroes = heroes || [];
-  state.employees = (emps || []).filter(e => e.isActive);
+  // Показываем всех — активных и скрытых. Скрытые помечаем «(скрыт)».
+  state.employees = (emps || []).slice().sort((a, b) => {
+    if (a.isActive === b.isActive) return 0;
+    return a.isActive ? -1 : 1;
+  });
 
   const sel = document.getElementById('card-employee');
   sel.innerHTML = '<option value="">— выбери —</option>';
   state.employees.forEach(e => {
     const opt = document.createElement('option');
     opt.value = e.id;
-    opt.textContent = state.storeId ? e.name : `${e.name} — ${e.storeName ?? ''}`;
+    const base = state.storeId ? e.name : `${e.name} — ${e.storeName ?? ''}`;
+    opt.textContent = e.isActive ? base : `${base} (скрыт)`;
     sel.appendChild(opt);
   });
   sel.onchange = loadEmployeeCards;
