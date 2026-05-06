@@ -429,15 +429,24 @@ async function loadMetrics() {
   (rows || []).forEach(r => metricMap[r.employeeId] = r);
 
   if (!employees || employees.length === 0) {
-    tbody.innerHTML = emptyRow(5, 'users', 'Нет активных сотрудников');
+    tbody.innerHTML = emptyRow(5, 'users', 'Нет сотрудников');
     renderIcons();
     return;
   }
 
-  tbody.innerHTML = employees.filter(e => e.isActive).map(e => {
+  // Активные вверху, скрытые внизу с пометкой
+  const sorted = employees.slice().sort((a, b) => {
+    if (a.isActive === b.isActive) return a.name.localeCompare(b.name, 'ru');
+    return a.isActive ? -1 : 1;
+  });
+
+  tbody.innerHTML = sorted.map(e => {
     const m = metricMap[e.id] || {};
+    const nameCell = e.isActive
+      ? `<strong>${esc(e.name)}</strong>`
+      : `<strong style="color:var(--muted)">${esc(e.name)}</strong> <span class="badge badge-neutral" style="font-size:11px">скрыт</span>`;
     return `<tr data-employee-id="${e.id}">
-      <td><strong>${esc(e.name)}</strong></td>
+      <td>${nameCell}</td>
       <td><input type="number" class="m-mystery" min="0" max="100" step="0.1" value="${m.mysteryShopperScore ?? ''}" placeholder="—"></td>
       <td><input type="number" class="m-reviews" min="0" max="10" step="1" value="${m.reviewsCount ?? 0}"></td>
       <td><input type="number" class="m-checklist" min="0" max="100" step="0.1" value="${m.checklistPercent ?? ''}" placeholder="—"></td>
@@ -935,9 +944,12 @@ async function loadLeaderboard() {
   } else {
     empTbody.innerHTML = empData.map((e, i) => {
       const score = e.mvpScore !== null ? Number(e.mvpScore).toFixed(2) : '';
+      const isHidden = e.isActive === false;
+      const nameStyle = isHidden ? ' style="color:var(--muted)"' : '';
+      const hiddenBadge = isHidden ? ' <span class="badge badge-neutral" style="font-size:11px">скрыт</span>' : '';
       return `<tr>
         <td><strong>${RANK[i] ?? i+1}</strong></td>
-        <td><strong>${esc(e.name)}</strong>${e.isMvp ? ' <span class="badge badge-mvp"><i data-lucide="star"></i> Лучший</span>' : ''}</td>
+        <td><strong${nameStyle}>${esc(e.name)}</strong>${e.isMvp ? ' <span class="badge badge-mvp"><i data-lucide="star"></i> Лучший</span>' : ''}${hiddenBadge}</td>
         <td><input type="number" step="0.01" min="0" max="200" class="lb-score-input"
             value="${score}" data-emp-id="${e.employeeId}"
             onchange="saveEmployeeScore(${e.employeeId}, this)"></td>

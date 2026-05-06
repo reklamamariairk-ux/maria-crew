@@ -15,12 +15,11 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
       res.status(400).json({ error: 'storeId, year, month обязательны' }); return;
     }
     const { rows } = await pool.query(
-      `SELECT mm.*, e.name AS "employeeName"
+      `SELECT mm.*, e.name AS "employeeName", e.is_active AS "isActive"
        FROM monthly_metrics mm
        JOIN employees e ON e.id = mm.employee_id
        WHERE mm.store_id = $1 AND mm.year = $2 AND mm.month = $3
-         AND e.is_active = true
-       ORDER BY e.name`,
+       ORDER BY e.is_active DESC, e.name`,
       [storeId, year, month]
     );
     res.json(rows);

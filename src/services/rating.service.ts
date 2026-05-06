@@ -323,6 +323,7 @@ export async function getEmployeeLeaderboard(
     `SELECT
        e.id                                              AS "employeeId",
        e.name,
+       e.is_active                                       AS "isActive",
        mm.mvp_score                                      AS "mvpScore",
        COALESCE(mm.is_mvp, false)                        AS "isMvp",
        (SELECT COUNT(*) FROM employee_cards ec
@@ -332,8 +333,8 @@ export async function getEmployeeLeaderboard(
      FROM employees e
      LEFT JOIN monthly_metrics mm
        ON mm.employee_id = e.id AND mm.year = $2 AND mm.month = $3
-     WHERE e.store_id = $1 AND e.is_active = true
-     ORDER BY mm.mvp_score DESC NULLS LAST, e.name`,
+     WHERE e.store_id = $1
+     ORDER BY e.is_active DESC, mm.mvp_score DESC NULLS LAST, e.name`,
     [storeId, year, month]
   );
   return rows;

@@ -213,6 +213,7 @@ export interface ProcessMonthResult {
 export interface EmployeeRanking {
   employeeId: number;
   name: string;
+  isActive: boolean;
   mvpScore: number;
   isMvp: boolean;
   cardsCount: number;
