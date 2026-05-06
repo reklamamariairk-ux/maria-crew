@@ -9,7 +9,7 @@ describe('COIN_AMOUNTS — фиксация значений', () => {
     expect(COIN_AMOUNTS.quiz).toBe(1);
   });
 
-  it('ежедневный вход = 1 монета (бонус +5 за каждый 7-й день — в streak.service)', () => {
+  it('ежедневный вход = 1 монета (бонус +3 за каждый 7-й день — в streak.service)', () => {
     expect(COIN_AMOUNTS.checkin).toBe(1);
   });
 

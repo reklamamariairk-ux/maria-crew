@@ -448,9 +448,14 @@ window.doCheckin = async function () {
       return;
     }
     tg?.HapticFeedback?.notificationOccurred('success');
-    const msg = result.streakDay % 7 === 0
-      ? `🏆 Неделя подряд! +${result.coinsEarned} монет`
-      : `🔥 Серия ${result.streakDay} ${plural(result.streakDay,'день','дня','дней')} · +${result.coinsEarned} монет`;
+    const coinsLabel = `+${result.coinsEarned} ${plural(result.coinsEarned,'монета','монеты','монет')}`;
+    let msg;
+    if (result.streakDay % 7 === 0) {
+      const weeks = result.streakDay / 7;
+      msg = `🏆 ${weeks} ${plural(weeks,'неделя','недели','недель')} подряд! ${coinsLabel}`;
+    } else {
+      msg = `🔥 Серия ${result.streakDay} ${plural(result.streakDay,'день','дня','дней')} · ${coinsLabel}`;
+    }
     showToast(msg);
     updateStreakBadge({ checkedInToday: true, currentStreak: result.streakDay });
     loadDailyActionsBar();

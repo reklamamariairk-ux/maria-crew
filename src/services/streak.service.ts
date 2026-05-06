@@ -49,9 +49,9 @@ export async function doCheckin(employeeId: number): Promise<{ streakDay: number
 
   const streakDay = (prev[0]?.streakDay ?? 0) + 1;
   const isWeekly = streakDay % 7 === 0;
-  const coinsEarned = isWeekly ? 5 : COIN_AMOUNTS.checkin;
+  const coinsEarned = isWeekly ? 3 : COIN_AMOUNTS.checkin;
   const note = isWeekly
-    ? `🔥 Серия ${streakDay} дней! Недельный бонус`
+    ? `🔥 Серия ${streakDay} ${plural(streakDay, 'день', 'дня', 'дней')}! Недельный бонус`
     : `Ежедневный вход, серия ${streakDay} ${plural(streakDay, 'день', 'дня', 'дней')}`;
 
   // ON CONFLICT DO NOTHING защищает от двойного начисления при параллельных запросах
