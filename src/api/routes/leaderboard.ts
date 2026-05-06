@@ -5,15 +5,18 @@ import { logAudit } from '../../services/audit.service';
 
 const router = Router();
 
-// GET /api/leaderboard/employees?storeId=&year=&month=
+// GET /api/leaderboard/employees?year=&month=&storeId=
+// storeId — опционален. Без него возвращаются сотрудники всех точек.
 router.get('/employees', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { storeId, year, month } = req.query as Record<string, string>;
-    if (!storeId || !year || !month) {
-      res.status(400).json({ error: 'storeId, year, month обязательны' }); return;
+    if (!year || !month) {
+      res.status(400).json({ error: 'year, month обязательны' }); return;
     }
     const data = await getEmployeeLeaderboard(
-      parseInt(storeId, 10), parseInt(year, 10), parseInt(month, 10)
+      storeId ? parseInt(storeId, 10) : null,
+      parseInt(year, 10),
+      parseInt(month, 10)
     );
     res.json(data);
   } catch (err) { next(err); }

@@ -311,18 +311,27 @@ export async function processMonthAllStores(
 
 // ─── Запросы рейтингов ───────────────────────────────────────────────────────
 
-/** Рейтинг сотрудников одной точки за месяц.
- *  Показываем всех активных сотрудников точки — даже если по ним ещё нет записи
- *  в monthly_metrics. Это позволяет админу выставлять баллы вручную с нуля. */
+/** Рейтинг сотрудников за месяц. Если storeId не указан — все точки скопом.
+ *  Показываем всех сотрудников — даже если по ним ещё нет записи в monthly_metrics.
+ *  Это позволяет админу выставлять баллы вручную с нуля. Скрытые в конце. */
 export async function getEmployeeLeaderboard(
-  storeId: number,
+  storeId: number | null,
   year: number,
   month: number
 ): Promise<EmployeeRanking[]> {
+  const params: (number | null)[] = [year, month];
+  let where = '';
+  if (storeId !== null) {
+    params.push(storeId);
+    where = `WHERE e.store_id = $${params.length}`;
+  }
+
   const { rows } = await pool.query<EmployeeRanking>(
     `SELECT
        e.id                                              AS "employeeId",
        e.name,
+       e.store_id                                        AS "storeId",
+       s.name                                            AS "storeName",
        e.is_active                                       AS "isActive",
        mm.mvp_score                                      AS "mvpScore",
        COALESCE(mm.is_mvp, false)                        AS "isMvp",
@@ -331,11 +340,12 @@ export async function getEmployeeLeaderboard(
        COALESCE((SELECT SUM(amount) FROM coin_transactions ct
           WHERE ct.employee_id = e.id), 0)              AS "coinsBalance"
      FROM employees e
+     LEFT JOIN stores s ON s.id = e.store_id
      LEFT JOIN monthly_metrics mm
-       ON mm.employee_id = e.id AND mm.year = $2 AND mm.month = $3
-     WHERE e.store_id = $1
-     ORDER BY e.is_active DESC, mm.mvp_score DESC NULLS LAST, e.name`,
-    [storeId, year, month]
+       ON mm.employee_id = e.id AND mm.year = $1 AND mm.month = $2
+     ${where}
+     ORDER BY e.is_active DESC, s.name, mm.mvp_score DESC NULLS LAST, e.name`,
+    params
   );
   return rows;
 }

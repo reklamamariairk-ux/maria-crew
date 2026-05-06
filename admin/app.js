@@ -928,36 +928,57 @@ async function toggleEmployee(id, isActive) {
 async function loadLeaderboard() {
   document.getElementById('lb-period-label').textContent = `${MONTH_NAMES[state.month]} ${state.year}`;
 
+  // Если точка выбрана — фильтруем; иначе показываем сотрудников всех точек
+  const empUrl = state.storeId
+    ? `/leaderboard/employees?storeId=${state.storeId}&year=${state.year}&month=${state.month}`
+    : `/leaderboard/employees?year=${state.year}&month=${state.month}`;
+
   const [empData, storeData] = await Promise.all([
-    state.storeId
-      ? api('GET', `/leaderboard/employees?storeId=${state.storeId}&year=${state.year}&month=${state.month}`)
-      : Promise.resolve([]),
+    api('GET', empUrl),
     api('GET', `/leaderboard/stores?year=${state.year}&month=${state.month}`),
   ]);
 
   const RANK = ['🥇','🥈','🥉'];
   const empTbody = document.getElementById('lb-employees-tbody');
-  if (!state.storeId) {
-    empTbody.innerHTML = emptyRow(5, 'store', 'Выбери точку в селекторе сверху или в боковой панели');
-  } else if (!empData || empData.length === 0) {
-    empTbody.innerHTML = emptyRow(5, 'trophy', 'Нет данных за этот период');
+  // Колонка «Точка» показывается только когда выбраны все точки
+  const showStoreCol = !state.storeId;
+  const colCount = showStoreCol ? 6 : 5;
+
+  // Обновляем шапку таблицы (5 ↔ 6 колонок)
+  const empThead = document.querySelector('#tab-leaderboard table thead tr');
+  if (empThead) {
+    empThead.innerHTML = showStoreCol
+      ? `<th>#</th><th>Имя</th><th>Точка</th><th style="width:90px">Баллы</th><th style="width:60px">Карт.</th><th style="width:130px">Действие</th>`
+      : `<th>#</th><th>Имя</th><th style="width:90px">Баллы</th><th style="width:60px">Карт.</th><th style="width:130px">Действие</th>`;
+  }
+
+  if (!empData || empData.length === 0) {
+    empTbody.innerHTML = emptyRow(colCount, 'trophy', 'Нет данных за этот период');
   } else {
+    // Нумерация рангом 🥇🥈🥉 — только когда выбрана конкретная точка.
+    // Когда показываем все точки скопом — рангу неоткуда взяться (он пер-точка), просто #.
     empTbody.innerHTML = empData.map((e, i) => {
       const score = e.mvpScore !== null ? Number(e.mvpScore).toFixed(2) : '';
       const isHidden = e.isActive === false;
       const nameStyle = isHidden ? ' style="color:var(--muted)"' : '';
       const hiddenBadge = isHidden ? ' <span class="badge badge-neutral" style="font-size:11px">скрыт</span>' : '';
+      const rankCell = showStoreCol ? (i+1) : (RANK[i] ?? i+1);
+      const storeCell = showStoreCol
+        ? `<td style="font-size:13px;color:var(--text-2)">${esc(e.storeName ?? '—')}</td>`
+        : '';
+      const sid = e.storeId ?? 'null';
       return `<tr>
-        <td><strong>${RANK[i] ?? i+1}</strong></td>
+        <td><strong>${rankCell}</strong></td>
         <td><strong${nameStyle}>${esc(e.name)}</strong>${e.isMvp ? ' <span class="badge badge-mvp"><i data-lucide="star"></i> Лучший</span>' : ''}${hiddenBadge}</td>
+        ${storeCell}
         <td><input type="number" step="0.01" min="0" max="200" class="lb-score-input"
             value="${score}" data-emp-id="${e.employeeId}"
-            onchange="saveEmployeeScore(${e.employeeId}, this)"></td>
+            onchange="saveEmployeeScore(${e.employeeId}, ${sid}, this)"></td>
         <td>${e.cardsCount}</td>
         <td>
           ${e.isMvp
-            ? `<button class="btn btn-ghost btn-sm" onclick="unsetEmployeeMvp(${e.employeeId})" title="Снять статус"><i data-lucide="x"></i> Снять</button>`
-            : `<button class="btn btn-ghost btn-sm" onclick="setEmployeeMvp(${e.employeeId})"><i data-lucide="star"></i> Сделать лучшим</button>`}
+            ? `<button class="btn btn-ghost btn-sm" onclick="unsetEmployeeMvp(${e.employeeId}, ${sid})" title="Снять статус"><i data-lucide="x"></i> Снять</button>`
+            : `<button class="btn btn-ghost btn-sm" onclick="setEmployeeMvp(${e.employeeId}, ${sid})"><i data-lucide="star"></i> Сделать лучшим</button>`}
         </td>
       </tr>`;
     }).join('');
@@ -985,35 +1006,38 @@ async function loadLeaderboard() {
   renderIcons();
 }
 
-async function saveEmployeeScore(employeeId, inputEl) {
+async function saveEmployeeScore(employeeId, storeId, inputEl) {
+  if (!storeId) { toast('У сотрудника не задана точка — нельзя сохранить балл'); return; }
   const v = inputEl.value.trim();
   const mvpScore = v === '' ? null : parseFloat(v);
   inputEl.disabled = true;
   try {
     await api('PUT', `/leaderboard/employees/${employeeId}`, {
-      year: state.year, month: state.month, storeId: state.storeId, mvpScore,
+      year: state.year, month: state.month, storeId, mvpScore,
     });
     toast('✅ Балл сохранён');
   } catch (e) { toast('❌ ' + e.message); }
   finally { inputEl.disabled = false; }
 }
 
-async function setEmployeeMvp(employeeId) {
+async function setEmployeeMvp(employeeId, storeId) {
+  if (!storeId) { toast('У сотрудника не задана точка'); return; }
   if (!confirm('Сделать сотрудника лучшим в этом месяце? С остальных в этой точке статус «Лучший» будет снят.')) return;
   try {
     await api('PUT', `/leaderboard/employees/${employeeId}`, {
-      year: state.year, month: state.month, storeId: state.storeId, isMvp: true,
+      year: state.year, month: state.month, storeId, isMvp: true,
     });
     toast('✅ Лучший сотрудник назначен');
     loadLeaderboard();
   } catch (e) { toast('❌ ' + e.message); }
 }
 
-async function unsetEmployeeMvp(employeeId) {
+async function unsetEmployeeMvp(employeeId, storeId) {
+  if (!storeId) { toast('У сотрудника не задана точка'); return; }
   if (!confirm('Снять статус «Лучший сотрудник» за этот месяц?\n\n⚠️ Уже начисленные монеты и выданная особая карточка НЕ возвращаются — при необходимости откати их вручную.')) return;
   try {
     await api('PUT', `/leaderboard/employees/${employeeId}`, {
-      year: state.year, month: state.month, storeId: state.storeId, isMvp: false,
+      year: state.year, month: state.month, storeId, isMvp: false,
     });
     toast('✅ Статус снят');
     loadLeaderboard();
