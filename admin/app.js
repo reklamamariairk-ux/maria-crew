@@ -1714,10 +1714,10 @@ const SEASON_LABELS = { spring: 'Весна', summer: 'Лето', autumn: 'Ос�
 
 async function loadChallenges() {
   const tbody = document.getElementById('challenges-tbody');
-  tbody.innerHTML = skeletonRows(9, 4);
+  tbody.innerHTML = skeletonRows(11, 4);
   const list = await api('GET', '/challenges') || [];
   if (list.length === 0) {
-    tbody.innerHTML = emptyRow(9, 'flame', 'Нет челленджей — создайте первый');
+    tbody.innerHTML = emptyRow(11, 'flame', 'Нет челленджей — создайте первый');
     renderIcons(); return;
   }
   tbody.innerHTML = list.map(ch => {
@@ -1732,6 +1732,19 @@ async function loadChallenges() {
         : (endStr < today
             ? '<span class="badge badge-neutral">Завершён</span>'
             : '<span class="badge badge-pending">Запланирован</span>');
+
+    const coinReward = ch.coinReward ?? 0;
+    const coinsCell = coinReward > 0
+      ? `<strong style="color:var(--pink)">+${coinReward}</strong>`
+      : '<span style="color:var(--muted)">—</span>';
+
+    // storeIds === null => все точки. Иначе показываем имена через запятую.
+    const storeIds = ch.storeIds || ch.store_ids;
+    const storeNames = ch.storeNames || ch.store_names || [];
+    const storesCell = !storeIds || storeIds.length === 0
+      ? '<span style="color:var(--text-2);font-size:12px">все</span>'
+      : `<span style="font-size:12px">${storeNames.map(n => esc(n)).join(', ') || `${storeIds.length} точек`}</span>`;
+
     return `<tr>
       <td style="color:var(--muted);font-size:12px">${ch.id}</td>
       <td><strong>${esc(ch.name)}</strong></td>
@@ -1739,6 +1752,8 @@ async function loadChallenges() {
       <td>${ch.year}</td>
       <td style="font-size:12px;color:var(--muted)">${startStr} — ${endStr}</td>
       <td style="font-size:13px">${esc(ch.heroName ?? '—')}</td>
+      <td>${coinsCell}</td>
+      <td>${storesCell}</td>
       <td>${ch.entries ?? 0}</td>
       <td>${statusBadge}</td>
       <td><button class="btn btn-danger btn-sm btn-icon" onclick="deleteChallenge(${ch.id})" title="Удалить"><i data-lucide="trash-2"></i></button></td>
@@ -1760,17 +1775,103 @@ async function showAddChallenge() {
   const form = document.getElementById('add-challenge-form');
   form.classList.toggle('hidden');
   if (!form.classList.contains('hidden')) {
-    if (!cardHeroes || !cardHeroes.length) {
-      cardHeroes = await api('GET', '/heroes') || [];
-    }
-    const sel = document.getElementById('ch-hero');
-    sel.innerHTML = '<option value="">— без карточки —</option>';
-    cardHeroes.filter(h => h.isLimited).forEach(h => {
-      const opt = document.createElement('option');
-      opt.value = h.id; opt.textContent = h.name;
-      sel.appendChild(opt);
-    });
+    await refreshChallengeHeroSelect();
+    renderChallengeStoresList();
   }
+}
+
+async function refreshChallengeHeroSelect(selectedId) {
+  cardHeroes = await api('GET', '/heroes') || [];
+  const sel = document.getElementById('ch-hero');
+  sel.innerHTML = '<option value="">— без карточки —</option>';
+  cardHeroes.filter(h => h.isLimited).forEach(h => {
+    const opt = document.createElement('option');
+    opt.value = h.id; opt.textContent = h.name;
+    if (selectedId && h.id === selectedId) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function renderChallengeStoresList() {
+  const list = document.getElementById('ch-stores-list');
+  if (!list) return;
+  list.innerHTML = (state.stores || []).map(s => `
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+      <input type="checkbox" class="ch-store-cb" data-store-id="${s.id}">
+      ${esc(s.name)}
+    </label>
+  `).join('');
+}
+
+function onChallengeStoresAllToggle() {
+  const all = document.getElementById('ch-stores-all').checked;
+  const list = document.getElementById('ch-stores-list');
+  list.style.opacity = all ? '0.5' : '1';
+  list.style.pointerEvents = all ? 'none' : 'auto';
+  // При «Все точки» сбрасываем индивидуальные галочки
+  if (all) {
+    list.querySelectorAll('.ch-store-cb').forEach(cb => { cb.checked = false; });
+  }
+}
+
+function toggleNewHeroForm() {
+  const form = document.getElementById('ch-new-hero-form');
+  form.classList.toggle('hidden');
+  if (!form.classList.contains('hidden')) {
+    document.getElementById('ch-new-hero-name').value = '';
+    document.getElementById('ch-new-hero-desc').value = '';
+    document.getElementById('ch-new-hero-img').value = '';
+    // Спрятать кнопку загрузки если Cloudinary не настроен
+    document.getElementById('ch-new-hero-upload-btn').style.display = state.cloudinary.enabled ? '' : 'none';
+  }
+  renderIcons();
+}
+
+function uploadNewChallengeHeroImage() {
+  if (!state.cloudinary.enabled) { toast('Cloudinary не настроен'); return; }
+  const input = document.getElementById('ch-new-hero-file');
+  input.value = '';
+  input.click();
+}
+
+async function _onChallengeHeroFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const btn = document.getElementById('ch-new-hero-upload-btn');
+  btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-2"></i>'; renderIcons();
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('upload_preset', state.cloudinary.uploadPreset);
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${state.cloudinary.cloudName}/image/upload`, {
+      method: 'POST', body: fd,
+    });
+    if (!res.ok) throw new Error(`Cloudinary error ${res.status}`);
+    const data = await res.json();
+    document.getElementById('ch-new-hero-img').value = data.secure_url;
+    toast('Фото загружено');
+  } catch (e) {
+    toast('❌ ' + e.message);
+  } finally {
+    btn.disabled = false; btn.innerHTML = '<i data-lucide="upload"></i>'; renderIcons();
+  }
+}
+
+async function createHeroFromChallenge() {
+  const name        = document.getElementById('ch-new-hero-name').value.trim();
+  const description = document.getElementById('ch-new-hero-desc').value.trim() || null;
+  const imageUrl    = document.getElementById('ch-new-hero-img').value.trim() || null;
+  if (!name) { toast('Введи имя карточки'); return; }
+  // Сезон лимитки — берём из выбранного сезона челленджа для удобства
+  const season = document.getElementById('ch-season').value || null;
+  try {
+    const hero = await api('POST', '/heroes', {
+      name, description, imageUrl, isLimited: true, season, sortOrder: 100,
+    });
+    toast('✅ Карточка создана');
+    await refreshChallengeHeroSelect(hero.id);
+    document.getElementById('ch-new-hero-form').classList.add('hidden');
+  } catch (e) { toast('❌ ' + e.message); }
 }
 
 async function addChallenge() {
@@ -1782,6 +1883,19 @@ async function addChallenge() {
   const endDate = document.getElementById('ch-end').value;
   const description = document.getElementById('ch-desc').value.trim();
   const conditionDescription = document.getElementById('ch-condition').value.trim();
+  const coinReward = parseInt(document.getElementById('ch-coin-reward').value, 10) || 0;
+
+  // Точки: если стоит «Все» — null, иначе массив id отмеченных
+  const allStores = document.getElementById('ch-stores-all').checked;
+  let storeIds = null;
+  if (!allStores) {
+    storeIds = [...document.querySelectorAll('.ch-store-cb:checked')]
+      .map(cb => parseInt(cb.dataset.storeId, 10))
+      .filter(id => !isNaN(id));
+    if (storeIds.length === 0) {
+      toast('Выбери хотя бы одну точку или поставь «Все точки»'); return;
+    }
+  }
 
   if (!name || !season || !year || !startDate || !endDate) {
     toast('Заполните название, сезон, год, даты'); return;
@@ -1789,8 +1903,17 @@ async function addChallenge() {
   if (new Date(startDate) >= new Date(endDate)) {
     toast('Дата начала должна быть раньше даты конца'); return;
   }
+  if (coinReward < 0 || coinReward > 1000) {
+    toast('Награда монетами должна быть 0..1000'); return;
+  }
+  if (!heroId && coinReward === 0) {
+    toast('Укажи хотя бы одно вознаграждение — карточку или монеты'); return;
+  }
   try {
-    await api('POST', '/challenges', { name, season, year, heroId, startDate, endDate, description, conditionDescription });
+    await api('POST', '/challenges', {
+      name, season, year, heroId, startDate, endDate, description, conditionDescription,
+      coinReward, storeIds,
+    });
     toast('✅ Челлендж создан');
     document.getElementById('add-challenge-form').classList.add('hidden');
     loadChallenges();

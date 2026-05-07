@@ -760,8 +760,14 @@
             </select>
           </label>
           <label>Год <input type="number" id="ch-year" class="input" value="2026" min="2025" max="2030"></label>
-          <label>Герой (награда)
-            <select id="ch-hero" class="input"><option value="">— без карточки —</option></select>
+          <label>Карточка-награда
+            <div style="display:flex;gap:6px;align-items:center">
+              <select id="ch-hero" class="input" style="flex:1;min-width:0"><option value="">— без карточки —</option></select>
+              <button type="button" class="btn btn-ghost btn-sm btn-icon" onclick="toggleNewHeroForm()" title="Создать новую карточку"><i data-lucide="plus"></i></button>
+            </div>
+          </label>
+          <label>Награда монетами
+            <input type="number" id="ch-coin-reward" class="input" value="0" min="0" max="1000" step="1">
           </label>
           <label>Начало <input type="date" id="ch-start" class="input"></label>
           <label>Конец <input type="date" id="ch-end" class="input"></label>
@@ -772,7 +778,42 @@
             <input type="text" id="ch-condition" class="input" placeholder="Набери 7 дней серии И ответь на 15 вопросов квиза">
           </label>
         </div>
-        <div style="display:flex;gap:8px;margin-top:12px">
+
+        <!-- Inline-форма для создания новой лимитной карточки прямо отсюда -->
+        <div id="ch-new-hero-form" class="hidden" style="margin-top:14px;padding:12px;background:var(--bg-2);border-radius:8px">
+          <p class="section-title" style="margin-top:0">Создать новую карточку</p>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+            <label>Имя <input type="text" id="ch-new-hero-name" class="input" placeholder="Пасхальный кролик"></label>
+            <label>Описание <input type="text" id="ch-new-hero-desc" class="input" placeholder="Лимитный весенний герой"></label>
+            <label>Картинка (URL или загрузить)
+              <div style="display:flex;gap:6px;align-items:center">
+                <input type="text" id="ch-new-hero-img" class="input" placeholder="https://..." style="flex:1;min-width:0">
+                <button type="button" class="btn btn-ghost btn-sm btn-icon" id="ch-new-hero-upload-btn" onclick="uploadNewChallengeHeroImage()" title="Загрузить с компьютера"><i data-lucide="upload"></i></button>
+                <input type="file" id="ch-new-hero-file" accept="image/*" style="display:none" onchange="_onChallengeHeroFile(this)">
+              </div>
+            </label>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="btn btn-primary btn-sm" onclick="createHeroFromChallenge()"><i data-lucide="check"></i> Создать карточку</button>
+            <button class="btn btn-ghost btn-sm" onclick="toggleNewHeroForm()">Отмена</button>
+          </div>
+        </div>
+
+        <!-- Multi-select точек -->
+        <div style="margin-top:14px">
+          <p class="section-title" style="margin-top:0;display:flex;align-items:center;gap:10px">
+            На каких точках действует
+            <label style="font-weight:400;font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer">
+              <input type="checkbox" id="ch-stores-all" checked onchange="onChallengeStoresAllToggle()">
+              Все точки
+            </label>
+          </p>
+          <div id="ch-stores-list" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:6px;opacity:0.5;pointer-events:none">
+            <!-- сюда загрузятся чекбоксы точек -->
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:14px">
           <button class="btn btn-primary" onclick="addChallenge()"><i data-lucide="check"></i> Создать</button>
           <button class="btn btn-ghost" onclick="document.getElementById('add-challenge-form').classList.add('hidden')">Отмена</button>
         </div>
@@ -786,13 +827,15 @@
             <th style="width:90px">Сезон</th>
             <th style="width:60px">Год</th>
             <th style="width:130px">Период</th>
-            <th style="width:120px">Награда</th>
+            <th style="width:120px">Карточка</th>
+            <th style="width:80px">Монеты</th>
+            <th>Точки</th>
             <th style="width:90px">Участников</th>
             <th style="width:100px">Статус</th>
             <th style="width:80px">Действие</th>
           </tr></thead>
           <tbody id="challenges-tbody">
-            <tr><td colspan="9" class="empty">Загрузка...</td></tr>
+            <tr><td colspan="11" class="empty">Загрузка...</td></tr>
           </tbody>
         </table>
       </div>

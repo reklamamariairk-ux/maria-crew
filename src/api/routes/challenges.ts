@@ -14,7 +14,7 @@ const VALID_SEASONS = new Set(['spring', 'summer', 'autumn', 'winter']);
 
 router.post('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { name, description, season, year, heroId, startDate, endDate, conditionDescription } = req.body;
+    const { name, description, season, year, heroId, startDate, endDate, conditionDescription, coinReward, storeIds } = req.body;
     if (!name || !season || !year || !startDate || !endDate) {
       res.status(400).json({ error: 'name, season, year, startDate, endDate обязательны' });
       return;
@@ -36,9 +36,39 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
       res.status(400).json({ error: 'startDate должен быть раньше endDate' });
       return;
     }
-    const ch = await createChallenge({ name: name.trim(), description, season, year: yearNum, heroId, startDate, endDate, conditionDescription });
+
+    // coinReward — необязательный, целое >= 0
+    let coinRewardNum = 0;
+    if (coinReward !== undefined && coinReward !== null && coinReward !== '') {
+      coinRewardNum = Number(coinReward);
+      if (!Number.isInteger(coinRewardNum) || coinRewardNum < 0 || coinRewardNum > 1000) {
+        res.status(400).json({ error: 'coinReward — целое 0..1000' });
+        return;
+      }
+    }
+
+    // storeIds — необязательный массив id точек (null/undefined = все точки)
+    let storeIdsArr: number[] | null = null;
+    if (storeIds !== undefined && storeIds !== null) {
+      if (!Array.isArray(storeIds)) {
+        res.status(400).json({ error: 'storeIds должен быть массивом' });
+        return;
+      }
+      storeIdsArr = storeIds
+        .map(id => Number(id))
+        .filter(id => Number.isInteger(id) && id > 0);
+      // Пустой массив = «никому» — допустимо, но предупредим логом
+      if (storeIdsArr.length === 0) storeIdsArr = null; // трактуем как «все»
+    }
+
+    const ch = await createChallenge({
+      name: name.trim(), description, season, year: yearNum, heroId,
+      startDate, endDate, conditionDescription,
+      coinReward: coinRewardNum,
+      storeIds: storeIdsArr,
+    });
     res.status(201).json(ch);
-    logAudit('challenge_create', { challengeId: ch.id, name, season, year: yearNum }, req.ip).catch(() => {});
+    logAudit('challenge_create', { challengeId: ch.id, name, season, year: yearNum, coinReward: coinRewardNum, storeIds: storeIdsArr }, req.ip).catch(() => {});
   } catch (err) { next(err); }
 });
 
