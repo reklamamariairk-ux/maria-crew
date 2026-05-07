@@ -268,6 +268,64 @@ async function doLoginRequestPin() {
   }
 }
 
+// ── Push-уведомления (только в Capacitor-обёртке) ────────────────────────────
+async function setupPushNotifications() {
+  // window.Capacitor доступен только в нативном приложении (после cap sync).
+  // В обычном браузере и Telegram WebApp его нет — функция тихо выходит.
+  if (!window.Capacitor || !window.Capacitor.isNativePlatform || !window.Capacitor.isNativePlatform()) {
+    return;
+  }
+  const Plugins = window.Capacitor.Plugins;
+  const Push = Plugins.PushNotifications;
+  if (!Push) {
+    console.warn('[push] PushNotifications plugin не загружен');
+    return;
+  }
+
+  // Запрос разрешения у пользователя (показывается system-диалог при первом запуске)
+  const perm = await Push.requestPermissions();
+  if (perm.receive !== 'granted') {
+    console.log('[push] Пользователь отказал в push-уведомлениях');
+    return;
+  }
+
+  // Регистрируем устройство в FCM/APNs — придёт токен в событии 'registration'
+  Push.addListener('registration', async (token) => {
+    try {
+      const platform = window.Capacitor.getPlatform(); // 'ios' | 'android' | 'web'
+      await fetch(API_V1 + '/devices', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + mobileToken,
+        },
+        body: JSON.stringify({ token: token.value, platform }),
+      });
+      console.log('[push] токен зарегистрирован на сервере');
+    } catch (e) {
+      console.error('[push] registration POST failed:', e);
+    }
+  });
+
+  Push.addListener('registrationError', (err) => {
+    console.error('[push] registration error:', err);
+  });
+
+  // Когда push приходит и приложение открыто — показать toast
+  Push.addListener('pushNotificationReceived', (notif) => {
+    showToast(notif.title || notif.body || 'Уведомление');
+  });
+
+  // Когда юзер тапает на push (приложение в фоне) — можно навигировать
+  Push.addListener('pushNotificationActionPerformed', (action) => {
+    const data = action.notification?.data || {};
+    if (data.type === 'coin_award') switchTab('coins');
+    if (data.type === 'card_award') switchTab('collection');
+  });
+
+  await Push.register();
+}
+
 // Logout / удаление аккаунта — только для standalone (mobile/web вне Telegram)
 window.doMobileLogout = function () {
   if (!confirm('Выйти из приложения?')) return;
@@ -427,6 +485,8 @@ async function init() {
     // Показать standalone-футер с logout/delete account
     const footer = document.getElementById('standalone-footer');
     if (footer) footer.style.display = '';
+    // Регистрация push-токена (только в native — в браузере window.Capacitor отсутствует)
+    setupPushNotifications().catch(err => console.warn('[push] setup failed:', err));
   }
 
   try {
