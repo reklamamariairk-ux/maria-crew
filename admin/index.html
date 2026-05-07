@@ -278,17 +278,19 @@
             <select id="coin-reason" style="width:240px" onchange="onCoinReasonChange()">
               <option value="manual" selected>Вручную (своя сумма)</option>
               <optgroup label="Начисления">
-                <option value="checklist_day">Чек-лист 100% (+1)</option>
-                <option value="review">Именной отзыв (+3)</option>
-                <option value="substitution">Подмена коллеги (+5)</option>
-                <option value="mentoring">Наставничество (+10)</option>
+                <option value="checklist_day">Чек-лист 100% за день (+1)</option>
+                <option value="review">Именной отзыв гостя (+3)</option>
+                <option value="substitution">Подмена коллеги на другой точке (+5)</option>
+                <option value="knowledge_applied">Применение знаний на практике (+3)</option>
+                <option value="training_meeting">Участие в собрании по обучению (+5)</option>
                 <option value="idea">Идея внедрена (+5)</option>
-                <option value="training_meeting">Собрание по обучению (+5)</option>
-                <option value="knowledge_applied">Применение знаний (+3)</option>
+                <option value="mentoring">Наставничество (+10)</option>
+                <option value="plan_100">Выполнение плана 100% (+2)</option>
+                <option value="plan_105">Перевыполнение плана >105% (+5)</option>
               </optgroup>
               <optgroup label="Списания">
-                <option value="bad_review">Отрицательный отзыв (−5)</option>
-                <option value="dirty_store">Нарушение стандартов (−5)</option>
+                <option value="bad_review">Отрицательный отзыв гостя (−5)</option>
+                <option value="dirty_store">Нарушение стандартов чистоты (−5)</option>
                 <option value="training_resistance">Сопротивление обучению (−3)</option>
               </optgroup>
             </select>
@@ -468,18 +470,20 @@
         <select id="bulk-coin-reason" class="input" style="font-size:13px;padding:7px 10px" onchange="onBulkReasonChange(this)">
           <option value="">— Причина —</option>
           <optgroup label="Начисления">
-            <option value="checklist_day">Чек-лист 100% (+1)</option>
-            <option value="review">Именной отзыв (+3)</option>
-            <option value="substitution">Подмена коллеги (+5)</option>
-            <option value="mentoring">Наставничество (+10)</option>
+            <option value="checklist_day">Чек-лист 100% за день (+1)</option>
+            <option value="review">Именной отзыв гостя (+3)</option>
+            <option value="substitution">Подмена коллеги на другой точке (+5)</option>
+            <option value="knowledge_applied">Применение знаний на практике (+3)</option>
+            <option value="training_meeting">Участие в собрании по обучению (+5)</option>
             <option value="idea">Идея внедрена (+5)</option>
-            <option value="training_meeting">Собрание по обучению (+5)</option>
-            <option value="knowledge_applied">Применение знаний (+3)</option>
+            <option value="mentoring">Наставничество (+10)</option>
+            <option value="plan_100">Выполнение плана 100% (+2)</option>
+            <option value="plan_105">Перевыполнение плана >105% (+5)</option>
             <option value="manual">Вручную (своя сумма)</option>
           </optgroup>
           <optgroup label="Списания">
-            <option value="bad_review">Отрицательный отзыв (−5)</option>
-            <option value="dirty_store">Нарушение стандартов (−5)</option>
+            <option value="bad_review">Отрицательный отзыв гостя (−5)</option>
+            <option value="dirty_store">Нарушение стандартов чистоты (−5)</option>
             <option value="training_resistance">Сопротивление обучению (−3)</option>
           </optgroup>
         </select>

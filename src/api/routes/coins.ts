@@ -129,8 +129,9 @@ router.get('/export', async (req: Request, res: Response, next: NextFunction): P
 
     const REASON_LABELS: Record<string, string> = {
       checklist_day: 'Чек-лист 100%', review: 'Именной отзыв', cake_order: 'Торт на заказ',
-      substitution: 'Подмена', mentoring: 'Наставничество', idea: 'Идея',
+      substitution: 'Подмена коллеги', mentoring: 'Наставничество', idea: 'Идея',
       training_meeting: 'Собрание', knowledge_applied: 'Применение знаний',
+      plan_100: 'Выполнение плана 100%', plan_105: 'Перевыполнение плана >105%',
       bad_review: 'Отрицательный отзыв', dirty_store: 'Нарушение чистоты',
       training_resistance: 'Сопротивление обучению', spend: 'Обмен в Store',
       manual: 'Вручную', quiz: 'Квиз', checkin: 'Ежедневный вход',
