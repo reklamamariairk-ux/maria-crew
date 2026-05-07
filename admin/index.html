@@ -748,7 +748,7 @@
       </div>
 
       <div id="add-challenge-form" class="hidden card card-pad" style="margin-bottom:16px">
-        <p class="section-title">Новый челлендж</p>
+        <p class="section-title" id="ch-form-title">Новый челлендж</p>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
           <label>Название <input type="text" id="ch-name" class="input" placeholder="Rookie of Season — Лето 2026"></label>
           <label>Сезон
@@ -813,9 +813,17 @@
           </div>
         </div>
 
+        <!-- Чекбокс «Активен» — показывается только в режиме редактирования -->
+        <div id="ch-active-row" style="margin-top:14px;display:none">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="ch-is-active" checked>
+            <span>Челлендж активен (виден сотрудникам в Mini App)</span>
+          </label>
+        </div>
+
         <div style="display:flex;gap:8px;margin-top:14px">
-          <button class="btn btn-primary" onclick="addChallenge()"><i data-lucide="check"></i> Создать</button>
-          <button class="btn btn-ghost" onclick="document.getElementById('add-challenge-form').classList.add('hidden')">Отмена</button>
+          <button class="btn btn-primary" id="ch-save-btn" onclick="saveChallenge()"><i data-lucide="check"></i> Создать</button>
+          <button class="btn btn-ghost" onclick="closeChallengeForm()">Отмена</button>
         </div>
       </div>
 

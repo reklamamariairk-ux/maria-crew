@@ -240,6 +240,52 @@ export async function deleteChallenge(id: number): Promise<boolean> {
   return (rowCount ?? 0) > 0;
 }
 
+export async function updateChallenge(id: number, fields: {
+  name?: string;
+  description?: string | null;
+  season?: string;
+  year?: number;
+  heroId?: number | null;
+  startDate?: string;
+  endDate?: string;
+  conditionDescription?: string | null;
+  coinReward?: number;
+  storeIds?: number[] | null;
+  isActive?: boolean;
+}): Promise<unknown> {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  const push = (col: string, val: unknown): void => {
+    vals.push(val); sets.push(`${col} = $${vals.length}`);
+  };
+
+  if (fields.name !== undefined) push('name', fields.name);
+  if (fields.description !== undefined) push('description', fields.description);
+  if (fields.season !== undefined) push('season', fields.season);
+  if (fields.year !== undefined) push('year', fields.year);
+  if (fields.heroId !== undefined) push('hero_id', fields.heroId);
+  if (fields.startDate !== undefined) push('start_date', fields.startDate);
+  if (fields.endDate !== undefined) push('end_date', fields.endDate);
+  if (fields.conditionDescription !== undefined) push('condition_description', fields.conditionDescription);
+  if (fields.coinReward !== undefined) push('coin_reward', fields.coinReward);
+  if (fields.storeIds !== undefined) push('store_ids', fields.storeIds);
+  if (fields.isActive !== undefined) push('is_active', fields.isActive);
+
+  if (sets.length === 0) {
+    // Нечего обновлять — вернём текущее значение, чтобы не падать
+    const { rows } = await pool.query(`SELECT * FROM seasonal_challenges WHERE id = $1`, [id]);
+    return rows[0] ?? null;
+  }
+
+  vals.push(id);
+  const { rows } = await pool.query(
+    `UPDATE seasonal_challenges SET ${sets.join(', ')} WHERE id = $${vals.length}
+     RETURNING *, coin_reward AS "coinReward", store_ids AS "storeIds"`,
+    vals
+  );
+  return rows[0] ?? null;
+}
+
 export async function createChallenge(data: {
   name: string; description: string; season: string; year: number;
   heroId?: number; startDate: string; endDate: string; conditionDescription: string;

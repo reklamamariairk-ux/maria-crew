@@ -1756,7 +1756,10 @@ async function loadChallenges() {
       <td>${storesCell}</td>
       <td>${ch.entries ?? 0}</td>
       <td>${statusBadge}</td>
-      <td><button class="btn btn-danger btn-sm btn-icon" onclick="deleteChallenge(${ch.id})" title="Удалить"><i data-lucide="trash-2"></i></button></td>
+      <td style="display:flex;gap:4px">
+        <button class="btn btn-ghost btn-sm btn-icon" onclick="editChallenge(${ch.id})" title="Редактировать"><i data-lucide="edit-3"></i></button>
+        <button class="btn btn-danger btn-sm btn-icon" onclick="deleteChallenge(${ch.id})" title="Удалить"><i data-lucide="trash-2"></i></button>
+      </td>
     </tr>`;
   }).join('');
   renderIcons();
@@ -1771,13 +1774,81 @@ async function deleteChallenge(id) {
   } catch (e) { toast('❌ ' + e.message); }
 }
 
+// ID редактируемого челленджа. null => режим создания.
+let editingChallengeId = null;
+
+function closeChallengeForm() {
+  document.getElementById('add-challenge-form').classList.add('hidden');
+  editingChallengeId = null;
+}
+
 async function showAddChallenge() {
+  // Создание нового челленджа: чистим форму
+  editingChallengeId = null;
+  document.getElementById('ch-form-title').textContent = 'Новый челлендж';
+  document.getElementById('ch-save-btn').innerHTML = '<i data-lucide="check"></i> Создать';
+  document.getElementById('ch-active-row').style.display = 'none';
+
   const form = document.getElementById('add-challenge-form');
-  form.classList.toggle('hidden');
-  if (!form.classList.contains('hidden')) {
-    await refreshChallengeHeroSelect();
-    renderChallengeStoresList();
+  // Гарантируем что форма открыта (а не toggle, чтобы edit→addNew работал)
+  form.classList.remove('hidden');
+
+  // Сброс полей
+  document.getElementById('ch-name').value = '';
+  document.getElementById('ch-season').value = 'spring';
+  document.getElementById('ch-year').value = new Date().getFullYear();
+  document.getElementById('ch-coin-reward').value = '0';
+  document.getElementById('ch-start').value = '';
+  document.getElementById('ch-end').value = '';
+  document.getElementById('ch-desc').value = '';
+  document.getElementById('ch-condition').value = '';
+  document.getElementById('ch-stores-all').checked = true;
+
+  await refreshChallengeHeroSelect();
+  renderChallengeStoresList();
+  onChallengeStoresAllToggle();
+  renderIcons();
+}
+
+async function editChallenge(id) {
+  const list = await api('GET', '/challenges') || [];
+  const ch = list.find(c => c.id === id);
+  if (!ch) { toast('Челлендж не найден'); return; }
+
+  editingChallengeId = id;
+  document.getElementById('ch-form-title').textContent = `Редактирование: ${ch.name}`;
+  document.getElementById('ch-save-btn').innerHTML = '<i data-lucide="save"></i> Сохранить';
+  document.getElementById('ch-active-row').style.display = '';
+
+  const form = document.getElementById('add-challenge-form');
+  form.classList.remove('hidden');
+
+  // Заполняем поля. Бэк возвращает поля в snake_case (start_date, end_date,
+  // hero_id, condition_description), потому что SELECT *. Поддерживаем оба варианта.
+  document.getElementById('ch-name').value = ch.name ?? '';
+  document.getElementById('ch-season').value = ch.season ?? 'spring';
+  document.getElementById('ch-year').value = ch.year ?? new Date().getFullYear();
+  document.getElementById('ch-coin-reward').value = String(ch.coinReward ?? ch.coin_reward ?? 0);
+  document.getElementById('ch-start').value = (ch.startDate ?? ch.start_date ?? '').toString().slice(0,10);
+  document.getElementById('ch-end').value = (ch.endDate ?? ch.end_date ?? '').toString().slice(0,10);
+  document.getElementById('ch-desc').value = ch.description ?? '';
+  document.getElementById('ch-condition').value = ch.conditionDescription ?? ch.condition_description ?? '';
+  document.getElementById('ch-is-active').checked = ch.isActive ?? ch.is_active ?? true;
+
+  // Точки
+  const storeIds = ch.storeIds || ch.store_ids;
+  document.getElementById('ch-stores-all').checked = !storeIds || storeIds.length === 0;
+  await refreshChallengeHeroSelect(ch.heroId ?? ch.hero_id ?? undefined);
+  renderChallengeStoresList();
+  // Расставить чекбоксы точек
+  if (storeIds && storeIds.length > 0) {
+    storeIds.forEach(sid => {
+      const cb = document.querySelector(`.ch-store-cb[data-store-id="${sid}"]`);
+      if (cb) cb.checked = true;
+    });
   }
+  onChallengeStoresAllToggle();
+  renderIcons();
 }
 
 async function refreshChallengeHeroSelect(selectedId) {
@@ -1874,11 +1945,13 @@ async function createHeroFromChallenge() {
   } catch (e) { toast('❌ ' + e.message); }
 }
 
-async function addChallenge() {
+async function saveChallenge() {
   const name = document.getElementById('ch-name').value.trim();
   const season = document.getElementById('ch-season').value;
   const year = parseInt(document.getElementById('ch-year').value);
-  const heroId = parseInt(document.getElementById('ch-hero').value) || undefined;
+  const heroIdRaw = document.getElementById('ch-hero').value;
+  // null значит «без карточки» (не путаем с undefined — undefined «не трогать»)
+  const heroId = heroIdRaw === '' ? null : (parseInt(heroIdRaw, 10) || null);
   const startDate = document.getElementById('ch-start').value;
   const endDate = document.getElementById('ch-end').value;
   const description = document.getElementById('ch-desc').value.trim();
@@ -1909,16 +1982,29 @@ async function addChallenge() {
   if (!heroId && coinReward === 0) {
     toast('Укажи хотя бы одно вознаграждение — карточку или монеты'); return;
   }
+
+  const payload = {
+    name, season, year, heroId, startDate, endDate, description, conditionDescription,
+    coinReward, storeIds,
+  };
+
   try {
-    await api('POST', '/challenges', {
-      name, season, year, heroId, startDate, endDate, description, conditionDescription,
-      coinReward, storeIds,
-    });
-    toast('✅ Челлендж создан');
-    document.getElementById('add-challenge-form').classList.add('hidden');
+    if (editingChallengeId) {
+      // Edit-режим: добавляем isActive из чекбокса
+      payload.isActive = document.getElementById('ch-is-active').checked;
+      await api('PUT', `/challenges/${editingChallengeId}`, payload);
+      toast('✅ Челлендж обновлён');
+    } else {
+      await api('POST', '/challenges', payload);
+      toast('✅ Челлендж создан');
+    }
+    closeChallengeForm();
     loadChallenges();
   } catch (e) { toast('❌ ' + e.message); }
 }
+
+// Backward-compat — на случай, если какой-то inline onclick ещё ссылается
+window.addChallenge = saveChallenge;
 
 // ── Герои ─────────────────────────────────────────────────────────────────────
 async function loadHeroes() {

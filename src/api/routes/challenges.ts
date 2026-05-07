@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { listChallenges, createChallenge, awardChallengeCard, deleteChallenge } from '../../services/challenge.service';
+import { listChallenges, createChallenge, updateChallenge, awardChallengeCard, deleteChallenge } from '../../services/challenge.service';
 import { logAudit } from '../../services/audit.service';
 
 const router = Router();
@@ -69,6 +69,92 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
     });
     res.status(201).json(ch);
     logAudit('challenge_create', { challengeId: ch.id, name, season, year: yearNum, coinReward: coinRewardNum, storeIds: storeIdsArr }, req.ip).catch(() => {});
+  } catch (err) { next(err); }
+});
+
+// PUT /api/challenges/:id — редактирование челленджа
+router.put('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Неверный id' }); return; }
+
+    const { name, description, season, year, heroId, startDate, endDate, conditionDescription, coinReward, storeIds, isActive } = req.body;
+
+    const fields: Parameters<typeof updateChallenge>[1] = {};
+
+    if (name !== undefined) {
+      if (typeof name !== 'string' || !name.trim() || name.trim().length > 100) {
+        res.status(400).json({ error: 'name пустой или слишком длинный' });
+        return;
+      }
+      fields.name = name.trim();
+    }
+    if (description !== undefined) fields.description = description ?? null;
+    if (conditionDescription !== undefined) fields.conditionDescription = conditionDescription ?? null;
+
+    if (season !== undefined) {
+      if (!VALID_SEASONS.has(season)) {
+        res.status(400).json({ error: `season должен быть: ${[...VALID_SEASONS].join(', ')}` });
+        return;
+      }
+      fields.season = season;
+    }
+
+    if (year !== undefined) {
+      const yearNum = Number(year);
+      if (!Number.isInteger(yearNum) || yearNum < 2024 || yearNum > 2100) {
+        res.status(400).json({ error: 'year должен быть 2024–2100' });
+        return;
+      }
+      fields.year = yearNum;
+    }
+
+    if (heroId !== undefined) {
+      // null или число — null значит «без карточки»
+      fields.heroId = heroId === null || heroId === '' ? null : Number(heroId);
+      if (fields.heroId !== null && !Number.isInteger(fields.heroId)) {
+        res.status(400).json({ error: 'heroId должен быть числом или null' });
+        return;
+      }
+    }
+
+    if (startDate !== undefined) fields.startDate = startDate;
+    if (endDate !== undefined) fields.endDate = endDate;
+    if (fields.startDate && fields.endDate && new Date(fields.startDate) >= new Date(fields.endDate)) {
+      res.status(400).json({ error: 'startDate должен быть раньше endDate' });
+      return;
+    }
+
+    if (coinReward !== undefined) {
+      const n = Number(coinReward);
+      if (!Number.isInteger(n) || n < 0 || n > 1000) {
+        res.status(400).json({ error: 'coinReward — целое 0..1000' });
+        return;
+      }
+      fields.coinReward = n;
+    }
+
+    if (storeIds !== undefined) {
+      if (storeIds === null) {
+        fields.storeIds = null;
+      } else {
+        if (!Array.isArray(storeIds)) {
+          res.status(400).json({ error: 'storeIds должен быть массивом или null' });
+          return;
+        }
+        const arr = storeIds.map((id: unknown) => Number(id)).filter(id => Number.isInteger(id) && id > 0);
+        fields.storeIds = arr.length === 0 ? null : arr;
+      }
+    }
+
+    if (isActive !== undefined) {
+      fields.isActive = !!isActive;
+    }
+
+    const updated = await updateChallenge(id, fields);
+    if (!updated) { res.status(404).json({ error: 'Челлендж не найден' }); return; }
+    res.json(updated);
+    logAudit('challenge_update', { challengeId: id, fields }, req.ip).catch(() => {});
   } catch (err) { next(err); }
 });
 
