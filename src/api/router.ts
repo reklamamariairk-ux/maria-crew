@@ -19,11 +19,19 @@ import auditRoutes from './routes/audit';
 import configRoutes from './routes/config';
 import dashboardRoutes from './routes/dashboard';
 import notifyRoutes from './routes/notify';
+import v1AuthRoutes from './routes/v1Auth';
+import v1DevicesRoutes from './routes/v1Devices';
+import v1AccountRoutes from './routes/v1Account';
 
 const router = Router();
 
 // Логин не требует auth — но защищаем от перебора паролей: 10 попыток за 15 минут с IP
 router.use('/auth', rateLimit(10, 15 * 60 * 1000), authRoutes);
+
+// Mobile API v1 — JWT-авторизация по PIN из Telegram. Внутренние rate-limit'ы свои.
+router.use('/v1/auth', v1AuthRoutes);
+router.use('/v1/devices', v1DevicesRoutes);
+router.use('/v1/account', v1AccountRoutes);
 
 // Mini App — использует Telegram initData, не admin-токен; ограничение: 60 запросов/мин с IP
 router.use('/webapp', rateLimit(60, 60_000), webappRoutes);

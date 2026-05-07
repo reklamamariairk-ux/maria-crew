@@ -3,6 +3,7 @@ import { pool } from '../../db/pool';
 import type { BotContext } from '../context';
 import { esc, monthName, coinReasonLabel, cardSourceLabel } from '../helpers';
 import type { ProcessMonthResult } from '../../types';
+import { sendPushToEmployee } from '../../services/push.service';
 
 let _bot: Bot<BotContext> | null = null;
 
@@ -29,41 +30,59 @@ async function getEmployeeTelegramId(employeeId: number): Promise<string | null>
   return rows[0]?.telegramId ?? null;
 }
 
-/** Уведомление о начислении/списании монет */
+/** Уведомление о начислении/списании монет — Telegram + push мобилки */
 export async function notifyCoinAward(
   employeeId: number,
   amount: number,
   reason: string,
   note?: string
 ): Promise<void> {
-  const tgId = await getEmployeeTelegramId(employeeId);
-  if (!tgId) return;
   const label = coinReasonLabel(reason);
   const isPositive = amount > 0;
   const sign = isPositive ? '+' : '';
   const emoji = isPositive ? '💰' : '➖';
   const suffix = note ? `\n<i>${esc(note)}</i>` : '';
-  const text = `${emoji} <b>${sign}${amount} ${coinWord(Math.abs(amount))}</b>\n${esc(label)}${suffix}`;
-  await send(tgId, text);
+
+  // Telegram (если привязан и активен)
+  const tgId = await getEmployeeTelegramId(employeeId);
+  if (tgId) {
+    const text = `${emoji} <b>${sign}${amount} ${coinWord(Math.abs(amount))}</b>\n${esc(label)}${suffix}`;
+    await send(tgId, text);
+  }
+
+  // Push в мобильное приложение (если зарегистрировано устройство)
+  await sendPushToEmployee(employeeId, {
+    title: `${emoji} ${sign}${amount} ${coinWord(Math.abs(amount))}`,
+    body: note ? `${label} · ${note}` : label,
+    data: { type: 'coin_award', amount: String(amount), reason },
+  }).catch(() => { /* push не критичен */ });
 }
 
-/** Уведомление о выдаче карточки вручную или за метрики */
+/** Уведомление о выдаче карточки вручную или за метрики — Telegram + push */
 export async function notifyCardAward(
   employeeId: number,
   heroName: string,
   source: string,
   isMvp: boolean
 ): Promise<void> {
-  const tgId = await getEmployeeTelegramId(employeeId);
-  if (!tgId) return;
   const sourceLabel = cardSourceLabel(source);
   const mvpTag = isMvp ? ' ⭐' : '';
-  const text =
-    `🃏 <b>Новая карточка${mvpTag}</b>\n` +
-    `Герой: <b>${esc(heroName)}</b>\n` +
-    `За что: ${esc(sourceLabel)}\n\n` +
-    `Открой приложение Maria Crew, чтобы увидеть коллекцию.`;
-  await send(tgId, text);
+
+  const tgId = await getEmployeeTelegramId(employeeId);
+  if (tgId) {
+    const text =
+      `🃏 <b>Новая карточка${mvpTag}</b>\n` +
+      `Герой: <b>${esc(heroName)}</b>\n` +
+      `За что: ${esc(sourceLabel)}\n\n` +
+      `Открой приложение Maria Crew, чтобы увидеть коллекцию.`;
+    await send(tgId, text);
+  }
+
+  await sendPushToEmployee(employeeId, {
+    title: `🃏 Новая карточка${mvpTag}`,
+    body: `${heroName} · ${sourceLabel}`,
+    data: { type: 'card_award', heroName, source, isMvp: String(isMvp) },
+  }).catch(() => {});
 }
 
 /** Уведомление о подтверждённой/отклонённой заявке на обмен */
@@ -255,6 +274,25 @@ export async function alertOwner(message: string, throttleMs = 60 * 60 * 1000): 
     await _bot.api.sendMessage(ownerId, text, { parse_mode: 'HTML' });
   } catch (err) {
     console.error('[alertOwner] failed to send:', err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * Отправляет PIN-код для входа в мобильное приложение.
+ * PIN форматируется в крупные цифры — чтобы было видно в нотификации Telegram.
+ */
+export async function sendLoginPin(telegramId: string, pin: string): Promise<boolean> {
+  if (!_bot) return false;
+  const text = `🔐 <b>Код для входа в мобильное приложение Maria Crew</b>\n\n` +
+               `<code>${pin}</code>\n\n` +
+               `Действует <b>10 минут</b>. Никому не сообщай этот код.\n` +
+               `Если ты не запрашивал — просто проигнорируй это сообщение.`;
+  try {
+    await _bot.api.sendMessage(telegramId, text, { parse_mode: 'HTML' });
+    return true;
+  } catch (err) {
+    console.error('[sendLoginPin] failed:', err instanceof Error ? err.message : err);
+    return false;
   }
 }
 

@@ -10,6 +10,7 @@ import { getPrizes, requestExchange, getExchangeHistory } from '../../services/e
 import { notifyAdminNewExchange } from '../../bot/notifications/sender';
 import { getEmployeeLeaderboard, getStoreLeaderboard } from '../../services/rating.service';
 import { markWebappAuth } from '../../diagnostics';
+import { verifyEmployeeToken } from '../../services/employeeAuth.service';
 
 const router = Router();
 
@@ -115,10 +116,48 @@ async function touchLastSeen(employeeId: number, photoUrl?: string): Promise<voi
   }
 }
 
+/**
+ * Принимает либо Telegram initData (заголовок Authorization: tma <initData>),
+ * либо JWT мобильного приложения (Authorization: Bearer <token>).
+ *
+ * Для JWT user-объект синтезируется из employee-данных — клиенту неважно,
+ * какой метод аутентификации использовался, поля те же.
+ */
 async function requireAuth(req: Request, res: Response): Promise<{ user: { id: number; username?: string; firstName: string; lastName?: string; photoUrl?: string }; employee: Employee } | null> {
   const raw = req.headers.authorization ?? '';
-  const initData = raw.startsWith('tma ') ? raw.slice(4) : raw;
 
+  // 1. Bearer JWT (mobile / standalone web client)
+  if (raw.startsWith('Bearer ')) {
+    const token = raw.slice(7);
+    const payload = verifyEmployeeToken(token);
+    if (!payload) {
+      res.status(401).json({ error: 'Неверный токен' });
+      return null;
+    }
+    const { rows } = await pool.query<Employee>(
+      `SELECT e.id, e.name, e.store_id AS "storeId", s.name AS "storeName",
+              e.telegram_id AS "telegramId", e.telegram_username AS "telegramUsername",
+              e.telegram_photo_url AS "telegramPhotoUrl", e.role, e.phone
+       FROM employees e LEFT JOIN stores s ON s.id = e.store_id
+       WHERE e.id = $1 AND e.is_active = true`,
+      [payload.uid]
+    );
+    if (!rows[0]) {
+      res.status(403).json({ error: 'Сотрудник деактивирован' });
+      return null;
+    }
+    const employee = rows[0];
+    const user = {
+      id: Number(employee.telegramId ?? employee.id),
+      username: employee.telegramUsername ?? undefined,
+      firstName: employee.name,
+      photoUrl: employee.telegramPhotoUrl ?? undefined,
+    };
+    return { user, employee };
+  }
+
+  // 2. Telegram initData (Mini App внутри Telegram)
+  const initData = raw.startsWith('tma ') ? raw.slice(4) : raw;
   const data = validateInitData(initData);
   if (!data) {
     res.status(401).json({ error: 'Неверная подпись initData' });
