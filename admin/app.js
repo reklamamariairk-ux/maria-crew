@@ -1756,9 +1756,11 @@ async function loadChallenges() {
       <td>${storesCell}</td>
       <td>${ch.entries ?? 0}</td>
       <td>${statusBadge}</td>
-      <td style="display:flex;gap:4px">
-        <button class="btn btn-ghost btn-sm btn-icon" onclick="editChallenge(${ch.id})" title="Редактировать"><i data-lucide="edit-3"></i></button>
-        <button class="btn btn-danger btn-sm btn-icon" onclick="deleteChallenge(${ch.id})" title="Удалить"><i data-lucide="trash-2"></i></button>
+      <td>
+        <div class="row-actions">
+          <button class="btn btn-ghost btn-sm btn-icon" onclick="editChallenge(${ch.id})" title="Редактировать"><i data-lucide="pencil"></i></button>
+          <button class="btn btn-danger btn-sm btn-icon" onclick="deleteChallenge(${ch.id})" title="Удалить"><i data-lucide="trash-2"></i></button>
+        </div>
       </td>
     </tr>`;
   }).join('');
