@@ -569,18 +569,57 @@ async function loadCoinHistory() {
   renderIcons();
 }
 
+// Фиксированные суммы пресет-причин — синхронно с COIN_AMOUNTS на бэке.
+// Используется только для UI-подсказки в селекте «Количество». Реальная сумма
+// при пресет-причине берётся из earn() на бэке, что бы тут ни выбрал пользователь.
+const COIN_REASON_AMOUNTS = {
+  checklist_day:        1,
+  review:               3,
+  substitution:         5,
+  mentoring:            10,
+  idea:                 5,
+  training_meeting:     5,
+  knowledge_applied:    3,
+  bad_review:          -5,
+  dirty_store:         -5,
+  training_resistance: -3,
+};
+
+function onCoinReasonChange() {
+  const reason = document.getElementById('coin-reason').value;
+  const amountSel = document.getElementById('coin-amount');
+  if (reason === 'manual') {
+    amountSel.disabled = false;
+    amountSel.title = '';
+  } else {
+    const fixed = COIN_REASON_AMOUNTS[reason];
+    if (fixed !== undefined) amountSel.value = String(fixed);
+    amountSel.disabled = true;
+    amountSel.title = `Сумма для «${COIN_LABELS[reason] ?? reason}» — фиксированная (${fixed > 0 ? '+' : ''}${fixed})`;
+  }
+}
+
 async function awardCoins() {
   const employeeId = parseInt(document.getElementById('coin-employee').value);
+  const reason = document.getElementById('coin-reason').value || 'manual';
   const amount = parseInt(document.getElementById('coin-amount').value, 10);
   const note = document.getElementById('coin-note').value;
 
   if (!employeeId) { toast('Выберите сотрудника'); return; }
-  if (isNaN(amount) || amount === 0) { toast('Выбери количество'); return; }
+  if (reason === 'manual' && (isNaN(amount) || amount === 0)) { toast('Выбери количество'); return; }
+
+  // Для пресет-причин amount не передаём — сумму подставит earn() на бэке.
+  // Для manual передаём выбранное значение.
+  const payload = { employeeId, reason, note: note || undefined };
+  if (reason === 'manual') payload.amount = amount;
 
   try {
-    await api('POST', '/coins/award', { employeeId, reason: 'manual', amount, note: note || undefined });
-    toast(amount < 0 ? '✅ Монеты списаны' : '✅ Монеты начислены');
+    await api('POST', '/coins/award', payload);
+    const finalAmount = reason === 'manual' ? amount : COIN_REASON_AMOUNTS[reason];
+    toast(finalAmount < 0 ? '✅ Монеты списаны' : '✅ Монеты начислены');
     document.getElementById('coin-note').value = '';
+    document.getElementById('coin-reason').value = 'manual';
+    onCoinReasonChange();
     document.getElementById('coin-amount').value = '1';
     loadCoinHistory();
   } catch (e) { toast('❌ ' + e.message); }

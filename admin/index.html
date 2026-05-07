@@ -273,6 +273,25 @@
               <option value="">— выбери —</option>
             </select>
           </label>
+          <label>Причина
+            <select id="coin-reason" style="width:240px" onchange="onCoinReasonChange()">
+              <option value="manual" selected>Вручную (своя сумма)</option>
+              <optgroup label="Начисления">
+                <option value="checklist_day">Чек-лист 100% (+1)</option>
+                <option value="review">Именной отзыв (+3)</option>
+                <option value="substitution">Подмена коллеги (+5)</option>
+                <option value="mentoring">Наставничество (+10)</option>
+                <option value="idea">Идея внедрена (+5)</option>
+                <option value="training_meeting">Собрание по обучению (+5)</option>
+                <option value="knowledge_applied">Применение знаний (+3)</option>
+              </optgroup>
+              <optgroup label="Списания">
+                <option value="bad_review">Отрицательный отзыв (−5)</option>
+                <option value="dirty_store">Нарушение стандартов (−5)</option>
+                <option value="training_resistance">Сопротивление обучению (−3)</option>
+              </optgroup>
+            </select>
+          </label>
           <label>Количество
             <select id="coin-amount" style="width:120px">
               <option value="-10">−10</option>
@@ -304,7 +323,7 @@
         </div>
         <p class="text-muted" style="margin-top:6px">
           <i data-lucide="info" style="width:12px;height:12px"></i>
-          Положительное значение — начисление, отрицательное — списание. Используй примечание, чтобы указать причину.
+          Выбери причину — сумма подставится автоматически. Для произвольной суммы оставь «Вручную». Примечание можно дополнить деталями.
         </p>
       </div>
 
