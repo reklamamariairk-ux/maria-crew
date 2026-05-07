@@ -1,0 +1,244 @@
+openapi: 3.0.3
+info:
+  title: Maria Crew Mobile API
+  version: '1.0'
+  description: |
+    REST-API для мобильного приложения Maria Crew (iOS / Android).
+
+    Авторизация — JWT, выпускается через PIN, доставляемый Telegram-ботом.
+    Тот же набор endpoint'ов поддерживает и Telegram Mini App (через initData).
+
+servers:
+  - url: https://maria-crew.onrender.com/api
+    description: Production
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Employee:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        storeId: { type: integer, nullable: true }
+        storeName: { type: string, nullable: true }
+        role: { type: string, enum: [employee, manager, admin] }
+        phone: { type: string, nullable: true }
+        telegramId: { type: string, nullable: true }
+        telegramUsername: { type: string, nullable: true }
+        telegramPhotoUrl: { type: string, nullable: true }
+
+    LoginPinRequest:
+      type: object
+      required: [phone]
+      properties:
+        phone:
+          type: string
+          example: "+79991234567"
+
+    LoginPinResponse:
+      type: object
+      properties:
+        ok: { type: boolean }
+        ttlSeconds:
+          type: integer
+          description: Сколько секунд действует PIN (10 минут)
+
+    LoginVerifyRequest:
+      type: object
+      required: [phone, pin]
+      properties:
+        phone: { type: string }
+        pin: { type: string, pattern: '^\d{6}$' }
+
+    LoginVerifyResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT, действителен 30 дней. Хранить в Keychain (iOS) / EncryptedSharedPreferences (Android).
+        expiresAt: { type: string, format: date-time }
+        employeeId: { type: integer }
+
+    DeviceRegisterRequest:
+      type: object
+      required: [token, platform]
+      properties:
+        token:
+          type: string
+          description: FCM registration token (Android и iOS через FCM proxy)
+        platform:
+          type: string
+          enum: [ios, android, web]
+        appVersion: { type: string }
+        deviceModel: { type: string }
+
+paths:
+  /v1/auth/request-pin:
+    post:
+      summary: Запросить PIN-код для входа
+      description: |
+        Сервер находит сотрудника по нормализованному телефону, генерирует
+        6-значный PIN и отправляет его в Telegram-чат бота. PIN живёт 10 минут.
+        Cooldown — 60 секунд между запросами для одного сотрудника.
+
+        Если у сотрудника не привязан Telegram-аккаунт (не нажимал /start у бота),
+        возвращается 409 с просьбой сначала запустить бота.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginPinRequest' }
+      responses:
+        '200':
+          description: PIN отправлен в Telegram
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginPinResponse' }
+        '400': { description: Неверный формат телефона }
+        '404': { description: Сотрудник с таким номером не найден }
+        '409': { description: У сотрудника не привязан Telegram }
+        '429': { description: Слишком часто (cooldown активен) }
+        '502': { description: Не удалось отправить через бота }
+
+  /v1/auth/verify-pin:
+    post:
+      summary: Подтвердить PIN и получить JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginVerifyRequest' }
+      responses:
+        '200':
+          description: JWT выдан
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginVerifyResponse' }
+        '400': { description: Неверный формат входных данных }
+        '401': { description: Неверный или истёкший PIN }
+
+  /v1/auth/me:
+    get:
+      summary: Текущий сотрудник
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: Профиль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Employee' }
+        '401': { description: Unauthorized }
+
+  /v1/auth/logout:
+    post:
+      summary: Logout (no-op для JWT, токен достаточно удалить с устройства)
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200': { description: OK }
+
+  /v1/devices:
+    post:
+      summary: Зарегистрировать FCM-токен для push-уведомлений
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeviceRegisterRequest' }
+      responses:
+        '200': { description: OK }
+
+  /v1/devices/{token}:
+    delete:
+      summary: Удалить FCM-токен (logout / удаление приложения)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+
+  /v1/account:
+    delete:
+      summary: Удалить аккаунт (требование Apple App Store)
+      description: |
+        Soft-delete + анонимизация PII. История транзакций и карточки
+        сохраняются для бухгалтерии, но больше не привязаны к личным данным.
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200': { description: Аккаунт деактивирован }
+
+  /webapp/me:
+    get:
+      summary: Полный профиль с агрегированной статистикой
+      description: |
+        Поддерживает оба способа аутентификации:
+        - `Authorization: tma <initData>` — Telegram Mini App
+        - `Authorization: Bearer <jwt>` — мобильное приложение
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: Сотрудник + stats
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Employee'
+                  - type: object
+                    properties:
+                      availableCards: { type: integer }
+                      coinBalance: { type: integer }
+                      uniqueHeroes: { type: integer }
+                      monthlyEarned: { type: integer }
+
+  /webapp/coins:
+    get:
+      summary: Баланс монет + история
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200': { description: { balance, monthly, history } }
+
+  /webapp/collection:
+    get:
+      summary: Коллекция героев пользователя
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200': { description: { heroes, owned, mvpIds, counts } }
+
+  /webapp/quiz/daily:
+    get:
+      summary: 5 ежедневных вопросов квиза
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200': { description: { questions, alreadyDone, answeredToday, totalToday } }
+
+  /webapp/challenge:
+    get:
+      summary: Активные сезонные челленджи
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: |
+            { challenges: [...], challenge: первый из challenges (для backward compat) }
+
+  /webapp/streak:
+    get:
+      summary: Серия дней подряд
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200': { description: '{ currentStreak, checkedInToday, ... }' }
+
+  /webapp/checkin:
+    post:
+      summary: Ежедневный чек-ин (даёт +1 монету)
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200': { description: '{ ok, newStreak }' }

@@ -1,11 +1,22 @@
 /* global Telegram */
 const API = '/api/webapp';
+const API_V1 = '/api/v1';
 const REQUEST_TIMEOUT_MS = 30000;
 
 let tg = null;
 let initData = '';
 let hasTelegramUser = false;
 let tgUser = null;
+
+// JWT-токен для standalone-режима (мобильное приложение / браузер вне Telegram).
+// Подгружается из localStorage. Если есть — apiFetch будет использовать Bearer auth
+// вместо Telegram initData.
+let mobileToken = null;
+try { mobileToken = localStorage.getItem('mc_mobile_token') || null; } catch { /* ignore */ }
+function saveMobileToken(token) {
+  mobileToken = token;
+  try { token ? localStorage.setItem('mc_mobile_token', token) : localStorage.removeItem('mc_mobile_token'); } catch { /* ignore */ }
+}
 
 let employee = null;
 let currentTab = 'collection';
@@ -119,13 +130,17 @@ async function loadViewerWithRetry() {
 
 async function apiFetch(path, opts = {}, retries = 2) {
   let lastError = null;
+  // В standalone (mobile/PWA) — Bearer JWT. В Telegram Mini App — initData.
+  const authHeader = mobileToken && !initData
+    ? 'Bearer ' + mobileToken
+    : 'tma ' + initData;
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const res = await withTimeout(fetch(API + path, {
         ...opts,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'tma ' + initData,
+          'Authorization': authHeader,
           ...(opts.headers || {}),
         },
       }));
@@ -167,9 +182,154 @@ function showBootError(message) {
   }
 }
 
+// ── Login screen для standalone (mobile/web вне Telegram) ─────────────────────
+
+function showLoginScreen() {
+  const loading = document.getElementById('loading');
+  if (loading) loading.style.display = 'none';
+  let screen = document.getElementById('login-screen');
+  if (!screen) {
+    screen = document.createElement('div');
+    screen.id = 'login-screen';
+    screen.style.cssText = 'min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:var(--bg)';
+    screen.innerHTML = `
+      <div style="max-width:340px;width:100%;text-align:center">
+        <div style="font-size:48px;margin-bottom:8px">🍰</div>
+        <h1 style="font-size:22px;font-weight:900;margin-bottom:6px;color:var(--text)">Maria Crew</h1>
+        <p style="font-size:13px;color:var(--hint);margin-bottom:24px">Введи свой телефон — пришлём код входа в Telegram</p>
+
+        <div id="login-step-phone">
+          <input type="tel" id="login-phone" inputmode="tel" placeholder="+7 999 123 45 67" autocomplete="tel"
+                 style="width:100%;padding:14px;border:1.5px solid #ddd;border-radius:12px;font-size:16px;margin-bottom:12px">
+          <button id="login-request-btn" style="width:100%;padding:14px;background:var(--brand);color:#fff;border:0;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer">
+            Получить код
+          </button>
+        </div>
+
+        <div id="login-step-pin" style="display:none">
+          <p style="font-size:13px;color:var(--hint);margin-bottom:12px">Открой Telegram-бот <strong>@Mariaprod_bot</strong> и введи 6-значный код</p>
+          <input type="text" id="login-pin" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code"
+                 style="width:100%;padding:14px;border:1.5px solid #ddd;border-radius:12px;font-size:20px;text-align:center;letter-spacing:6px;margin-bottom:12px">
+          <button id="login-verify-btn" style="width:100%;padding:14px;background:var(--brand);color:#fff;border:0;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer">
+            Войти
+          </button>
+          <button id="login-back-btn" style="width:100%;padding:10px;background:transparent;color:var(--hint);border:0;font-size:13px;margin-top:8px;cursor:pointer">
+            ← Изменить номер
+          </button>
+        </div>
+
+        <div id="login-error" style="margin-top:14px;font-size:13px;color:#e53935;min-height:18px"></div>
+      </div>
+    `;
+    document.body.appendChild(screen);
+
+    document.getElementById('login-request-btn').onclick = doLoginRequestPin;
+    document.getElementById('login-verify-btn').onclick = doLoginVerifyPin;
+    document.getElementById('login-back-btn').onclick = () => {
+      document.getElementById('login-step-phone').style.display = '';
+      document.getElementById('login-step-pin').style.display = 'none';
+      document.getElementById('login-error').textContent = '';
+    };
+    document.getElementById('login-phone').addEventListener('keydown', e => {
+      if (e.key === 'Enter') doLoginRequestPin();
+    });
+    document.getElementById('login-pin').addEventListener('keydown', e => {
+      if (e.key === 'Enter') doLoginVerifyPin();
+    });
+  }
+  screen.style.display = 'flex';
+}
+
+function loginError(msg) {
+  document.getElementById('login-error').textContent = msg || '';
+}
+
+async function doLoginRequestPin() {
+  const phone = document.getElementById('login-phone').value.trim();
+  if (!phone) { loginError('Введи номер телефона'); return; }
+  loginError('');
+  const btn = document.getElementById('login-request-btn');
+  btn.disabled = true; btn.textContent = '⏳ Отправляем...';
+  try {
+    const res = await fetch(API_V1 + '/auth/request-pin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { loginError(data.error || 'Ошибка'); return; }
+    document.getElementById('login-step-phone').style.display = 'none';
+    document.getElementById('login-step-pin').style.display = '';
+    document.getElementById('login-pin').focus();
+  } catch (e) {
+    loginError('Нет связи с сервером');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Получить код';
+  }
+}
+
+// Logout / удаление аккаунта — только для standalone (mobile/web вне Telegram)
+window.doMobileLogout = function () {
+  if (!confirm('Выйти из приложения?')) return;
+  saveMobileToken(null);
+  location.reload();
+};
+
+window.doDeleteAccount = async function () {
+  if (!confirm('Удалить аккаунт?\n\nИмя, телефон и связь с Telegram будут удалены. История транзакций сохраняется обезличенно для бухгалтерии. Это действие нельзя отменить.')) return;
+  if (!confirm('Точно удалить?')) return;
+  try {
+    const res = await fetch(API_V1 + '/account', {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + mobileToken },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { showToast(data.error || 'Не удалось удалить'); return; }
+    saveMobileToken(null);
+    alert('Аккаунт удалён.');
+    location.reload();
+  } catch (e) {
+    showToast('Нет связи с сервером');
+  }
+};
+
+async function doLoginVerifyPin() {
+  const phone = document.getElementById('login-phone').value.trim();
+  const pin = document.getElementById('login-pin').value.trim();
+  if (!/^\d{6}$/.test(pin)) { loginError('Введи 6 цифр'); return; }
+  loginError('');
+  const btn = document.getElementById('login-verify-btn');
+  btn.disabled = true; btn.textContent = '⏳ Проверяем...';
+  try {
+    const res = await fetch(API_V1 + '/auth/verify-pin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, pin }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { loginError(data.error || 'Неверный код'); return; }
+    saveMobileToken(data.token);
+    // Скрываем login-экран и перезапускаем boot
+    document.getElementById('login-screen').style.display = 'none';
+    location.reload();
+  } catch (e) {
+    loginError('Нет связи с сервером');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Войти';
+  }
+}
+
 function initTelegramContext() {
+  // В standalone-режиме (мобильное приложение, обычный браузер) Telegram WebApp нет.
+  // Это OK: будем использовать JWT-авторизацию через login screen.
   const webApp = window.Telegram && window.Telegram.WebApp;
-  if (!webApp) throw new Error('Открой приложение кнопкой из Telegram-бота Maria Crew.');
+  if (!webApp) {
+    tg = null;
+    initData = '';
+    hasTelegramUser = false;
+    tgUser = null;
+    return;
+  }
   tg = webApp;
   initData = tg.initData || '';
   hasTelegramUser = Boolean(tg.initDataUnsafe && tg.initDataUnsafe.user);
@@ -248,9 +408,25 @@ function updateStreakBadge(streak) {
 
 async function init() {
   initTelegramContext();
+
+  // Standalone-режим (вне Telegram): требуется JWT
   if (!hasTelegramUser || !initData) {
-    showBootError('Открой приложение кнопкой из Telegram-бота Maria Crew.');
-    return;
+    if (!mobileToken) {
+      showLoginScreen();
+      return;
+    }
+    // Есть сохранённый токен — пробуем загрузить /me
+    try {
+      const me = await apiFetch('/me');
+      if (!me || !me.id) throw new Error('Не авторизован');
+    } catch (err) {
+      saveMobileToken(null);
+      showLoginScreen();
+      return;
+    }
+    // Показать standalone-футер с logout/delete account
+    const footer = document.getElementById('standalone-footer');
+    if (footer) footer.style.display = '';
   }
 
   try {

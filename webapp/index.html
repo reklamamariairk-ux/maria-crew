@@ -875,6 +875,13 @@
     </div>
   </div>
 
+  <!-- Standalone-режим (мобилка): кнопки Logout / Удалить аккаунт.
+       Скрыты в Telegram Mini App, показываются только когда работаем по JWT. -->
+  <div id="standalone-footer" style="display:none;text-align:center;padding:14px 16px 80px;font-size:12px;color:var(--hint)">
+    <button onclick="doMobileLogout()" style="background:transparent;border:0;color:var(--hint);font-size:12px;text-decoration:underline;cursor:pointer;margin-right:14px">Выйти</button>
+    <button onclick="doDeleteAccount()" style="background:transparent;border:0;color:#e53935;font-size:12px;text-decoration:underline;cursor:pointer">Удалить аккаунт</button>
+  </div>
+
   <nav class="bottom-nav">
     <button class="nav-btn active" id="nav-collection" onclick="switchTab('collection')">
       <i data-lucide="layers" class="nav-icon"></i>Карточки
@@ -901,6 +908,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="main.js?v=20260507b"></script>
+<script src="main.js?v=20260507d"></script>
 </body>
 </html>
