@@ -471,10 +471,18 @@ window.doCheckin = async function () {
 
 // ── Collection ────────────────────────────────────────────────────────────────
 
-// Стейт активного челленджа — нужен для модалки. Подгружается в loadChallengeBanner.
-let __activeChallenge = null;
+// Стейт активных челленджей — массив, нужен для модалки. Подгружается в loadChallengeBanner.
+let __activeChallenges = [];
 
 const SEASON_ICON_MAP = { spring: '🌸', summer: '🏄', autumn: '🍂', winter: '⭐' };
+// Палитра для дополнительных челленджей. Первый берёт сезонную иконку,
+// остальные — из этой палитры по индексу, чтобы все визуально отличались.
+const CHALLENGE_ICON_PALETTE = ['🏆', '🎯', '💎', '🔥', '🎁', '🏅', '⚡', '🌟', '🚀', '🎪'];
+
+function pickChallengeIcon(challenge, index) {
+  if (index === 0) return SEASON_ICON_MAP[challenge.season] || CHALLENGE_ICON_PALETTE[0];
+  return CHALLENGE_ICON_PALETTE[(index - 1) % CHALLENGE_ICON_PALETTE.length];
+}
 
 /** Текст награды: «🃏 X + 💰 +N монет» / «🃏 X» / «💰 +N монет» */
 function formatChallengeReward(challenge) {
@@ -496,54 +504,60 @@ function formatChallengeAwardedStatus(challenge) {
   return items.join(' · ') || 'Награда отсутствует';
 }
 
+function renderChallengeCard(challenge, index) {
+  const icon = pickChallengeIcon(challenge, index);
+  if (challenge.completed) {
+    return `
+      <div class="challenge-card challenge-done" onclick="openChallengeModal(${challenge.id})" style="cursor:pointer">
+        <div class="challenge-icon">${icon}</div>
+        <div class="challenge-body">
+          <div class="challenge-name">${escapeHtml(challenge.name)}</div>
+          <div class="challenge-cond" style="color:var(--green);font-weight:700">✅ Челлендж выполнен! ${escapeHtml(formatChallengeAwardedStatus(challenge))}.</div>
+          <div style="font-size:11px;color:var(--hint);margin-top:6px">Нажми для подробностей →</div>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="challenge-card" onclick="openChallengeModal(${challenge.id})" style="cursor:pointer">
+      <div class="challenge-icon">${icon}</div>
+      <div class="challenge-body">
+        <div class="challenge-label">Сезонный челлендж</div>
+        <div class="challenge-name">${escapeHtml(challenge.name)}</div>
+        <div class="challenge-cond">${escapeHtml(challenge.conditionDescription || '')}</div>
+        <div class="challenge-footer">
+          <span class="challenge-reward">${formatChallengeReward(challenge)}</span>
+          <span class="challenge-days">${challenge.daysLeft} ${plural(challenge.daysLeft,'день','дня','дней')}</span>
+        </div>
+        <div style="font-size:11px;color:var(--hint);margin-top:8px">Нажми, чтобы открыть подробное описание →</div>
+      </div>
+    </div>`;
+}
+
 async function loadChallengeBanner() {
   const el = document.getElementById('challenge-banner');
   if (!el) return;
   try {
-    const { challenge } = await apiFetch('/challenge');
-    __activeChallenge = challenge;
-    if (!challenge) { el.innerHTML = ''; return; }
-
-    const icon = SEASON_ICON_MAP[challenge.season] || '🏆';
-
-    if (challenge.completed) {
-      el.innerHTML = `
-        <div class="challenge-card challenge-done" onclick="openChallengeModal()" style="cursor:pointer">
-          <div class="challenge-icon">${icon}</div>
-          <div class="challenge-body">
-            <div class="challenge-name">${escapeHtml(challenge.name)}</div>
-            <div class="challenge-cond" style="color:var(--green);font-weight:700">✅ Челлендж выполнен! ${escapeHtml(formatChallengeAwardedStatus(challenge))}.</div>
-            <div style="font-size:11px;color:var(--hint);margin-top:6px">Нажми, чтобы посмотреть подробности →</div>
-          </div>
-        </div>`;
-      return;
-    }
-
-    el.innerHTML = `
-      <div class="challenge-card" onclick="openChallengeModal()" style="cursor:pointer">
-        <div class="challenge-icon">${icon}</div>
-        <div class="challenge-body">
-          <div class="challenge-label">Сезонный челлендж</div>
-          <div class="challenge-name">${escapeHtml(challenge.name)}</div>
-          <div class="challenge-cond">${escapeHtml(challenge.conditionDescription)}</div>
-          <div class="challenge-footer">
-            <span class="challenge-reward">${formatChallengeReward(challenge)}</span>
-            <span class="challenge-days">${challenge.daysLeft} ${plural(challenge.daysLeft,'день','дня','дней')}</span>
-          </div>
-          <div style="font-size:11px;color:var(--hint);margin-top:8px">Нажми, чтобы открыть подробное описание →</div>
-        </div>
-      </div>`;
+    const data = await apiFetch('/challenge');
+    // Поддерживаем оба формата: новый { challenges: [...] } и старый { challenge: ... }
+    const list = Array.isArray(data.challenges)
+      ? data.challenges
+      : (data.challenge ? [data.challenge] : []);
+    __activeChallenges = list;
+    if (list.length === 0) { el.innerHTML = ''; return; }
+    el.innerHTML = list.map((ch, i) => renderChallengeCard(ch, i)).join('');
   } catch {
     el.innerHTML = '';
   }
 }
 
-window.openChallengeModal = function () {
-  const ch = __activeChallenge;
+window.openChallengeModal = function (challengeId) {
+  const ch = __activeChallenges.find(c => c.id === challengeId) || __activeChallenges[0];
   if (!ch) return;
+  // Индекс — для согласованной иконки в модалке
+  const index = Math.max(0, __activeChallenges.findIndex(c => c.id === ch.id));
   const backdrop = document.getElementById('hero-modal');
   const body = document.getElementById('hero-modal-body');
-  const icon = SEASON_ICON_MAP[ch.season] || '🏆';
+  const icon = pickChallengeIcon(ch, index);
 
   const statusBlock = ch.completed
     ? `<div style="background:rgba(76,175,80,0.12);border:1px solid var(--green);border-radius:12px;padding:12px 14px;margin-top:14px">

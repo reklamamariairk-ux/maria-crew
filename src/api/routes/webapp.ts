@@ -4,7 +4,7 @@ import { pool } from '../../db/pool';
 import { getBalance, getHistory, getMonthlySummary } from '../../services/coin.service';
 import { getDailyQuestionsWithAnswers, submitAnswer } from '../../services/quiz.service';
 import { getStreak, doCheckin } from '../../services/streak.service';
-import { getActiveChallenge, checkAndCompleteChallenge } from '../../services/challenge.service';
+import { getActiveChallenges, checkAndCompleteChallenge } from '../../services/challenge.service';
 import { getAvailableCardCount } from '../../services/card.service';
 import { getPrizes, requestExchange, getExchangeHistory } from '../../services/exchange.service';
 import { notifyAdminNewExchange } from '../../bot/notifications/sender';
@@ -469,13 +469,14 @@ router.post('/checkin', async (req: Request, res: Response, next: NextFunction):
   } catch (err) { next(err); }
 });
 
-// GET /api/webapp/challenge
+// GET /api/webapp/challenge — возвращает массив challenges и (для обратной
+// совместимости со старыми клиентами) поле challenge = challenges[0].
 router.get('/challenge', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const auth = await requireAuth(req, res);
     if (!auth) return;
-    const challenge = await getActiveChallenge(auth.employee.id);
-    res.json({ challenge });
+    const challenges = await getActiveChallenges(auth.employee.id);
+    res.json({ challenges, challenge: challenges[0] ?? null });
   } catch (err) { next(err); }
 });
 

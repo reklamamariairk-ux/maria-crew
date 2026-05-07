@@ -25,10 +25,14 @@ function currentSeason(): string {
   return 'winter';
 }
 
-export async function getActiveChallenge(employeeId: number): Promise<ActiveChallenge | null> {
+/**
+ * Все активные челленджи для сотрудника на сегодня. Учитывает таргетинг
+ * по store_ids: если у челленджа задан список точек — попадает только если
+ * сотрудник из этой точки. Если store_ids = NULL — челлендж для всех.
+ */
+export async function getActiveChallenges(employeeId: number): Promise<ActiveChallenge[]> {
   const today = irkutskDate();
 
-  // Узнаём store_id сотрудника — нужен для фильтрации по store_ids челленджа
   const { rows: empRows } = await pool.query<{ storeId: number | null }>(
     `SELECT store_id AS "storeId" FROM employees WHERE id = $1`, [employeeId]
   );
@@ -52,60 +56,74 @@ export async function getActiveChallenge(employeeId: number): Promise<ActiveChal
        AND sc.start_date <= $1::date
        AND sc.end_date >= $1::date
        AND (sc.store_ids IS NULL OR $2::int = ANY(sc.store_ids))
-     ORDER BY sc.start_date DESC
-     LIMIT 1`,
+     ORDER BY sc.start_date DESC, sc.id DESC`,
     [today, employeeStoreId]
   );
 
-  if (!rows[0]) return null;
+  if (rows.length === 0) return [];
 
-  const ch = rows[0];
-
-  let { rows: entryRows } = await pool.query<{ completedAt: string; cardAwarded: boolean; coinsAwarded: boolean }>(
-    `SELECT completed_at::text AS "completedAt", card_awarded AS "cardAwarded", coins_awarded AS "coinsAwarded"
+  // Подтягиваем все entry одним запросом, чтобы не делать N+1
+  const challengeIds = rows.map(r => r.id);
+  const { rows: entryRows } = await pool.query<{
+    challengeId: number; cardAwarded: boolean; coinsAwarded: boolean;
+  }>(
+    `SELECT challenge_id AS "challengeId", card_awarded AS "cardAwarded", coins_awarded AS "coinsAwarded"
      FROM seasonal_challenge_entries
-     WHERE challenge_id = $1 AND employee_id = $2`,
-    [ch.id, employeeId]
+     WHERE employee_id = $1 AND challenge_id = ANY($2::int[])`,
+    [employeeId, challengeIds]
   );
+  const entryByChallenge = new Map(entryRows.map(e => [e.challengeId, e]));
 
-  // Если запись ещё не создана — пробуем завершить челлендж автоматически.
-  // Условие: серия >= 7 И всего правильных ответов >= 15.
-  if (!entryRows[0]) {
+  // Для каждого челленджа без entry — пробуем авто-завершить.
+  // Условия одни и те же сейчас (streak >= 7 + 15 правильных) — если выполнится,
+  // entry создастся для всех «доступных» челленджей.
+  for (const ch of rows) {
+    if (entryByChallenge.has(ch.id)) continue;
     try {
       const completed = await checkAndCompleteChallenge(employeeId, ch.id);
       if (completed) {
-        const re = await pool.query<{ completedAt: string; cardAwarded: boolean; coinsAwarded: boolean }>(
-          `SELECT completed_at::text AS "completedAt", card_awarded AS "cardAwarded", coins_awarded AS "coinsAwarded"
+        const { rows: re } = await pool.query<{ cardAwarded: boolean; coinsAwarded: boolean }>(
+          `SELECT card_awarded AS "cardAwarded", coins_awarded AS "coinsAwarded"
            FROM seasonal_challenge_entries
            WHERE challenge_id = $1 AND employee_id = $2`,
           [ch.id, employeeId]
         );
-        entryRows = re.rows;
+        if (re[0]) entryByChallenge.set(ch.id, { challengeId: ch.id, ...re[0] });
       }
     } catch (err) {
       console.error('[challenge] auto-complete failed:', err instanceof Error ? err.message : err);
     }
   }
 
-  const entry = entryRows[0] ?? null;
-  const endDate = new Date(ch.endDate);
-  const daysLeft = Math.max(0, Math.ceil((endDate.getTime() - Date.now()) / 86_400_000));
+  return rows.map(ch => {
+    const entry = entryByChallenge.get(ch.id) ?? null;
+    const endDate = new Date(ch.endDate);
+    const daysLeft = Math.max(0, Math.ceil((endDate.getTime() - Date.now()) / 86_400_000));
+    return {
+      id: ch.id,
+      name: ch.name,
+      description: ch.description,
+      season: ch.season,
+      conditionDescription: ch.conditionDescription,
+      startDate: ch.startDate,
+      endDate: ch.endDate,
+      heroName: ch.heroName,
+      coinReward: ch.coinReward,
+      daysLeft,
+      completed: !!entry,
+      cardAwarded: entry?.cardAwarded ?? false,
+      coinsAwarded: entry?.coinsAwarded ?? false,
+    };
+  });
+}
 
-  return {
-    id: ch.id,
-    name: ch.name,
-    description: ch.description,
-    season: ch.season,
-    conditionDescription: ch.conditionDescription,
-    startDate: ch.startDate,
-    endDate: ch.endDate,
-    heroName: ch.heroName,
-    coinReward: ch.coinReward,
-    daysLeft,
-    completed: !!entry,
-    cardAwarded: entry?.cardAwarded ?? false,
-    coinsAwarded: entry?.coinsAwarded ?? false,
-  };
+/**
+ * Backward-compat обёртка — возвращает первый из активных челленджей.
+ * Используется внутренне; новые места должны вызывать getActiveChallenges.
+ */
+export async function getActiveChallenge(employeeId: number): Promise<ActiveChallenge | null> {
+  const list = await getActiveChallenges(employeeId);
+  return list[0] ?? null;
 }
 
 export async function checkAndCompleteChallenge(employeeId: number, challengeId: number): Promise<boolean> {
