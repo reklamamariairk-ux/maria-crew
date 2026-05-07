@@ -10,6 +10,7 @@
     "migrate": "ts-node src/db/migrate.ts",
     "migrate:rollback": "ts-node src/db/migrate.ts rollback",
     "seed": "ts-node src/db/seed.ts",
+    "reset-admin-password": "ts-node src/scripts/reset-admin-password.ts",
     "test": "jest",
     "test:watch": "jest --watch"
   },
