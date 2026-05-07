@@ -1763,6 +1763,7 @@ async function loadChallenges() {
       <td>
         <div class="row-actions">
           <button class="btn btn-ghost btn-sm btn-icon" onclick="editChallenge(${ch.id})" title="Редактировать"><i data-lucide="pencil"></i></button>
+          <button class="btn btn-ghost btn-sm btn-icon" onclick="duplicateChallenge(${ch.id})" title="Копировать"><i data-lucide="copy"></i></button>
           <button class="btn btn-danger btn-sm btn-icon" onclick="deleteChallenge(${ch.id})" title="Удалить"><i data-lucide="trash-2"></i></button>
         </div>
       </td>
@@ -1816,22 +1817,36 @@ async function showAddChallenge() {
   renderIcons();
 }
 
-async function editChallenge(id) {
+/**
+ * Заполняет форму челленджа значениями из существующей записи.
+ * mode: 'edit' — режим редактирования (PUT), 'duplicate' — копия (POST новой записи).
+ */
+async function _prefillChallengeForm(id, mode) {
   const list = await api('GET', '/challenges') || [];
   const ch = list.find(c => c.id === id);
-  if (!ch) { toast('Челлендж не найден'); return; }
+  if (!ch) { toast('Челлендж не найден'); return null; }
 
-  editingChallengeId = id;
-  document.getElementById('ch-form-title').textContent = `Редактирование: ${ch.name}`;
-  document.getElementById('ch-save-btn').innerHTML = '<i data-lucide="save"></i> Сохранить';
-  document.getElementById('ch-active-row').style.display = '';
+  if (mode === 'edit') {
+    editingChallengeId = id;
+    document.getElementById('ch-form-title').textContent = `Редактирование: ${ch.name}`;
+    document.getElementById('ch-save-btn').innerHTML = '<i data-lucide="save"></i> Сохранить';
+    document.getElementById('ch-active-row').style.display = '';
+  } else {
+    // duplicate — это создание новой записи на основе существующей
+    editingChallengeId = null;
+    document.getElementById('ch-form-title').textContent = `Новый челлендж (копия от «${ch.name}»)`;
+    document.getElementById('ch-save-btn').innerHTML = '<i data-lucide="check"></i> Создать';
+    document.getElementById('ch-active-row').style.display = 'none';
+  }
 
   const form = document.getElementById('add-challenge-form');
   form.classList.remove('hidden');
 
   // Заполняем поля. Бэк возвращает поля в snake_case (start_date, end_date,
   // hero_id, condition_description), потому что SELECT *. Поддерживаем оба варианта.
-  document.getElementById('ch-name').value = ch.name ?? '';
+  // Для duplicate — добавляем «(копия)» к имени, чтобы было видно что это новая запись.
+  const nameVal = mode === 'duplicate' ? `${ch.name} (копия)` : (ch.name ?? '');
+  document.getElementById('ch-name').value = nameVal;
   document.getElementById('ch-season').value = ch.season ?? 'spring';
   document.getElementById('ch-year').value = ch.year ?? new Date().getFullYear();
   document.getElementById('ch-coin-reward').value = String(ch.coinReward ?? ch.coin_reward ?? 0);
@@ -1855,6 +1870,14 @@ async function editChallenge(id) {
   }
   onChallengeStoresAllToggle();
   renderIcons();
+}
+
+async function editChallenge(id) {
+  return _prefillChallengeForm(id, 'edit');
+}
+
+async function duplicateChallenge(id) {
+  return _prefillChallengeForm(id, 'duplicate');
 }
 
 async function refreshChallengeHeroSelect(selectedId) {
