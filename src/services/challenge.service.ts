@@ -9,7 +9,7 @@ export interface ActiveChallenge {
   conditionDescription: string;
   startDate: string;
   endDate: string;
-  heroName: string;
+  heroName: string | null;
   coinReward: number;
   daysLeft: number;
   completed: boolean;
@@ -37,13 +37,13 @@ export async function getActiveChallenge(employeeId: number): Promise<ActiveChal
   const { rows } = await pool.query<{
     id: number; name: string; description: string; season: string;
     conditionDescription: string; startDate: string; endDate: string;
-    heroName: string; coinReward: number; storeIds: number[] | null;
+    heroName: string | null; coinReward: number; storeIds: number[] | null;
   }>(
     `SELECT sc.id, sc.name, sc.description, sc.season,
             sc.condition_description AS "conditionDescription",
             sc.start_date::text AS "startDate",
             sc.end_date::text AS "endDate",
-            COALESCE(h.name, 'Лимитная карточка') AS "heroName",
+            h.name AS "heroName",
             sc.coin_reward AS "coinReward",
             sc.store_ids  AS "storeIds"
      FROM seasonal_challenges sc
