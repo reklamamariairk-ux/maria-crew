@@ -61,14 +61,23 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
       if (storeIdsArr.length === 0) storeIdsArr = null; // трактуем как «все»
     }
 
-    const ch = await createChallenge({
-      name: name.trim(), description, season, year: yearNum, heroId,
-      startDate, endDate, conditionDescription,
-      coinReward: coinRewardNum,
-      storeIds: storeIdsArr,
-    });
-    res.status(201).json(ch);
-    logAudit('challenge_create', { challengeId: ch.id, name, season, year: yearNum, coinReward: coinRewardNum, storeIds: storeIdsArr }, req.ip).catch(() => {});
+    try {
+      const ch = await createChallenge({
+        name: name.trim(), description, season, year: yearNum, heroId,
+        startDate, endDate, conditionDescription,
+        coinReward: coinRewardNum,
+        storeIds: storeIdsArr,
+      });
+      res.status(201).json(ch);
+      logAudit('challenge_create', { challengeId: ch.id, name, season, year: yearNum, coinReward: coinRewardNum, storeIds: storeIdsArr }, req.ip).catch(() => {});
+    } catch (err) {
+      // Постгрес 23505 — нарушение уникального индекса
+      if (err instanceof Error && /duplicate key|unique constraint/i.test(err.message)) {
+        res.status(409).json({ error: 'Челлендж с такими параметрами уже существует' });
+        return;
+      }
+      throw err;
+    }
   } catch (err) { next(err); }
 });
 
