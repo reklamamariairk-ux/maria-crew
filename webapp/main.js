@@ -24,6 +24,32 @@ function saveMobileToken(token) {
   try { token ? localStorage.setItem('mc_mobile_token', token) : localStorage.removeItem('mc_mobile_token'); } catch { /* ignore */ }
 }
 
+// ── Кеш профиля для мгновенного UI («stale-while-revalidate») ────────────────
+// Render free tier засыпает после 15 мин — cold start ~30с. Чтобы юзер не ждал,
+// при следующем открытии показываем UI из localStorage за <100мс, а свежие данные
+// тянем в фоне и обновляем что изменилось.
+const CACHE_KEY = 'mc_cached_me_v1';
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 часа — после этого считаем кеш слишком старым
+
+function loadCachedMe() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj || !obj.savedAt || !obj.data) return null;
+    if (Date.now() - obj.savedAt > CACHE_TTL_MS) return null;
+    return obj.data;
+  } catch { return null; }
+}
+function saveCachedMe(me) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data: me }));
+  } catch { /* quota exceeded — игнор */ }
+}
+function clearCachedMe() {
+  try { localStorage.removeItem(CACHE_KEY); } catch {}
+}
+
 let employee = null;
 let currentTab = 'collection';
 let storeTab = 'cards';
@@ -603,6 +629,7 @@ window.saveProfileEdit = async function () {
     employee.telegramPhotoUrl = data.telegramPhotoUrl;
     document.getElementById('header-name').textContent = data.name;
     setAvatar(data.name);
+    saveCachedMe(employee); // обновляем кеш для следующего быстрого старта
     closeProfileEdit();
     showToast('✅ Профиль сохранён');
   } catch (e) {
@@ -616,6 +643,7 @@ window.saveProfileEdit = async function () {
 window.doMobileLogout = function () {
   if (!confirm('Выйти из приложения?')) return;
   saveMobileToken(null);
+  clearCachedMe();
   location.reload();
 };
 
@@ -630,6 +658,7 @@ window.doDeleteAccount = async function () {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { showToast(data.error || 'Не удалось удалить'); return; }
     saveMobileToken(null);
+    clearCachedMe();
     alert('Аккаунт удалён.');
     location.reload();
   } catch (e) {
@@ -762,14 +791,56 @@ async function init() {
       return;
     }
 
-    // Есть сохранённый токен — грузим профиль через /me и сразу показываем UI,
-    // минуя authMiniApp (он требует Telegram initData, которого тут нет).
+    // Stale-while-revalidate: если есть кеш — показываем UI ИГНОРИРУЯ медленный сервер,
+    // а свежие данные подгружаются в фоне.
+    const cached = loadCachedMe();
+    if (cached) {
+      employee = cached;
+      myStatsCache = cached;
+
+      const footer = document.getElementById('standalone-footer');
+      if (footer) footer.style.display = '';
+
+      showApp({
+        availableCards: cached.availableCards ?? 0,
+        coinBalance: cached.coinBalance ?? 0,
+        uniqueHeroes: cached.uniqueHeroes ?? 0,
+      });
+
+      // Background refresh — не блокирует UI
+      apiFetch('/me').then(me => {
+        if (me && me.id) {
+          employee = me; myStatsCache = me;
+          saveCachedMe(me);
+          updateHeaderStats({
+            availableCards: me.availableCards ?? 0,
+            coinBalance: me.coinBalance ?? 0,
+            uniqueHeroes: me.uniqueHeroes ?? 0,
+          });
+          // Обновим имя/аватар в шапке если изменились
+          if (me.name) {
+            document.getElementById('header-name').textContent = me.name;
+            setAvatar(me.name);
+          }
+        }
+      }).catch(err => {
+        // Токен протух — выкинем на login. Иначе просто игнор (сеть/cold start).
+        if (String(err.message || '').toLowerCase().includes('unauthor')) {
+          saveMobileToken(null); clearCachedMe();
+          showLoginScreen();
+        }
+      });
+      return;
+    }
+
+    // Кеша нет — это первый вход. Ждём сервер с прогрессивными подсказками.
     try {
       startLoadingProgress();
       const me = await apiFetch('/me');
       if (!me || !me.id) throw new Error('Не авторизован');
       employee = me;
       myStatsCache = me;
+      saveCachedMe(me);
 
       const footer = document.getElementById('standalone-footer');
       if (footer) footer.style.display = '';
@@ -781,14 +852,11 @@ async function init() {
         uniqueHeroes: me.uniqueHeroes ?? 0,
       });
 
-      // Push-уведомления отключены до настройки Firebase (google-services.json
-      // в android/app/). Без него Push.register() крашит нативный процесс.
-      // Раскомментировать после Firebase setup:
+      // Push-уведомления отключены до настройки Firebase
       // setupPushNotifications().catch(err => console.warn('[push] setup failed:', err));
     } catch (err) {
       stopLoadingProgress();
-      // Токен протух или сервер недоступен — обратно на login
-      saveMobileToken(null);
+      saveMobileToken(null); clearCachedMe();
       showLoginScreen();
     }
     return;
