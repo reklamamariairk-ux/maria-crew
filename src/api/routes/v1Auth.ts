@@ -10,7 +10,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { rateLimit } from '../middleware/rateLimit';
 import { employeeAuth } from '../middleware/employeeAuth';
 import { requestPin, verifyPinAndIssueToken, registerNewEmployee } from '../../services/employeeAuth.service';
-import { sendLoginPin } from '../../bot/notifications/sender';
+import { sendLoginPin, notifyManagersOfNewEmployee } from '../../bot/notifications/sender';
 import { pool } from '../../db/pool';
 
 const router = Router();
@@ -92,6 +92,8 @@ router.post(
         expiresAt: result.expiresAt.toISOString(),
         employeeId: result.employeeId,
       });
+      // Async: уведомление менеджерам точки и владельцу — без блокировки ответа
+      notifyManagersOfNewEmployee(result.employeeId, Number(storeId)).catch(() => { /* not critical */ });
     } catch (err) { next(err); }
   }
 );

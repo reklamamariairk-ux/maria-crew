@@ -4,6 +4,7 @@ import type { BotContext } from '../context';
 import { esc, monthName, coinReasonLabel, cardSourceLabel } from '../helpers';
 import type { ProcessMonthResult } from '../../types';
 import { sendPushToEmployee } from '../../services/push.service';
+import { saveNotification } from '../../services/notification.service';
 
 let _bot: Bot<BotContext> | null = null;
 
@@ -56,6 +57,14 @@ export async function notifyCoinAward(
     body: note ? `${label} · ${note}` : label,
     data: { type: 'coin_award', amount: String(amount), reason },
   }).catch(() => { /* push не критичен */ });
+
+  // Сохраняем в inbox (колокольчик в приложении)
+  await saveNotification(employeeId, {
+    type: 'coin_award',
+    title: `${emoji} ${sign}${amount} ${coinWord(Math.abs(amount))}`,
+    body: note ? `${label} · ${note}` : label,
+    data: { amount, reason, note: note ?? null },
+  });
 }
 
 /** Уведомление о выдаче карточки вручную или за метрики — Telegram + push */
@@ -83,6 +92,13 @@ export async function notifyCardAward(
     body: `${heroName} · ${sourceLabel}`,
     data: { type: 'card_award', heroName, source, isMvp: String(isMvp) },
   }).catch(() => {});
+
+  await saveNotification(employeeId, {
+    type: 'card_award',
+    title: `🃏 Новая карточка${mvpTag}`,
+    body: `${heroName} · ${sourceLabel}`,
+    data: { heroName, source, isMvp },
+  });
 }
 
 /** Уведомление о подтверждённой/отклонённой заявке на обмен */
@@ -274,6 +290,60 @@ export async function alertOwner(message: string, throttleMs = 60 * 60 * 1000): 
     await _bot.api.sendMessage(ownerId, text, { parse_mode: 'HTML' });
   } catch (err) {
     console.error('[alertOwner] failed to send:', err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * Уведомляет руководителей точки и владельца о новой регистрации сотрудника
+ * через мобильное приложение. Помогает быстро заметить мошенника / опечатку.
+ */
+export async function notifyManagersOfNewEmployee(
+  employeeId: number,
+  storeId: number,
+): Promise<void> {
+  if (!_bot) return;
+  try {
+    const { rows } = await pool.query<{
+      employeeName: string; storeName: string;
+      managerTelegramIds: string[];
+    }>(
+      `SELECT e.name AS "employeeName",
+              s.name AS "storeName",
+              COALESCE(
+                (SELECT array_agg(m.telegram_id::text)
+                 FROM employees m
+                 WHERE m.store_id = $2 AND m.role = 'manager'
+                   AND m.is_active = true AND m.telegram_id IS NOT NULL),
+                ARRAY[]::text[]
+              ) AS "managerTelegramIds"
+       FROM employees e
+       LEFT JOIN stores s ON s.id = $2
+       WHERE e.id = $1`,
+      [employeeId, storeId]
+    );
+    const r = rows[0];
+    if (!r) return;
+
+    const text =
+      `👋 <b>Новая регистрация в Maria Crew</b>\n\n` +
+      `Сотрудник: <b>${esc(r.employeeName)}</b>\n` +
+      `Точка: ${esc(r.storeName ?? '—')}\n\n` +
+      `Если этот человек тебе незнаком — деактивируй его в админке: ` +
+      `https://maria-crew.onrender.com/admin (вкладка Сотрудники).`;
+
+    // Менеджерам точки
+    for (const tgId of r.managerTelegramIds ?? []) {
+      try { await _bot.api.sendMessage(tgId, text, { parse_mode: 'HTML' }); }
+      catch { /* пользователь заблокировал бота — пропускаем */ }
+    }
+    // Владелец (OWNER_TELEGRAM_ID) — всегда
+    const ownerId = process.env.OWNER_TELEGRAM_ID;
+    if (ownerId) {
+      try { await _bot.api.sendMessage(ownerId, text, { parse_mode: 'HTML' }); }
+      catch { /* ignore */ }
+    }
+  } catch (err) {
+    console.error('[notifyManagers] failed:', err instanceof Error ? err.message : err);
   }
 }
 

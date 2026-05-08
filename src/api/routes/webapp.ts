@@ -11,6 +11,8 @@ import { notifyAdminNewExchange } from '../../bot/notifications/sender';
 import { getEmployeeLeaderboard, getStoreLeaderboard } from '../../services/rating.service';
 import { markWebappAuth } from '../../diagnostics';
 import { verifyEmployeeToken } from '../../services/employeeAuth.service';
+import { listNotifications, countUnread, markAllAsRead, markAsRead } from '../../services/notification.service';
+import { normalizePhone } from '../../services/employeeAuth.service';
 
 const router = Router();
 
@@ -528,6 +530,95 @@ router.post('/challenge/check', async (req: Request, res: Response, next: NextFu
     if (!challengeId) { res.status(400).json({ error: 'challengeId обязателен' }); return; }
     const completed = await checkAndCompleteChallenge(auth.employee.id, challengeId);
     res.json({ completed });
+  } catch (err) { next(err); }
+});
+
+// PATCH /api/webapp/account — редактирование своего профиля.
+// Работает и через Telegram initData, и через Bearer JWT (requireAuth держит оба).
+router.patch('/account', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const employeeId = auth.employee.id;
+
+    const { name, phone, avatarUrl } = req.body as {
+      name?: string; phone?: string; avatarUrl?: string | null;
+    };
+
+    const sets: string[] = [];
+    const vals: (string | null | number)[] = [];
+
+    if (name !== undefined) {
+      const trimmed = name.trim();
+      if (!trimmed || trimmed.length > 100) { res.status(400).json({ error: 'Имя должно быть от 1 до 100 символов' }); return; }
+      vals.push(trimmed); sets.push(`name = $${vals.length}`);
+    }
+
+    if (phone !== undefined) {
+      const phoneNorm = normalizePhone(phone);
+      if (phoneNorm.length !== 11) { res.status(400).json({ error: 'Неверный формат телефона. Введи 11 цифр' }); return; }
+      const { rows: dup } = await pool.query<{ id: number }>(
+        `SELECT id FROM employees WHERE phone_normalized = $1 AND id <> $2`,
+        [phoneNorm, employeeId]
+      );
+      if (dup[0]) { res.status(409).json({ error: 'Этот номер уже занят другим сотрудником' }); return; }
+      vals.push('+' + phoneNorm); sets.push(`phone = $${vals.length}`);
+      vals.push(phoneNorm); sets.push(`phone_normalized = $${vals.length}`);
+    }
+
+    if (avatarUrl !== undefined) {
+      const url = avatarUrl && avatarUrl.trim() ? avatarUrl.trim() : null;
+      vals.push(url); sets.push(`telegram_photo_url = $${vals.length}`);
+    }
+
+    if (sets.length === 0) { res.status(400).json({ error: 'Нечего обновлять' }); return; }
+
+    vals.push(employeeId);
+    const { rows } = await pool.query(
+      `UPDATE employees SET ${sets.join(', ')} WHERE id = $${vals.length}
+       RETURNING id, name, phone, telegram_photo_url AS "telegramPhotoUrl",
+                 store_id AS "storeId", role`,
+      vals
+    );
+    if (!rows[0]) { res.status(404).json({ error: 'Не найден' }); return; }
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// ── Inbox уведомлений (доступен и из Telegram Mini App, и из мобилки) ────
+
+// GET /api/webapp/notifications
+router.get('/notifications', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const limit = parseInt(String(req.query.limit ?? '50'), 10) || 50;
+    const [items, unread] = await Promise.all([
+      listNotifications(auth.employee.id, limit),
+      countUnread(auth.employee.id),
+    ]);
+    res.json({ items, unread });
+  } catch (err) { next(err); }
+});
+
+router.post('/notifications/read-all', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const updated = await markAllAsRead(auth.employee.id);
+    res.json({ ok: true, updated });
+  } catch (err) { next(err); }
+});
+
+router.post('/notifications/read', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const { ids } = req.body as { ids?: number[] };
+    if (!Array.isArray(ids) || ids.length === 0) { res.status(400).json({ error: 'ids обязательны' }); return; }
+    const validIds = ids.map(n => Number(n)).filter(n => Number.isInteger(n) && n > 0);
+    const updated = await markAsRead(auth.employee.id, validIds);
+    res.json({ ok: true, updated });
   } catch (err) { next(err); }
 });
 

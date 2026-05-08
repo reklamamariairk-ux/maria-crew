@@ -441,6 +441,103 @@ async function setupPushNotifications() {
   await Push.register();
 }
 
+// ── Inbox уведомлений (колокольчик) ──────────────────────────────────────────
+
+const INBOX_TYPE_EMOJI = {
+  coin_award: '💰',
+  card_award: '🃏',
+  exchange: '🎁',
+  challenge: '🏆',
+  system: '🔔',
+};
+
+async function refreshInboxBadge() {
+  try {
+    const data = await apiFetch('/notifications?limit=1');
+    const count = data.unread || 0;
+    const el = document.getElementById('bell-count');
+    if (!el) return;
+    if (count > 0) {
+      el.textContent = count > 99 ? '99+' : String(count);
+      el.style.display = '';
+    } else {
+      el.style.display = 'none';
+    }
+  } catch { /* network error — ignore, попробуем при следующем открытии */ }
+}
+
+window.openInbox = async function () {
+  const overlay = document.getElementById('inbox-overlay');
+  const list = document.getElementById('inbox-list');
+  list.innerHTML = '<div class="inbox-empty"><div class="empty-icon">⏳</div><div>Загружаем…</div></div>';
+  overlay.classList.add('show');
+  try { tg?.HapticFeedback?.impactOccurred('light'); } catch {}
+
+  try {
+    const data = await apiFetch('/notifications?limit=50');
+    renderInbox(data.items || []);
+    // Авто-помечаем как прочитанные после открытия (UX: badge сразу гаснет)
+    if ((data.unread || 0) > 0) {
+      await apiFetch('/notifications/read-all', { method: 'POST' }).catch(() => {});
+      refreshInboxBadge();
+    }
+  } catch (err) {
+    list.innerHTML = `<div class="inbox-empty"><div class="empty-icon">😕</div><div>${escapeHtml(err.message || 'Не удалось загрузить')}</div></div>`;
+  }
+};
+
+window.closeInbox = function () {
+  document.getElementById('inbox-overlay').classList.remove('show');
+};
+
+window.markInboxAllRead = async function () {
+  try {
+    await apiFetch('/notifications/read-all', { method: 'POST' });
+    document.querySelectorAll('.inbox-item.unread').forEach(el => el.classList.remove('unread'));
+    refreshInboxBadge();
+    showToast('Все уведомления прочитаны');
+  } catch (err) {
+    showToast('Не удалось');
+  }
+};
+
+function renderInbox(items) {
+  const list = document.getElementById('inbox-list');
+  if (!items.length) {
+    list.innerHTML = '<div class="inbox-empty"><div class="empty-icon">📭</div><div>Уведомлений пока нет</div></div>';
+    return;
+  }
+  list.innerHTML = items.map(it => {
+    const emoji = INBOX_TYPE_EMOJI[it.type] || '🔔';
+    const unreadCls = it.readAt ? '' : ' unread';
+    return `
+      <div class="inbox-item${unreadCls}">
+        <div class="inbox-item-emoji">${emoji}</div>
+        <div class="inbox-item-body">
+          <div class="inbox-item-title">${escapeHtml(it.title || '')}</div>
+          <div class="inbox-item-text">${escapeHtml(it.body || '')}</div>
+          <div class="inbox-item-time">${formatInboxTime(it.createdAt)}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function formatInboxTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now - d;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'только что';
+  if (diffMin < 60) return diffMin + ' ' + plural(diffMin, 'минуту', 'минуты', 'минут') + ' назад';
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return diffH + ' ' + plural(diffH, 'час', 'часа', 'часов') + ' назад';
+  const diffD = Math.floor(diffH / 24);
+  if (diffD < 7) return diffD + ' ' + plural(diffD, 'день', 'дня', 'дней') + ' назад';
+  return fmt(d);
+}
+
 // ── Профиль (редактирование, только в standalone) ────────────────────────────
 window.openProfileEdit = function () {
   if (!employee) return;
@@ -496,17 +593,11 @@ window.saveProfileEdit = async function () {
   const btn = document.getElementById('prof-save-btn');
   btn.disabled = true; btn.textContent = 'Сохраняем...';
   try {
-    const res = await fetch(API_V1 + '/account', {
+    // apiFetch сам подставит правильный auth (initData в Telegram, Bearer в standalone)
+    const data = await apiFetch('/account', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + mobileToken },
-      body: JSON.stringify({ name, phone, avatarUrl: avatarUrl || null }),
+      body: JSON.stringify({ name, phone: phone || undefined, avatarUrl: avatarUrl || null }),
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      document.getElementById('prof-error').textContent = data.error || 'Не удалось сохранить';
-      return;
-    }
-    // Локально обновляем employee и шапку
     employee.name = data.name;
     employee.phone = data.phone;
     employee.telegramPhotoUrl = data.telegramPhotoUrl;
@@ -515,7 +606,7 @@ window.saveProfileEdit = async function () {
     closeProfileEdit();
     showToast('✅ Профиль сохранён');
   } catch (e) {
-    document.getElementById('prof-error').textContent = 'Нет связи с сервером';
+    document.getElementById('prof-error').textContent = e.message || 'Не удалось сохранить';
   } finally {
     btn.disabled = false; btn.textContent = 'Сохранить';
   }
@@ -807,6 +898,13 @@ function showApp(stats) {
 
   // Load streak info
   apiFetch('/streak').then(updateStreakBadge).catch(() => {});
+
+  // Загрузим счётчик непрочитанных в колокольчик. Дальше обновляется при
+  // открытии inbox и периодически (каждые 60 сек, если приложение открыто).
+  refreshInboxBadge();
+  if (!window._inboxRefreshTimer) {
+    window._inboxRefreshTimer = setInterval(refreshInboxBadge, 60_000);
+  }
 
   // Если у сотрудника нет номера телефона — попросим один раз
   maybeRequestPhoneOnce();
