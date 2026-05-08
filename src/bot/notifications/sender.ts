@@ -108,16 +108,40 @@ export async function notifyExchangeStatus(
   status: 'fulfilled' | 'rejected',
   notes?: string
 ): Promise<void> {
+  const isFulfilled = status === 'fulfilled';
+  const reasonSuffix = !isFulfilled && notes ? `\nПричина: ${notes}` : '';
+
+  const title = isFulfilled
+    ? '🎁 Приз выдан!'
+    : '❌ Заявка отклонена';
+  const body = isFulfilled
+    ? `«${prizeName}» — забирай у руководителя.`
+    : `Приз: «${prizeName}». Карточки и монеты возвращены на баланс.${reasonSuffix}`;
+
+  // Telegram (если привязан)
   const tgId = await getEmployeeTelegramId(employeeId);
-  if (!tgId) return;
-  if (status === 'fulfilled') {
-    const text = `🎁 <b>Приз выдан!</b>\n«${esc(prizeName)}» — забирай у руководителя.`;
-    await send(tgId, text);
-  } else {
-    const reason = notes ? `\n<i>Причина: ${esc(notes)}</i>` : '';
-    const text = `❌ <b>Заявка отклонена</b>\nПриз: «${esc(prizeName)}». Карточки/монеты возвращены на баланс.${reason}`;
+  if (tgId) {
+    const escNotes = notes ? `\n<i>Причина: ${esc(notes)}</i>` : '';
+    const text = isFulfilled
+      ? `🎁 <b>Приз выдан!</b>\n«${esc(prizeName)}» — забирай у руководителя.`
+      : `❌ <b>Заявка отклонена</b>\nПриз: «${esc(prizeName)}». Карточки и монеты возвращены на баланс.${escNotes}`;
     await send(tgId, text);
   }
+
+  // Push в мобилку
+  await sendPushToEmployee(employeeId, {
+    title,
+    body,
+    data: { type: 'exchange', status, prizeName },
+  }).catch(() => {});
+
+  // Inbox (колокольчик в приложении) — работает даже если нет Telegram-привязки
+  await saveNotification(employeeId, {
+    type: 'exchange',
+    title,
+    body,
+    data: { status, prizeName, notes: notes ?? null },
+  });
 }
 
 function coinWord(n: number): string {

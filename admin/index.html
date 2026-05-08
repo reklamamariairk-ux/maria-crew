@@ -413,8 +413,14 @@
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Сотрудник</th><th>Точка</th><th>Приз</th>
-            <th>Карт.</th><th>Монет</th><th>Дата</th><th>Статус</th><th>Действие</th>
+            <th>Сотрудник</th>
+            <th class="col-hide-sm">Точка</th>
+            <th>Приз</th>
+            <th class="col-hide-sm">Карт.</th>
+            <th class="col-hide-xs">Монет</th>
+            <th class="col-hide-xs">Дата</th>
+            <th>Статус</th>
+            <th>Действие</th>
           </tr></thead>
           <tbody id="exchanges-tbody">
             <tr><td colspan="8" class="empty">Загрузка...</td></tr>
@@ -499,8 +505,16 @@
         <table>
           <thead><tr>
             <th style="width:32px"><input type="checkbox" id="emp-select-all" onchange="toggleSelectAllEmployees(this)"></th>
-            <th style="width:48px"></th>
-            <th>Имя</th><th>Telegram</th><th>Точка</th><th>Роль</th><th>Карт.</th><th>Монет</th><th>Героев</th><th>В сети</th><th>Действие</th>
+            <th style="width:48px" class="col-hide-sm"></th>
+            <th>Имя</th>
+            <th class="col-hide-md">Telegram</th>
+            <th>Точка</th>
+            <th class="col-hide-sm">Роль</th>
+            <th class="col-hide-md">Карт.</th>
+            <th class="col-hide-sm">Монет</th>
+            <th class="col-hide-md">Героев</th>
+            <th class="col-hide-sm">В сети</th>
+            <th>Действие</th>
           </tr></thead>
           <tbody id="employees-tbody">
             <tr><td colspan="11" class="empty">Загрузка...</td></tr>
@@ -1159,6 +1173,27 @@
         <button class="btn btn-ghost" onclick="closeRejectModal()">Отмена</button>
         <button class="btn btn-danger" onclick="confirmReject()"><i data-lucide="x"></i> Отклонить</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Модалка: Универсальное подтверждение ─────────────────────────────── -->
+<div id="modal-confirm" class="modal-overlay hidden" onclick="if(event.target===this)_confirmCancel()">
+  <div class="modal-box modal-confirm-box">
+    <div class="modal-header">
+      <h2 class="modal-title" id="confirm-title">Подтверждение</h2>
+      <button class="modal-close" onclick="_confirmCancel()" aria-label="Закрыть"><i data-lucide="x"></i></button>
+    </div>
+    <div class="modal-confirm-body">
+      <div id="confirm-message"></div>
+      <div id="confirm-warning" class="confirm-warning hidden">
+        <i data-lucide="alert-triangle"></i>
+        <span id="confirm-warning-text"></span>
+      </div>
+    </div>
+    <div class="modal-confirm-footer">
+      <button class="btn btn-ghost" id="confirm-cancel" onclick="_confirmCancel()">Отмена</button>
+      <button class="btn btn-primary" id="confirm-ok" onclick="_confirmOk()">Подтвердить</button>
     </div>
   </div>
 </div>

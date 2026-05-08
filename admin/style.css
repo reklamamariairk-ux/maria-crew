@@ -617,6 +617,65 @@ table select {
 }
 .modal-close:hover { background: var(--border); color: var(--text); }
 
+/* ── Адаптивные колонки таблиц ─────────────────────────────────────── */
+/* Применяется к <th> и <td>: на узких экранах прячем некритичные колонки.
+   Колонка должна быть либо у всех ячеек строки, либо ни у одной. */
+@media (max-width: 1024px) {
+  .col-hide-md { display: none !important; }
+}
+@media (max-width: 768px) {
+  .col-hide-sm { display: none !important; }
+}
+@media (max-width: 600px) {
+  .col-hide-xs { display: none !important; }
+}
+
+/* ── Confirm dialog ─────────────────────────────────────────────────── */
+.modal-confirm-box {
+  max-width: 480px;
+  width: 95%;
+}
+.modal-confirm-body {
+  padding: 18px 20px 8px;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.5;
+}
+.modal-confirm-body p {
+  margin: 0 0 8px;
+}
+.modal-confirm-body p:last-child { margin-bottom: 0; }
+.confirm-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(245, 158, 11, 0.10);
+  border: 1px solid rgba(245, 158, 11, 0.30);
+  border-radius: var(--r-sm);
+  color: #92400E;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.confirm-warning.hidden { display: none; }
+.confirm-warning i {
+  width: 18px; height: 18px;
+  flex-shrink: 0;
+  color: #B45309;
+  margin-top: 1px;
+}
+.modal-confirm-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 14px 20px 18px;
+}
+@media (max-width: 480px) {
+  .modal-confirm-footer { flex-direction: column-reverse; }
+  .modal-confirm-footer .btn { width: 100%; justify-content: center; }
+}
+
 /* ── Form column layout ──────────────────────────────────────────────── */
 .form-col { display: flex; flex-direction: column; gap: 12px; }
 .form-col label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--text-2); font-weight: 500; }

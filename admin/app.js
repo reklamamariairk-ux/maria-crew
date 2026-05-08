@@ -492,7 +492,13 @@ async function saveMetrics() {
 
 async function processMonth() {
   if (!state.storeId) { toast('Выберите точку'); return; }
-  if (!confirm(`Обработать ${MONTH_NAMES[state.month]} ${state.year}?\n\n⚠️ Внимание: автообработка ПЕРЕЗАПИШЕТ баллы и статус «Лучший сотрудник», выставленные вручную во вкладке «Рейтинги», на значения, рассчитанные по метрикам.\n\nЕсли ты ставил баллы вручную — нажми «Отмена» и не запускай автообработку (карточки за метрики и за лучшего сотрудника можно выдать вручную во вкладке «Карточки»).\n\nПродолжить автообработку?`)) return;
+  if (!await confirmDialog({
+    title: `Обработать ${MONTH_NAMES[state.month]} ${state.year}?`,
+    message: 'Если ты ставил баллы вручную во вкладке «Рейтинги» — отмени и не запускай автообработку. Карточки за метрики и за лучшего сотрудника можно выдать вручную во вкладке «Карточки».',
+    warning: 'Автообработка ПЕРЕЗАПИШЕТ баллы и статус «Лучший сотрудник», выставленные вручную, на значения, рассчитанные по метрикам.',
+    confirmText: 'Обработать месяц',
+    danger: true,
+  })) return;
 
   const avgRatingScore = parseFloat(document.getElementById('store-rating-score').value) || 0;
   const revenuePercent = parseFloat(document.getElementById('store-revenue-percent').value) || 0;
@@ -652,11 +658,11 @@ async function loadExchanges() {
   }
   tbody.innerHTML = data.map(ex => `<tr>
     <td><strong>${esc(ex.employeeName)}</strong></td>
-    <td style="color:var(--text-2);font-size:13px">${esc(ex.storeName)}</td>
+    <td class="col-hide-sm" style="color:var(--text-2);font-size:13px">${esc(ex.storeName)}</td>
     <td>${esc(ex.prizeName)}</td>
-    <td>${ex.cardsSpent}</td>
-    <td>${ex.coinsSpent}</td>
-    <td style="color:var(--muted);font-size:12px">${formatDate(ex.createdAt)}</td>
+    <td class="col-hide-sm">${ex.cardsSpent}</td>
+    <td class="col-hide-xs">${ex.coinsSpent}</td>
+    <td class="col-hide-xs" style="color:var(--muted);font-size:12px">${formatDate(ex.createdAt)}</td>
     <td><span class="badge badge-${ex.status}">${statusLabel(ex.status)}</span></td>
     <td>
       ${ex.status === 'pending' ? `
@@ -815,15 +821,15 @@ function renderEmployees() {
     const checked = selectedEmployeeIds.has(e.id) ? ' checked' : '';
     return `<tr>
       <td><input type="checkbox" class="emp-row-select" data-emp-id="${e.id}" onchange="toggleEmployeeSelect(${e.id}, this)"${checked}></td>
-      <td>${renderEmployeeAvatar(e)}</td>
+      <td class="col-hide-sm">${renderEmployeeAvatar(e)}</td>
       <td><strong style="cursor:pointer;color:var(--pink)" onclick="showEmployeeModal(${e.id})">${esc(e.name)}</strong></td>
-      <td style="color:var(--muted);font-size:12px">${tgInfo}</td>
+      <td class="col-hide-md" style="color:var(--muted);font-size:12px">${tgInfo}</td>
       <td>${renderStoreSelect(e.id, e.storeId)}</td>
-      <td>${renderRoleSelect(e.id, e.role)}</td>
-      <td>${cards}</td>
-      <td>${coins}</td>
-      <td>${heroes}</td>
-      <td style="font-size:12px">${lastSeenLabel(e.lastSeenAt)}</td>
+      <td class="col-hide-sm">${renderRoleSelect(e.id, e.role)}</td>
+      <td class="col-hide-md">${cards}</td>
+      <td class="col-hide-sm">${coins}</td>
+      <td class="col-hide-md">${heroes}</td>
+      <td class="col-hide-sm" style="font-size:12px">${lastSeenLabel(e.lastSeenAt)}</td>
       <td>
         ${e.isActive
           ? `<button class="btn btn-ghost btn-sm" onclick="toggleEmployee(${e.id}, false)"><i data-lucide="user-x"></i> Скрыть</button>`
@@ -888,7 +894,12 @@ async function bulkAwardCoins() {
   const label = COIN_LABELS[reason] || reason;
   const isDeduction = DEDUCTION_REASONS.has(reason) || (isManual && amount < 0);
   const verb = isDeduction ? 'Списать монеты' : 'Начислить монеты';
-  if (!confirm(`${verb} (${label}) для ${ids.length} сотрудников?`)) return;
+  if (!await confirmDialog({
+    title: `${verb}?`,
+    message: `Причина: ${label}\nКоличество сотрудников: ${ids.length}`,
+    confirmText: verb,
+    danger: isDeduction,
+  })) return;
 
   try {
     const result = await api('POST', '/employees/bulk-coins', {
@@ -904,8 +915,14 @@ async function bulkAwardCoins() {
 async function bulkSetActive(isActive) {
   if (selectedEmployeeIds.size === 0) return;
   const ids = [...selectedEmployeeIds];
-  const verb = isActive ? 'активировать' : 'деактивировать';
-  if (!confirm(`${verb[0].toUpperCase() + verb.slice(1)} ${ids.length} сотрудников?`)) return;
+  const verb = isActive ? 'Активировать' : 'Деактивировать';
+  if (!await confirmDialog({
+    title: `${verb} сотрудников?`,
+    message: `Будет затронуто: ${ids.length}`,
+    warning: isActive ? '' : 'Деактивированные сотрудники перестанут получать монеты, карточки и уведомления.',
+    confirmText: verb,
+    danger: !isActive,
+  })) return;
   try {
     await api('POST', '/employees/bulk-active', { employeeIds: ids, isActive });
     toast(`✅ ${isActive ? 'Активированы' : 'Деактивированы'}: ${ids.length}`);
@@ -919,7 +936,11 @@ async function changeEmployeeStore(id, selectEl) {
   const oldStoreId = parseInt(selectEl.dataset.current, 10);
   if (!newStoreId || newStoreId === oldStoreId) return;
   const newStoreName = state.stores.find(s => s.id === newStoreId)?.name || 'другую точку';
-  if (!confirm(`Перевести сотрудника на «${newStoreName}»?`)) {
+  if (!await confirmDialog({
+    title: 'Перевести сотрудника?',
+    message: `Новая точка: «${newStoreName}»`,
+    confirmText: 'Перевести',
+  })) {
     selectEl.value = String(oldStoreId);
     return;
   }
@@ -960,7 +981,12 @@ async function addEmployee() {
 }
 
 async function toggleEmployee(id, isActive) {
-  if (!isActive && !confirm('Скрыть этого сотрудника? Он перестанет получать монеты, карточки и уведомления.')) return;
+  if (!isActive && !await confirmDialog({
+    title: 'Скрыть сотрудника?',
+    warning: 'Он перестанет получать монеты, карточки и уведомления.',
+    confirmText: 'Скрыть',
+    danger: true,
+  })) return;
   try {
     await api('PUT', `/employees/${id}`, { isActive });
     loadEmployees();
@@ -991,8 +1017,8 @@ async function loadLeaderboard() {
   const empThead = document.querySelector('#tab-leaderboard table thead tr');
   if (empThead) {
     empThead.innerHTML = showStoreCol
-      ? `<th>#</th><th>Имя</th><th>Точка</th><th style="width:90px">Баллы</th><th style="width:60px">Карт.</th><th style="width:130px">Действие</th>`
-      : `<th>#</th><th>Имя</th><th style="width:90px">Баллы</th><th style="width:60px">Карт.</th><th style="width:130px">Действие</th>`;
+      ? `<th>#</th><th>Имя</th><th class="col-hide-sm">Точка</th><th style="width:90px">Баллы</th><th class="col-hide-sm" style="width:60px">Карт.</th><th style="width:130px">Действие</th>`
+      : `<th>#</th><th>Имя</th><th style="width:90px">Баллы</th><th class="col-hide-sm" style="width:60px">Карт.</th><th style="width:130px">Действие</th>`;
   }
 
   if (!empData || empData.length === 0) {
@@ -1007,7 +1033,7 @@ async function loadLeaderboard() {
       const hiddenBadge = isHidden ? ' <span class="badge badge-neutral" style="font-size:11px">скрыт</span>' : '';
       const rankCell = showStoreCol ? (i+1) : (RANK[i] ?? i+1);
       const storeCell = showStoreCol
-        ? `<td style="font-size:13px;color:var(--text-2)">${esc(e.storeName ?? '—')}</td>`
+        ? `<td class="col-hide-sm" style="font-size:13px;color:var(--text-2)">${esc(e.storeName ?? '—')}</td>`
         : '';
       const sid = e.storeId ?? 'null';
       return `<tr>
@@ -1017,7 +1043,7 @@ async function loadLeaderboard() {
         <td><input type="number" step="0.01" min="0" max="200" class="lb-score-input"
             value="${score}" data-emp-id="${e.employeeId}"
             onchange="saveEmployeeScore(${e.employeeId}, ${sid}, this)"></td>
-        <td>${e.cardsCount}</td>
+        <td class="col-hide-sm">${e.cardsCount}</td>
         <td>
           ${e.isMvp
             ? `<button class="btn btn-ghost btn-sm" onclick="unsetEmployeeMvp(${e.employeeId}, ${sid})" title="Снять статус"><i data-lucide="x"></i> Снять</button>`
@@ -1065,7 +1091,11 @@ async function saveEmployeeScore(employeeId, storeId, inputEl) {
 
 async function setEmployeeMvp(employeeId, storeId) {
   if (!storeId) { toast('У сотрудника не задана точка'); return; }
-  if (!confirm('Сделать сотрудника лучшим в этом месяце? С остальных в этой точке статус «Лучший» будет снят.')) return;
+  if (!await confirmDialog({
+    title: 'Назначить лучшего сотрудника?',
+    message: 'С остальных в этой точке статус «Лучший» будет снят.',
+    confirmText: 'Назначить',
+  })) return;
   try {
     await api('PUT', `/leaderboard/employees/${employeeId}`, {
       year: state.year, month: state.month, storeId, isMvp: true,
@@ -1077,7 +1107,13 @@ async function setEmployeeMvp(employeeId, storeId) {
 
 async function unsetEmployeeMvp(employeeId, storeId) {
   if (!storeId) { toast('У сотрудника не задана точка'); return; }
-  if (!confirm('Снять статус «Лучший сотрудник» за этот месяц?\n\n⚠️ Уже начисленные монеты и выданная особая карточка НЕ возвращаются — при необходимости откати их вручную.')) return;
+  if (!await confirmDialog({
+    title: 'Снять статус «Лучший сотрудник»?',
+    message: 'За этот месяц.',
+    warning: 'Уже начисленные монеты и выданная особая карточка НЕ возвращаются — при необходимости откати их вручную.',
+    confirmText: 'Снять',
+    danger: true,
+  })) return;
   try {
     await api('PUT', `/leaderboard/employees/${employeeId}`, {
       year: state.year, month: state.month, storeId, isMvp: false,
@@ -1102,7 +1138,11 @@ async function saveStoreScore(storeId, inputEl) {
 }
 
 async function setStoreTop(storeId) {
-  if (!confirm('Назначить точку лучшей в этом месяце? Команда получит бонусную карточку. С остальных точек статус «Лучшая» будет снят.')) return;
+  if (!await confirmDialog({
+    title: 'Назначить точку лучшей?',
+    message: 'Команда получит бонусную карточку. С остальных точек статус «Лучшая» будет снят.',
+    confirmText: 'Назначить',
+  })) return;
   try {
     await api('PUT', `/leaderboard/stores/${storeId}`, {
       year: state.year, month: state.month, isTop: true,
@@ -1113,7 +1153,13 @@ async function setStoreTop(storeId) {
 }
 
 async function unsetStoreTop(storeId) {
-  if (!confirm('Снять статус «Лучшая точка» за этот месяц?\n\n⚠️ Уже начисленные команде +30 монет и карточки team_bonus НЕ возвращаются — при необходимости откати их вручную.')) return;
+  if (!await confirmDialog({
+    title: 'Снять статус «Лучшая точка»?',
+    message: 'За этот месяц.',
+    warning: 'Уже начисленные команде +30 монет и карточки team_bonus НЕ возвращаются — при необходимости откати их вручную.',
+    confirmText: 'Снять',
+    danger: true,
+  })) return;
   try {
     await api('PUT', `/leaderboard/stores/${storeId}`, {
       year: state.year, month: state.month, isTop: false,
@@ -1128,6 +1174,65 @@ function toast(msg) {
   const el = document.getElementById('toast');
   el.textContent = msg; el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ── Универсальный confirm-диалог ─────────────────────────────────────────────
+// Возвращает Promise<boolean>. Заменяет нативный confirm(), который на мобиле
+// обрезает текст и не различает деструктивные действия.
+//
+// Использование:
+//   if (!await confirmDialog({ title: 'Удалить?', message: 'Восстановить нельзя.', danger: true, confirmText: 'Удалить' })) return;
+//
+// Поддерживает:
+//   - title, message (строка; `\n\n` разделяет абзацы)
+//   - warning (отдельная строка с иконкой ⚠️)
+//   - danger (true → красная кнопка подтверждения)
+//   - confirmText, cancelText
+let _confirmResolver = null;
+function confirmDialog({ title = 'Подтверждение', message = '', warning = '', danger = false, confirmText = 'Подтвердить', cancelText = 'Отмена' } = {}) {
+  return new Promise((resolve) => {
+    _confirmResolver = resolve;
+    document.getElementById('confirm-title').textContent = title;
+
+    const msgEl = document.getElementById('confirm-message');
+    msgEl.innerHTML = '';
+    String(message).split(/\n+/).filter(s => s.trim()).forEach(para => {
+      const p = document.createElement('p');
+      p.textContent = para;
+      msgEl.appendChild(p);
+    });
+
+    const warnEl = document.getElementById('confirm-warning');
+    if (warning) {
+      document.getElementById('confirm-warning-text').textContent = warning;
+      warnEl.classList.remove('hidden');
+    } else {
+      warnEl.classList.add('hidden');
+    }
+
+    const okBtn = document.getElementById('confirm-ok');
+    okBtn.textContent = confirmText;
+    okBtn.className = 'btn ' + (danger ? 'btn-danger' : 'btn-primary');
+
+    document.getElementById('confirm-cancel').textContent = cancelText;
+
+    document.addEventListener('keydown', _confirmKey);
+    document.getElementById('modal-confirm').classList.remove('hidden');
+    renderIcons();
+    setTimeout(() => okBtn.focus(), 0);
+  });
+}
+function _confirmOk()     { _confirmFinish(true); }
+function _confirmCancel() { _confirmFinish(false); }
+function _confirmFinish(value) {
+  document.getElementById('modal-confirm').classList.add('hidden');
+  document.removeEventListener('keydown', _confirmKey);
+  const r = _confirmResolver; _confirmResolver = null;
+  if (r) r(value);
+}
+function _confirmKey(e) {
+  if (e.key === 'Escape') { e.preventDefault(); _confirmCancel(); }
+  else if (e.key === 'Enter') { e.preventDefault(); _confirmOk(); }
 }
 
 // Экранируем не только < > &, но и кавычки + апостроф — функция используется
@@ -1225,7 +1330,12 @@ async function toggleQuestion(id, isActive) {
 }
 
 async function deleteQuestion(id) {
-  if (!confirm('Удалить вопрос? Это действие нельзя отменить.')) return;
+  if (!await confirmDialog({
+    title: 'Удалить вопрос?',
+    warning: 'Действие нельзя отменить.',
+    confirmText: 'Удалить',
+    danger: true,
+  })) return;
   try {
     await api('DELETE', `/quiz/${id}`);
     toast('Вопрос удалён');
@@ -1428,7 +1538,12 @@ async function giveCard() {
 }
 
 async function revokeCard(id) {
-  if (!confirm('Удалить эту карточку? Действие нельзя отменить.')) return;
+  if (!await confirmDialog({
+    title: 'Удалить карточку?',
+    warning: 'Действие нельзя отменить.',
+    confirmText: 'Удалить',
+    danger: true,
+  })) return;
   try {
     await api('DELETE', `/cards/${id}`);
     toast('Карточка удалена');
@@ -1622,7 +1737,12 @@ async function savePrize(id, btn) {
 }
 
 async function deletePrize(id) {
-  if (!confirm('Удалить приз? Если на него были заявки — приз не удалится, нужно «Скрыть» через переключатель.')) return;
+  if (!await confirmDialog({
+    title: 'Удалить приз?',
+    message: 'Если на приз были заявки, удалить не получится — используй переключатель «Скрыть».',
+    confirmText: 'Удалить',
+    danger: true,
+  })) return;
   try {
     await api('DELETE', `/prizes/${id}`);
     toast('Приз удалён');
@@ -1773,7 +1893,12 @@ async function loadChallenges() {
 }
 
 async function deleteChallenge(id) {
-  if (!confirm('Удалить челлендж? Будут также удалены записи участников.')) return;
+  if (!await confirmDialog({
+    title: 'Удалить челлендж?',
+    warning: 'Будут также удалены все записи участников.',
+    confirmText: 'Удалить',
+    danger: true,
+  })) return;
   try {
     await api('DELETE', `/challenges/${id}`);
     toast('Челлендж удалён');
@@ -2078,7 +2203,12 @@ async function saveHero(id, btn) {
 }
 
 async function deleteHero(id) {
-  if (!confirm('Удалить этого героя? Это действие нельзя отменить.')) return;
+  if (!await confirmDialog({
+    title: 'Удалить героя?',
+    warning: 'Действие нельзя отменить.',
+    confirmText: 'Удалить',
+    danger: true,
+  })) return;
   try {
     await api('DELETE', `/heroes/${id}`);
     toast('Герой удалён');
@@ -2680,7 +2810,12 @@ async function confirmResetPassword() {
 }
 
 async function deleteAdminUser(id) {
-  if (!confirm('Удалить эту учётную запись?')) return;
+  if (!await confirmDialog({
+    title: 'Удалить учётную запись?',
+    warning: 'Пользователь больше не сможет войти в админку.',
+    confirmText: 'Удалить',
+    danger: true,
+  })) return;
   try {
     await api('DELETE', `/admin-users/${id}`);
     toast('Удалено');

@@ -534,10 +534,24 @@ window.openInbox = async function () {
   overlay.classList.add('show');
   try { tg?.HapticFeedback?.impactOccurred('light'); } catch {}
 
+  // Принудительно тянем свежий /me — вместе с уведомлением о возврате/начислении
+  // обновим баланс/карточки в шапке. Без этого юзер видел бы старый кешированный
+  // баланс, пока background-обновление не сработает.
+  apiFetch('/me').then(me => {
+    if (me && me.id) {
+      employee = me; myStatsCache = me;
+      saveCachedMe(me);
+      updateHeaderStats({
+        availableCards: me.availableCards ?? 0,
+        coinBalance: me.coinBalance ?? 0,
+        uniqueHeroes: me.uniqueHeroes ?? 0,
+      });
+    }
+  }).catch(() => {});
+
   try {
     const data = await apiFetch('/notifications?limit=50');
     renderInbox(data.items || []);
-    // Авто-помечаем как прочитанные после открытия (UX: badge сразу гаснет)
     if ((data.unread || 0) > 0) {
       await apiFetch('/notifications/read-all', { method: 'POST' }).catch(() => {});
       refreshInboxBadge();
@@ -1012,6 +1026,28 @@ function showApp(stats) {
   refreshInboxBadge();
   if (!window._inboxRefreshTimer) {
     window._inboxRefreshTimer = setInterval(refreshInboxBadge, 60_000);
+  }
+
+  // Авто-обновление баланса/счётчиков из /me каждые 60 сек +
+  // когда приложение возвращается из фона (visibility API).
+  if (!window._meRefreshTimer) {
+    const refreshMe = () => {
+      apiFetch('/me').then(me => {
+        if (me && me.id) {
+          employee = me; myStatsCache = me;
+          saveCachedMe(me);
+          updateHeaderStats({
+            availableCards: me.availableCards ?? 0,
+            coinBalance: me.coinBalance ?? 0,
+            uniqueHeroes: me.uniqueHeroes ?? 0,
+          });
+        }
+      }).catch(() => {});
+    };
+    window._meRefreshTimer = setInterval(refreshMe, 60_000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) refreshMe();
+    });
   }
 
   // Если у сотрудника нет номера телефона — попросим один раз
