@@ -4,13 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Maria Crew</title>
-  <link rel="icon" type="image/png" href="/webapp/assets/favicon.png">
+  <link rel="icon" type="image/png" href="assets/favicon.png">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <style>
     @font-face {
       font-family: 'Mulish';
-      src: url('/webapp/fonts/Mulish.ttf') format('truetype');
+      src: url('fonts/Mulish.ttf') format('truetype');
       font-weight: 100 900;
       font-style: normal;
       font-display: swap;
@@ -667,7 +667,7 @@
 
 <!-- Загрузка -->
 <div id="loading">
-  <img class="loading-logo" src="/webapp/assets/logo-dark.png" alt="Maria Crew">
+  <img class="loading-logo" src="assets/logo-dark.png" alt="Maria Crew" onerror="this.style.display='none'">
   <div class="spinner"></div>
   <div class="loading-hint" id="loading-copy">Загружаем...</div>
 </div>
@@ -675,7 +675,7 @@
 <!-- Регистрация -->
 <div id="reg-screen">
   <div class="reg-hero">
-    <img class="reg-hero-logo" src="/webapp/assets/logo-dark.png" alt="Мария">
+    <img class="reg-hero-logo" src="assets/logo-dark.png" alt="Мария" onerror="this.style.display='none'">
     <h1>Maria Crew</h1>
     <p>Программа мотивации команды</p>
   </div>
@@ -875,11 +875,50 @@
     </div>
   </div>
 
-  <!-- Standalone-режим (мобилка): кнопки Logout / Удалить аккаунт.
-       Скрыты в Telegram Mini App, показываются только когда работаем по JWT. -->
+  <!-- Standalone-режим (мобилка): профиль / выход / удаление.
+       Скрыто в Telegram Mini App. -->
   <div id="standalone-footer" style="display:none;text-align:center;padding:14px 16px 80px;font-size:12px;color:var(--hint)">
+    <button onclick="openProfileEdit()" style="background:transparent;border:0;color:var(--brand);font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer;margin-right:14px">Мой профиль</button>
     <button onclick="doMobileLogout()" style="background:transparent;border:0;color:var(--hint);font-size:12px;text-decoration:underline;cursor:pointer;margin-right:14px">Выйти</button>
     <button onclick="doDeleteAccount()" style="background:transparent;border:0;color:#e53935;font-size:12px;text-decoration:underline;cursor:pointer">Удалить аккаунт</button>
+  </div>
+
+  <!-- Модалка редактирования профиля (mobile/standalone) -->
+  <div id="profile-edit-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:flex-end;justify-content:center;padding:0">
+    <div style="background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:480px;padding:20px;animation:fadeUp 0.25s ease">
+      <h2 style="font-size:18px;font-weight:900;margin:0 0 16px">Мой профиль</h2>
+
+      <label style="display:block;font-size:12px;color:var(--hint);margin-bottom:4px">Имя</label>
+      <input type="text" id="prof-name" maxlength="100"
+             style="width:100%;padding:12px;border:1.5px solid #ddd;border-radius:12px;font-size:15px;margin-bottom:14px">
+
+      <label style="display:block;font-size:12px;color:var(--hint);margin-bottom:4px">Телефон</label>
+      <input type="tel" id="prof-phone" inputmode="tel"
+             style="width:100%;padding:12px;border:1.5px solid #ddd;border-radius:12px;font-size:15px;margin-bottom:14px">
+
+      <label style="display:block;font-size:12px;color:var(--hint);margin-bottom:4px">Аватарка (URL)</label>
+      <div style="display:flex;gap:8px;margin-bottom:6px">
+        <input type="text" id="prof-avatar" placeholder="https://..."
+               style="flex:1;padding:12px;border:1.5px solid #ddd;border-radius:12px;font-size:14px">
+        <button id="prof-avatar-upload" onclick="uploadProfileAvatar()" type="button"
+                style="padding:12px 16px;background:#f3f4f6;border:1.5px solid #ddd;border-radius:12px;cursor:pointer;font-size:13px">📷</button>
+        <input type="file" id="prof-avatar-file" accept="image/*" style="display:none" onchange="_onProfileAvatarFile(this)">
+      </div>
+      <div style="font-size:11px;color:var(--hint);margin-bottom:18px">Можно вставить ссылку или загрузить картинку с устройства</div>
+
+      <div id="prof-error" style="font-size:13px;color:#e53935;margin-bottom:10px;min-height:18px"></div>
+
+      <div style="display:flex;gap:10px">
+        <button onclick="saveProfileEdit()" id="prof-save-btn"
+                style="flex:1;padding:14px;background:var(--brand);color:#fff;border:0;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer">
+          Сохранить
+        </button>
+        <button onclick="closeProfileEdit()"
+                style="padding:14px 20px;background:#f3f4f6;border:0;border-radius:12px;font-size:14px;cursor:pointer">
+          Отмена
+        </button>
+      </div>
+    </div>
   </div>
 
   <nav class="bottom-nav">
@@ -908,6 +947,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="main.js?v=20260508c"></script>
+<script src="main.js?v=20260508d"></script>
 </body>
 </html>

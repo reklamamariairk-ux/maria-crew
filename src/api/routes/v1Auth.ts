@@ -9,8 +9,9 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { rateLimit } from '../middleware/rateLimit';
 import { employeeAuth } from '../middleware/employeeAuth';
-import { requestPin, verifyPinAndIssueToken } from '../../services/employeeAuth.service';
+import { requestPin, verifyPinAndIssueToken, registerNewEmployee } from '../../services/employeeAuth.service';
 import { sendLoginPin } from '../../bot/notifications/sender';
+import { pool } from '../../db/pool';
 
 const router = Router();
 
@@ -68,6 +69,43 @@ router.post(
     } catch (err) { next(err); }
   }
 );
+
+// POST /api/v1/auth/register — регистрация нового сотрудника без Telegram.
+// Rate limit 5 регистраций в час с IP — мягкая защита от спама.
+router.post(
+  '/register',
+  rateLimit(5, 60 * 60 * 1000),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { phone, name, storeId } = req.body as { phone?: string; name?: string; storeId?: number };
+      if (!phone || !name || !storeId) {
+        res.status(400).json({ error: 'phone, name и storeId обязательны' });
+        return;
+      }
+      const result = await registerNewEmployee({ phone, name, storeId: Number(storeId) });
+      if ('error' in result) {
+        res.status(result.status).json({ error: result.error });
+        return;
+      }
+      res.json({
+        token: result.token,
+        expiresAt: result.expiresAt.toISOString(),
+        employeeId: result.employeeId,
+      });
+    } catch (err) { next(err); }
+  }
+);
+
+// GET /api/v1/auth/stores — публичный список активных точек для дропдауна
+// при регистрации (без auth — нужен до того как юзер вошёл).
+router.get('/stores', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { rows } = await pool.query<{ id: number; name: string }>(
+      `SELECT id, name FROM stores WHERE is_active = true ORDER BY id`
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
 
 // ── Авторизованные эндпоинты ──────────────────────────────────────────────
 

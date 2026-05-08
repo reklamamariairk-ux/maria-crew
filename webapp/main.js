@@ -83,6 +83,30 @@ function setLoadingHint(message) {
   if (el) el.textContent = message;
 }
 
+// Прогрессивные подсказки во время долгой загрузки (Render free tier ~30 сек cold start).
+// Запускаем при старте, останавливаем когда UI показан.
+let _loadingProgressTimer = null;
+function startLoadingProgress() {
+  if (_loadingProgressTimer) return;
+  const stages = [
+    { delay: 0,     msg: 'Подключаемся к Maria Crew…' },
+    { delay: 4000,  msg: 'Это первая загрузка, может занять до 30 секунд…' },
+    { delay: 12000, msg: 'Сервер просыпается… ещё немного' },
+    { delay: 22000, msg: 'Почти готово — последний шаг' },
+  ];
+  for (const stage of stages) {
+    const t = setTimeout(() => setLoadingHint(stage.msg), stage.delay);
+    _loadingProgressTimer = _loadingProgressTimer || [];
+    _loadingProgressTimer.push(t);
+  }
+}
+function stopLoadingProgress() {
+  if (Array.isArray(_loadingProgressTimer)) {
+    _loadingProgressTimer.forEach(t => clearTimeout(t));
+  }
+  _loadingProgressTimer = null;
+}
+
 function renderIcons() {
   if (window.lucide) lucide.createIcons();
 }
@@ -200,28 +224,36 @@ function showLoginScreen() {
     screen.style.cssText = 'min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:var(--bg)';
     screen.innerHTML = `
       <div style="max-width:340px;width:100%;text-align:center">
-        <div style="font-size:48px;margin-bottom:8px">🍰</div>
-        <h1 style="font-size:22px;font-weight:900;margin-bottom:6px;color:var(--text)">Maria Crew</h1>
-        <p style="font-size:13px;color:var(--hint);margin-bottom:24px">Введи свой телефон — пришлём код входа в Telegram</p>
+        <div class="mc-logo-mark" aria-hidden="true">МК</div>
+        <h1 style="font-size:22px;font-weight:900;margin:14px 0 6px;color:var(--text)">Maria Crew</h1>
+        <p id="login-subtitle" style="font-size:13px;color:var(--hint);margin-bottom:24px">Введи свой телефон — пришлём код в Telegram</p>
 
         <div id="login-step-phone">
           <input type="tel" id="login-phone" inputmode="tel" placeholder="+7 999 123 45 67" autocomplete="tel"
                  style="width:100%;padding:14px;border:1.5px solid #ddd;border-radius:12px;font-size:16px;margin-bottom:12px">
-          <button id="login-request-btn" style="width:100%;padding:14px;background:var(--brand);color:#fff;border:0;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer">
-            Получить код
-          </button>
+          <button id="login-request-btn" class="mc-primary-btn">Получить код</button>
         </div>
 
         <div id="login-step-pin" style="display:none">
           <p style="font-size:13px;color:var(--hint);margin-bottom:12px">Открой Telegram-бот <strong>@Mariaprod_bot</strong> и введи 6-значный код</p>
           <input type="text" id="login-pin" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code"
                  style="width:100%;padding:14px;border:1.5px solid #ddd;border-radius:12px;font-size:20px;text-align:center;letter-spacing:6px;margin-bottom:12px">
-          <button id="login-verify-btn" style="width:100%;padding:14px;background:var(--brand);color:#fff;border:0;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer">
-            Войти
-          </button>
-          <button id="login-back-btn" style="width:100%;padding:10px;background:transparent;color:var(--hint);border:0;font-size:13px;margin-top:8px;cursor:pointer">
-            ← Изменить номер
-          </button>
+          <button id="login-verify-btn" class="mc-primary-btn">Войти</button>
+          <button id="login-back-btn" class="mc-link-btn">← Изменить номер</button>
+        </div>
+
+        <div id="login-step-register" style="display:none;text-align:left">
+          <h3 style="font-size:15px;font-weight:800;margin:0 0 12px;text-align:center">Регистрация в команде</h3>
+          <label style="display:block;font-size:12px;color:var(--hint);margin-bottom:4px">Имя и фамилия</label>
+          <input type="text" id="reg-name" placeholder="Иван Иванов" autocomplete="name"
+                 style="width:100%;padding:12px;border:1.5px solid #ddd;border-radius:12px;font-size:15px;margin-bottom:12px">
+          <label style="display:block;font-size:12px;color:var(--hint);margin-bottom:4px">Точка</label>
+          <select id="reg-store-mobile"
+                 style="width:100%;padding:12px;border:1.5px solid #ddd;border-radius:12px;font-size:15px;margin-bottom:16px;background:#fff">
+            <option value="">Загрузка точек...</option>
+          </select>
+          <button id="login-register-btn" class="mc-primary-btn">Зарегистрироваться</button>
+          <button id="login-register-back-btn" class="mc-link-btn">← Назад</button>
         </div>
 
         <div id="login-error" style="margin-top:14px;font-size:13px;color:#e53935;min-height:18px"></div>
@@ -229,13 +261,33 @@ function showLoginScreen() {
     `;
     document.body.appendChild(screen);
 
+    // Стили для логотипа и кнопок
+    const style = document.createElement('style');
+    style.textContent = `
+      .mc-logo-mark {
+        width:88px;height:88px;margin:0 auto;display:flex;align-items:center;justify-content:center;
+        font-weight:900;font-size:32px;color:#fff;letter-spacing:1px;
+        background: linear-gradient(135deg, #d4920a, #e8639b);
+        border-radius:22px;
+        box-shadow: 0 6px 20px rgba(212,146,10,0.35);
+      }
+      .mc-primary-btn {
+        width:100%;padding:14px;background:var(--brand);color:#fff;border:0;border-radius:12px;
+        font-size:15px;font-weight:700;cursor:pointer;
+      }
+      .mc-primary-btn:disabled { opacity:0.6 }
+      .mc-link-btn {
+        width:100%;padding:10px;background:transparent;color:var(--hint);border:0;
+        font-size:13px;margin-top:8px;cursor:pointer;
+      }
+    `;
+    document.head.appendChild(style);
+
     document.getElementById('login-request-btn').onclick = doLoginRequestPin;
     document.getElementById('login-verify-btn').onclick = doLoginVerifyPin;
-    document.getElementById('login-back-btn').onclick = () => {
-      document.getElementById('login-step-phone').style.display = '';
-      document.getElementById('login-step-pin').style.display = 'none';
-      document.getElementById('login-error').textContent = '';
-    };
+    document.getElementById('login-register-btn').onclick = doLoginRegister;
+    document.getElementById('login-back-btn').onclick = () => switchLoginStep('phone');
+    document.getElementById('login-register-back-btn').onclick = () => switchLoginStep('phone');
     document.getElementById('login-phone').addEventListener('keydown', e => {
       if (e.key === 'Enter') doLoginRequestPin();
     });
@@ -244,6 +296,14 @@ function showLoginScreen() {
     });
   }
   screen.style.display = 'flex';
+}
+
+function switchLoginStep(step) {
+  ['phone', 'pin', 'register'].forEach(s => {
+    const el = document.getElementById('login-step-' + s);
+    if (el) el.style.display = (s === step) ? '' : 'none';
+  });
+  document.getElementById('login-error').textContent = '';
 }
 
 function loginError(msg) {
@@ -255,7 +315,7 @@ async function doLoginRequestPin() {
   if (!phone) { loginError('Введи номер телефона'); return; }
   loginError('');
   const btn = document.getElementById('login-request-btn');
-  btn.disabled = true; btn.textContent = '⏳ Отправляем...';
+  btn.disabled = true; btn.textContent = 'Отправляем...';
   try {
     const res = await fetch(API_V1 + '/auth/request-pin', {
       method: 'POST',
@@ -263,14 +323,63 @@ async function doLoginRequestPin() {
       body: JSON.stringify({ phone }),
     });
     const data = await res.json().catch(() => ({}));
+    // 404 — сотрудник не найден → предлагаем зарегистрироваться
+    if (res.status === 404) {
+      await loadStoresForRegistration();
+      switchLoginStep('register');
+      document.getElementById('reg-name').focus();
+      return;
+    }
     if (!res.ok) { loginError(data.error || 'Ошибка'); return; }
-    document.getElementById('login-step-phone').style.display = 'none';
-    document.getElementById('login-step-pin').style.display = '';
+    switchLoginStep('pin');
     document.getElementById('login-pin').focus();
   } catch (e) {
     loginError('Нет связи с сервером');
   } finally {
     btn.disabled = false; btn.textContent = 'Получить код';
+  }
+}
+
+async function loadStoresForRegistration() {
+  try {
+    const res = await fetch(API_V1 + '/auth/stores');
+    const stores = await res.json();
+    const sel = document.getElementById('reg-store-mobile');
+    sel.innerHTML = '<option value="">— выбери свою точку —</option>';
+    (stores || []).forEach(s => {
+      const o = document.createElement('option');
+      o.value = s.id; o.textContent = s.name;
+      sel.appendChild(o);
+    });
+  } catch (e) {
+    document.getElementById('reg-store-mobile').innerHTML = '<option value="">Не удалось загрузить</option>';
+  }
+}
+
+async function doLoginRegister() {
+  const phone = document.getElementById('login-phone').value.trim();
+  const name = document.getElementById('reg-name').value.trim();
+  const storeId = parseInt(document.getElementById('reg-store-mobile').value);
+  if (!name) { loginError('Введи имя'); return; }
+  if (!storeId) { loginError('Выбери точку'); return; }
+  loginError('');
+  const btn = document.getElementById('login-register-btn');
+  btn.disabled = true; btn.textContent = 'Регистрируем...';
+  try {
+    const res = await fetch(API_V1 + '/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, name, storeId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { loginError(data.error || 'Ошибка регистрации'); return; }
+    saveMobileToken(data.token);
+    document.getElementById('login-screen').style.display = 'none';
+    location.reload();
+  } catch (e) {
+    loginError('Нет связи с сервером');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Зарегистрироваться';
   }
 }
 
@@ -331,6 +440,86 @@ async function setupPushNotifications() {
 
   await Push.register();
 }
+
+// ── Профиль (редактирование, только в standalone) ────────────────────────────
+window.openProfileEdit = function () {
+  if (!employee) return;
+  document.getElementById('prof-name').value = employee.name ?? '';
+  document.getElementById('prof-phone').value = employee.phone ?? '';
+  document.getElementById('prof-avatar').value = employee.telegramPhotoUrl ?? '';
+  document.getElementById('prof-error').textContent = '';
+  const overlay = document.getElementById('profile-edit-overlay');
+  overlay.style.display = 'flex';
+};
+
+window.closeProfileEdit = function () {
+  document.getElementById('profile-edit-overlay').style.display = 'none';
+};
+
+window.uploadProfileAvatar = function () {
+  document.getElementById('prof-avatar-file').click();
+};
+
+window._onProfileAvatarFile = async function (input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  // Загружаем через тот же Cloudinary unsigned preset что и для героев
+  const cfg = await fetch(API + '/../config/cloudinary').then(r => r.json()).catch(() => null);
+  if (!cfg || !cfg.enabled) {
+    document.getElementById('prof-error').textContent = 'Загрузка фото временно недоступна. Используй URL.';
+    return;
+  }
+  const btn = document.getElementById('prof-avatar-upload');
+  btn.disabled = true; btn.textContent = '⏳';
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('upload_preset', cfg.uploadPreset);
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${cfg.cloudName}/image/upload`, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.secure_url) throw new Error('Cloudinary error');
+    document.getElementById('prof-avatar').value = data.secure_url;
+    document.getElementById('prof-error').textContent = '';
+  } catch (e) {
+    document.getElementById('prof-error').textContent = 'Не удалось загрузить фото';
+  } finally {
+    btn.disabled = false; btn.textContent = '📷';
+  }
+};
+
+window.saveProfileEdit = async function () {
+  const name = document.getElementById('prof-name').value.trim();
+  const phone = document.getElementById('prof-phone').value.trim();
+  const avatarUrl = document.getElementById('prof-avatar').value.trim();
+  if (!name) { document.getElementById('prof-error').textContent = 'Имя не может быть пустым'; return; }
+
+  const btn = document.getElementById('prof-save-btn');
+  btn.disabled = true; btn.textContent = 'Сохраняем...';
+  try {
+    const res = await fetch(API_V1 + '/account', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + mobileToken },
+      body: JSON.stringify({ name, phone, avatarUrl: avatarUrl || null }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      document.getElementById('prof-error').textContent = data.error || 'Не удалось сохранить';
+      return;
+    }
+    // Локально обновляем employee и шапку
+    employee.name = data.name;
+    employee.phone = data.phone;
+    employee.telegramPhotoUrl = data.telegramPhotoUrl;
+    document.getElementById('header-name').textContent = data.name;
+    setAvatar(data.name);
+    closeProfileEdit();
+    showToast('✅ Профиль сохранён');
+  } catch (e) {
+    document.getElementById('prof-error').textContent = 'Нет связи с сервером';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Сохранить';
+  }
+};
 
 // Logout / удаление аккаунта — только для standalone (mobile/web вне Telegram)
 window.doMobileLogout = function () {
@@ -485,7 +674,7 @@ async function init() {
     // Есть сохранённый токен — грузим профиль через /me и сразу показываем UI,
     // минуя authMiniApp (он требует Telegram initData, которого тут нет).
     try {
-      setLoadingHint('Подключаемся к Maria Crew...');
+      startLoadingProgress();
       const me = await apiFetch('/me');
       if (!me || !me.id) throw new Error('Не авторизован');
       employee = me;
@@ -494,6 +683,7 @@ async function init() {
       const footer = document.getElementById('standalone-footer');
       if (footer) footer.style.display = '';
 
+      stopLoadingProgress();
       showApp({
         availableCards: me.availableCards ?? 0,
         coinBalance: me.coinBalance ?? 0,
@@ -505,6 +695,7 @@ async function init() {
       // Раскомментировать после Firebase setup:
       // setupPushNotifications().catch(err => console.warn('[push] setup failed:', err));
     } catch (err) {
+      stopLoadingProgress();
       // Токен протух или сервер недоступен — обратно на login
       saveMobileToken(null);
       showLoginScreen();

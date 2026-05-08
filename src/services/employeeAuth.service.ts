@@ -16,6 +16,72 @@ const PIN_TTL_MS = 10 * 60 * 1000;             // 10 минут на ввод
 const PIN_REQUEST_COOLDOWN_MS = 60 * 1000;     // 1 минута между запросами
 const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 дней — типично для мобильных приложений
 
+// ── Регистрация нового сотрудника из мобильного приложения ────────────────
+
+export interface RegisterEmployeeResult {
+  employeeId: number;
+  token: string;
+  expiresAt: Date;
+}
+
+/**
+ * Регистрация без Telegram: создаёт нового активного сотрудника по
+ * phone+name+storeId и сразу выдаёт JWT. Используется когда юзер открыл
+ * приложение, ввёл телефон, и его нет в БД.
+ *
+ * Защиты:
+ * - phone должен нормализоваться к 11 цифрам (российский номер)
+ * - сотрудник с таким phone_normalized уже существует → 409
+ * - storeId должен соответствовать активной точке
+ * - длина name 1..100 символов
+ *
+ * НЕ верифицируем владение телефоном — это внутренний инструмент компании,
+ * админ может деактивировать фейка в админке. SMS-верификация — TODO,
+ * требует подключения шлюза (стоит денег).
+ */
+export async function registerNewEmployee(input: {
+  phone: string;
+  name: string;
+  storeId: number;
+}): Promise<RegisterEmployeeResult | { error: string; status: number }> {
+  const phoneNorm = normalizePhone(input.phone);
+  if (phoneNorm.length !== 11) return { error: 'Неверный формат телефона. Введи 11 цифр (например 89991234567)', status: 400 };
+
+  const name = (input.name ?? '').trim();
+  if (!name || name.length > 100) return { error: 'Имя должно быть от 1 до 100 символов', status: 400 };
+
+  if (!Number.isInteger(input.storeId) || input.storeId <= 0) return { error: 'Выбери точку', status: 400 };
+
+  // Проверяем что точка существует и активна
+  const { rows: storeRows } = await pool.query<{ id: number }>(
+    `SELECT id FROM stores WHERE id = $1 AND is_active = true`,
+    [input.storeId]
+  );
+  if (!storeRows[0]) return { error: 'Точка не найдена или неактивна', status: 404 };
+
+  // Проверяем дубликат
+  const { rows: existing } = await pool.query<{ id: number }>(
+    `SELECT id FROM employees WHERE phone_normalized = $1`,
+    [phoneNorm]
+  );
+  if (existing[0]) return { error: 'Этот номер уже зарегистрирован. Войди как обычно через получение кода.', status: 409 };
+
+  // Сохраняем телефон в +7-формате для совместимости с тем как его собирает бот
+  const phoneFormatted = '+' + phoneNorm;
+
+  const { rows } = await pool.query<{ id: number }>(
+    `INSERT INTO employees (name, phone, phone_normalized, store_id, joined_at, role, is_active)
+     VALUES ($1, $2, $3, $4, CURRENT_DATE, 'employee', true)
+     RETURNING id`,
+    [name, phoneFormatted, phoneNorm, input.storeId]
+  );
+  const employeeId = rows[0].id;
+
+  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS);
+  const token = signEmployeeToken(employeeId, expiresAt.getTime());
+  return { employeeId, token, expiresAt };
+}
+
 // ── PIN ─────────────────────────────────────────────────────────────────────
 
 function hashPin(pin: string): string {
