@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
-import { hashPassword, type AdminRole } from '../../services/adminAuth.service';
+import { hashPassword, validatePassword, type AdminRole } from '../../services/adminAuth.service';
 import { logAudit } from '../../services/audit.service';
 
 const router = Router();
@@ -31,10 +31,8 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
       res.status(400).json({ error: `role должен быть одним из: ${VALID_ROLES.join(', ')}` });
       return;
     }
-    if (password.length < 4) {
-      res.status(400).json({ error: 'Пароль должен быть минимум 4 символа' });
-      return;
-    }
+    const pwCheck = validatePassword(password);
+    if (!pwCheck.ok) { res.status(400).json({ error: pwCheck.error }); return; }
     const uname = username.trim().toLowerCase();
     const hash = hashPassword(password);
     const { rows } = await pool.query(
@@ -107,10 +105,8 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
       vals.push(isActive); sets.push(`is_active = $${vals.length}`);
     }
     if (password !== undefined) {
-      if (password.length < 4) {
-        res.status(400).json({ error: 'Пароль должен быть минимум 4 символа' });
-        return;
-      }
+      const pwCheck = validatePassword(password);
+      if (!pwCheck.ok) { res.status(400).json({ error: pwCheck.error }); return; }
       vals.push(hashPassword(password));
       sets.push(`password_hash = $${vals.length}`);
       // Если суперадмин сбрасывает пароль — требуем сменить при первом входе

@@ -39,18 +39,21 @@ const config: CapacitorConfig = {
 
   plugins: {
     SplashScreen: {
-      launchShowDuration: 1500,
-      backgroundColor: '#ffffff',
+      // Минимум — 200мс. Дальше JS вызовет SplashScreen.hide() как только
+      // покажет UI из кеша (instant). Если кеша нет — splash будет до 2 сек,
+      // потом всё равно скрывается, а юзер видит loading screen с прогрессом.
+      launchShowDuration: 200,
+      launchAutoHide: true,
+      backgroundColor: '#e8639b',
       androidScaleType: 'CENTER_CROP',
       showSpinner: false,
     },
     PushNotifications: {
-      // Звук + бейдж + alert — стандарт
       presentationOptions: ['badge', 'sound', 'alert'],
     },
     StatusBar: {
       style: 'LIGHT',
-      backgroundColor: '#d4920a', // голд из brand-палитры
+      backgroundColor: '#d4920a',
     },
   },
 

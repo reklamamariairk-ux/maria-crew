@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { authenticate, signToken, changeOwnPassword } from '../../services/adminAuth.service';
+import { authenticate, signToken, changeOwnPassword, validatePassword } from '../../services/adminAuth.service';
 import { adminAuth } from '../middleware/adminAuth';
 
 const router = Router();
@@ -36,10 +36,8 @@ router.post('/change-password', adminAuth, async (req: Request, res: Response, n
       res.status(400).json({ error: 'oldPassword и newPassword обязательны' });
       return;
     }
-    if (newPassword.length < 4) {
-      res.status(400).json({ error: 'Пароль минимум 4 символа' });
-      return;
-    }
+    const pwCheck = validatePassword(newPassword);
+    if (!pwCheck.ok) { res.status(400).json({ error: pwCheck.error }); return; }
     if (oldPassword === newPassword) {
       res.status(400).json({ error: 'Новый пароль должен отличаться от старого' });
       return;

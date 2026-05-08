@@ -7,6 +7,9 @@ const state = {
   month: new Date().getMonth() + 1,
   stores: [],
   employees: [],
+  // Челленджи, идущие сейчас, с coinReward > 0 — подмешиваем в селекты причин
+  // на вкладке «Монеты», чтобы можно было одним кликом наградить за участие.
+  activeChallenges: [],
   currentTab: 'dashboard',
   cloudinary: { cloudName: '', uploadPreset: '', enabled: false },
 };
@@ -76,13 +79,40 @@ const COIN_LABELS = {
 };
 
 // ── API ──────────────────────────────────────────────────────────────────────
+class ApiError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+// Дефолтные сообщения по HTTP-статусу для случая, когда бэк вернул не-JSON
+// или поле `error` пустое. Цель — чтобы пользователь увидел конкретику,
+// а не «Ошибка сети» при любой проблеме.
+function _defaultMessageForStatus(status) {
+  if (status === 400) return 'Запрос отклонён: проверь введённые данные';
+  if (status === 404) return 'Не найдено — возможно, запись уже удалили';
+  if (status === 409) return 'Конфликт: такая запись уже существует или используется';
+  if (status === 422) return 'Некорректные данные';
+  if (status === 429) return 'Слишком много запросов — подожди минуту';
+  if (status >= 500) return 'Внутренняя ошибка сервера. Попробуй ещё раз через минуту.';
+  return 'Что-то пошло не так';
+}
+
 async function api(method, path, body) {
-  const opts = {
-    method,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.token}` },
-  };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`/api${path}`, opts);
+  let res;
+  try {
+    const opts = {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.token}` },
+    };
+    if (body) opts.body = JSON.stringify(body);
+    res = await fetch(`/api${path}`, opts);
+  } catch {
+    // Сеть упала — fetch отверг промис до получения ответа
+    throw new ApiError(0, 'Нет связи с сервером. Проверь интернет и попробуй снова.');
+  }
   if (res.status === 401) { logout(); return null; }
   if (res.status === 403) {
     const err = await res.json().catch(() => ({}));
@@ -90,8 +120,8 @@ async function api(method, path, body) {
     return null;
   }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Ошибка сети' }));
-    throw new Error(err.error || 'Ошибка');
+    const err = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, err.error || _defaultMessageForStatus(res.status));
   }
   return res.json();
 }
@@ -141,8 +171,8 @@ function openChangePasswordModal(forced = false) {
   document.getElementById('cpw-old').value = '';
   document.getElementById('cpw-new').value = '';
   document.getElementById('cpw-hint').textContent = forced
-    ? 'Это временный пароль — задай свой постоянный (минимум 4 символа).'
-    : 'Минимум 4 символа. Новый пароль должен отличаться от текущего.';
+    ? 'Это временный пароль — задай свой постоянный (минимум 8 символов).'
+    : 'Минимум 8 символов. Новый пароль должен отличаться от текущего и не быть в списке распространённых.';
   document.getElementById('cpw-close-btn').style.display = forced ? 'none' : '';
   document.getElementById('cpw-cancel').style.display = forced ? 'none' : '';
   modal.classList.remove('hidden');
@@ -184,30 +214,37 @@ async function downloadCoinsCsv() {
     const res = await fetch(`/api/coins/export?${params.toString()}`, {
       headers: { Authorization: `Bearer ${state.token}` },
     });
-    if (!res.ok) throw new Error(await res.text() || 'Ошибка экспорта');
-    const blob = await res.blob();
+    if (!res.ok) throw new ApiError(res.status, await res.text() || 'Ошибка экспорта');
+    const csvText = await res.text();
+    // Bail out если в ответе только BOM + строка заголовков (нет данных)
+    const dataLines = csvText.split(/\r?\n/).filter(l => l.trim()).length;
+    if (dataLines <= 1) {
+      toast('⚠️ За этот период нет операций');
+      return;
+    }
+    const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `coins_${from}_${to}.csv`;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
-    toast('✅ CSV выгружен');
-  } catch (e) { toast('❌ ' + e.message); }
+    toast(`✅ Скачано: ${dataLines - 1} ${rowsWord(dataLines - 1)}`);
+  } catch (e) { toastError(e); }
 }
 
 async function submitChangePassword() {
   const oldPassword = document.getElementById('cpw-old').value;
   const newPassword = document.getElementById('cpw-new').value;
   if (!oldPassword || !newPassword) { toast('Заполни оба поля'); return; }
-  if (newPassword.length < 4) { toast('Минимум 4 символа'); return; }
+  if (newPassword.length < 8) { toast('Минимум 8 символов'); return; }
   if (oldPassword === newPassword) { toast('Новый пароль должен отличаться от старого'); return; }
   try {
     await api('POST', '/auth/change-password', { oldPassword, newPassword });
     state.requirePasswordChange = false;
     document.getElementById('modal-change-password').classList.add('hidden');
     toast('✅ Пароль обновлён');
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 function updatePendingBadge(count) {
@@ -258,7 +295,7 @@ async function showApp() {
 
   updatePeriodLabels();
   renderIcons();
-  await Promise.all([loadStores(), loadCloudinaryConfig()]);
+  await Promise.all([loadStores(), loadCloudinaryConfig(), loadActiveChallengesForCoins()]);
   switchTab('dashboard');
 
   // Раз в 2 минуты подтягиваем количество ожидающих заявок (фон, безшумно)
@@ -487,7 +524,7 @@ async function saveMetrics() {
     await api('POST', '/metrics/batch', batch);
     toast(`✅ Сохранено: ${batch.length} ${batch.length === 1 ? 'запись' : (batch.length < 5 ? 'записи' : 'записей')}`);
     loadMetrics();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 async function processMonth() {
@@ -515,12 +552,94 @@ async function processMonth() {
     const mvp = processed?.employees?.find(e => e.isMvp);
     toast(`✅ Готово! Лучший сотрудник: ${mvp?.name ?? '—'} (${mvp?.mvpScore?.toFixed(2) ?? '—'} б.)`);
     loadMetrics();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
   finally { btn.disabled = false; btn.textContent = '⚡ Обработать месяц (баллы + карточки + уведомления)'; }
 }
 
 // ── Монеты ────────────────────────────────────────────────────────────────────
+// Подгружаем активные челленджи и подмешиваем их в селекты причины (один и
+// массовый). Челлендж попадает в список, если: is_active=true, сегодня внутри
+// startDate..endDate, coinReward > 0. Без награды смысла награждать монетами нет.
+async function loadActiveChallengesForCoins() {
+  // /challenges защищён `denyForCoinAdmin` на бэке — для coin_admin запрос
+  // вернул бы 403 и засорил тост-стек на каждом логине. Просто не запрашиваем.
+  if (state.role === 'coin_admin') return;
+  try {
+    const list = await api('GET', '/challenges') || [];
+    const today = new Date().toISOString().slice(0, 10);
+    state.activeChallenges = list.filter(ch => {
+      const start = String(ch.startDate ?? '').slice(0, 10);
+      const end   = String(ch.endDate ?? '').slice(0, 10);
+      return ch.isActive && (ch.coinReward ?? 0) > 0 && start <= today && end >= today;
+    });
+    populateReasonSelectsWithChallenges();
+  } catch {
+    // Не критично — селекты остаются с базовыми причинами
+    state.activeChallenges = [];
+  }
+}
+
+function populateReasonSelectsWithChallenges() {
+  const html = state.activeChallenges.length === 0
+    ? ''
+    : `<optgroup label="Челленджи" data-challenges="1">${
+        state.activeChallenges.map(ch =>
+          `<option value="challenge:${ch.id}">${esc(ch.name)} (+${ch.coinReward})</option>`
+        ).join('')
+      }</optgroup>`;
+  for (const id of ['coin-reason', 'bulk-coin-reason']) {
+    const sel = document.getElementById(id);
+    if (!sel) continue;
+    // Удаляем предыдущую группу (если перерисовываем)
+    const prev = sel.querySelector('optgroup[data-challenges="1"]');
+    if (prev) prev.remove();
+    if (html) sel.insertAdjacentHTML('beforeend', html);
+  }
+
+  // Quick-pick chips на вкладке «Монеты» — один клик задаёт причину
+  const quick = document.getElementById('coin-quick-challenges');
+  const chipsBox = document.getElementById('coin-quick-challenges-chips');
+  if (!quick || !chipsBox) return;
+  if (state.activeChallenges.length === 0) {
+    quick.classList.add('hidden');
+    chipsBox.innerHTML = '';
+    return;
+  }
+  chipsBox.innerHTML = state.activeChallenges.map(ch =>
+    `<button type="button" class="challenge-chip" onclick="pickChallengeReason(${ch.id})">
+      <i data-lucide="flame"></i>
+      <span>${esc(ch.name)}</span>
+      <span class="reward">+${ch.coinReward}</span>
+    </button>`
+  ).join('');
+  quick.classList.remove('hidden');
+  renderIcons();
+}
+
+// Клик по чипу: подставляем причину-челлендж в основной селектор и фокусируем
+// поле сотрудника, если ещё не выбрано.
+function pickChallengeReason(challengeId) {
+  const sel = document.getElementById('coin-reason');
+  if (!sel) return;
+  sel.value = `challenge:${challengeId}`;
+  onCoinReasonChange();
+  const empSel = document.getElementById('coin-employee');
+  if (empSel && !empSel.value) empSel.focus();
+}
+
+// Парсит значение "challenge:42" → { id, ch }. Возвращает null, если это не челлендж.
+function parseChallengeReason(reason) {
+  if (typeof reason !== 'string' || !reason.startsWith('challenge:')) return null;
+  const id = parseInt(reason.slice('challenge:'.length), 10);
+  if (!id) return null;
+  const ch = state.activeChallenges.find(c => c.id === id);
+  return ch ? { id, ch } : null;
+}
+
 async function loadCoinEmployees() {
+  // Подгружаем челленджи в фоне — пусть лежат в селекте, как только админ откроет dropdown
+  loadActiveChallengesForCoins();
+
   // Список сотрудников: либо точки, либо все. Показываем и скрытых — чтобы видеть
   // их историю и при необходимости начислить/списать. Скрытые помечены «(скрыт)».
   const path = state.storeId ? `/employees?storeId=${state.storeId}` : '/employees';
@@ -597,42 +716,68 @@ const COIN_REASON_AMOUNTS = {
 
 function onCoinReasonChange() {
   const reason = document.getElementById('coin-reason').value;
-  const amountSel = document.getElementById('coin-amount');
+  const amountInput = document.getElementById('coin-amount');
+
+  // Челлендж — фиксированная награда из challenge.coinReward
+  const ch = parseChallengeReason(reason);
+  if (ch) {
+    amountInput.value = String(ch.ch.coinReward);
+    amountInput.disabled = true;
+    amountInput.title = `Награда за челлендж «${ch.ch.name}» — ${ch.ch.coinReward}`;
+    return;
+  }
+
   if (reason === 'manual') {
-    amountSel.disabled = false;
-    amountSel.title = '';
+    amountInput.disabled = false;
+    amountInput.title = '';
   } else {
     const fixed = COIN_REASON_AMOUNTS[reason];
-    if (fixed !== undefined) amountSel.value = String(fixed);
-    amountSel.disabled = true;
-    amountSel.title = `Сумма для «${COIN_LABELS[reason] ?? reason}» — фиксированная (${fixed > 0 ? '+' : ''}${fixed})`;
+    if (fixed !== undefined) amountInput.value = String(fixed);
+    amountInput.disabled = true;
+    amountInput.title = `Сумма для «${COIN_LABELS[reason] ?? reason}» — фиксированная (${fixed > 0 ? '+' : ''}${fixed})`;
   }
 }
 
 async function awardCoins() {
   const employeeId = parseInt(document.getElementById('coin-employee').value);
-  const reason = document.getElementById('coin-reason').value || 'manual';
+  const rawReason = document.getElementById('coin-reason').value || 'manual';
   const amount = parseInt(document.getElementById('coin-amount').value, 10);
   const note = document.getElementById('coin-note').value;
 
   if (!employeeId) { toast('Выберите сотрудника'); return; }
-  if (reason === 'manual' && (isNaN(amount) || amount === 0)) { toast('Выбери количество'); return; }
 
-  // Для пресет-причин amount не передаём — сумму подставит earn() на бэке.
-  // Для manual передаём выбранное значение.
-  const payload = { employeeId, reason, note: note || undefined };
-  if (reason === 'manual') payload.amount = amount;
+  // Челлендж: реальная транзакция уходит как manual + note 'Челлендж: {name}',
+  // сумма берётся из challenge.coinReward. Это позволяет переиспользовать
+  // существующий /coins/award и видеть начисление в истории.
+  const ch = parseChallengeReason(rawReason);
+  let payload;
+  let finalAmount;
+  if (ch) {
+    finalAmount = ch.ch.coinReward;
+    const challengeNote = `Челлендж: ${ch.ch.name}` + (note ? ` — ${note}` : '');
+    payload = { employeeId, reason: 'manual', amount: finalAmount, note: challengeNote };
+  } else {
+    if (rawReason === 'manual' && (isNaN(amount) || amount === 0)) {
+      toast('Выбери количество'); return;
+    }
+    payload = { employeeId, reason: rawReason, note: note || undefined };
+    if (rawReason === 'manual') payload.amount = amount;
+    finalAmount = rawReason === 'manual' ? amount : COIN_REASON_AMOUNTS[rawReason];
+  }
 
   try {
     await api('POST', '/coins/award', payload);
-    const finalAmount = reason === 'manual' ? amount : COIN_REASON_AMOUNTS[reason];
-    toast(finalAmount < 0 ? '✅ Монеты списаны' : '✅ Монеты начислены');
+    if (ch) {
+      toast(`✅ Награда за «${ch.ch.name}»: +${finalAmount}`);
+    } else {
+      toast(finalAmount < 0 ? '✅ Монеты списаны' : '✅ Монеты начислены');
+    }
     document.getElementById('coin-note').value = '';
     document.getElementById('coin-reason').value = 'manual';
     onCoinReasonChange();
     document.getElementById('coin-amount').value = '1';
     loadCoinHistory();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 // ── Заявки ────────────────────────────────────────────────────────────────────
@@ -708,7 +853,7 @@ async function _doUpdateExchange(id, status, notes) {
     await api('PUT', `/exchanges/${id}`, body);
     toast(status === 'fulfilled' ? '✅ Приз выдан' : '❌ Заявка отклонена');
     loadExchanges();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 // ── Сотрудники ────────────────────────────────────────────────────────────────
@@ -752,7 +897,7 @@ async function changeEmployeeRole(id, selectEl) {
     toast(`✅ Роль изменена`);
   } catch (e) {
     selectEl.value = oldRole;
-    toast('❌ ' + e.message);
+    toastError(e);
   } finally {
     selectEl.disabled = false;
   }
@@ -876,23 +1021,53 @@ function updateBulkBar() {
 }
 
 function onBulkReasonChange(selectEl) {
-  const isManual = selectEl.value === 'manual';
-  document.getElementById('bulk-coin-amount').style.display = isManual ? 'inline-block' : 'none';
+  const reason = selectEl.value;
+  const amountInput = document.getElementById('bulk-coin-amount');
+  const ch = parseChallengeReason(reason);
+  if (ch) {
+    // Челлендж — показываем поле суммы как readonly с зафиксированной наградой
+    amountInput.value = String(ch.ch.coinReward);
+    amountInput.style.display = 'inline-block';
+    amountInput.readOnly = true;
+    amountInput.title = `Награда за «${ch.ch.name}» — ${ch.ch.coinReward}`;
+    return;
+  }
+  amountInput.readOnly = false;
+  amountInput.title = '';
+  const isManual = reason === 'manual';
+  amountInput.style.display = isManual ? 'inline-block' : 'none';
 }
 
 const DEDUCTION_REASONS = new Set(['bad_review', 'dirty_store', 'training_resistance']);
 
 async function bulkAwardCoins() {
   if (selectedEmployeeIds.size === 0) return;
-  const reason = document.getElementById('bulk-coin-reason').value;
-  if (!reason) { toast('Выбери причину'); return; }
-  const isManual = reason === 'manual';
-  const amount = isManual ? parseInt(document.getElementById('bulk-coin-amount').value) : undefined;
-  if (isManual && (isNaN(amount) || amount === 0)) { toast('Укажи сумму (можно отрицательную)'); return; }
+  const rawReason = document.getElementById('bulk-coin-reason').value;
+  if (!rawReason) { toast('Выбери причину'); return; }
 
   const ids = [...selectedEmployeeIds];
-  const label = COIN_LABELS[reason] || reason;
-  const isDeduction = DEDUCTION_REASONS.has(reason) || (isManual && amount < 0);
+  const ch = parseChallengeReason(rawReason);
+
+  let payload;
+  let label, isDeduction;
+  if (ch) {
+    payload = {
+      employeeIds: ids,
+      reason: 'manual',
+      amount: ch.ch.coinReward,
+      note: `Челлендж: ${ch.ch.name}`,
+    };
+    label = `Челлендж: ${ch.ch.name} (+${ch.ch.coinReward})`;
+    isDeduction = false;
+  } else {
+    const isManual = rawReason === 'manual';
+    const amount = isManual ? parseInt(document.getElementById('bulk-coin-amount').value) : undefined;
+    if (isManual && (isNaN(amount) || amount === 0)) { toast('Укажи сумму (можно отрицательную)'); return; }
+    payload = { employeeIds: ids, reason: rawReason, amount };
+    label = COIN_LABELS[rawReason] || rawReason;
+    isDeduction = DEDUCTION_REASONS.has(rawReason) || (isManual && amount < 0);
+  }
+
   const verb = isDeduction ? 'Списать монеты' : 'Начислить монеты';
   if (!await confirmDialog({
     title: `${verb}?`,
@@ -902,14 +1077,12 @@ async function bulkAwardCoins() {
   })) return;
 
   try {
-    const result = await api('POST', '/employees/bulk-coins', {
-      employeeIds: ids, reason, amount,
-    });
+    const result = await api('POST', '/employees/bulk-coins', payload);
     const action = isDeduction ? 'Списано' : 'Начислено';
     toast(`✅ ${action} ${result.succeeded} из ${result.processed}`);
     clearEmpSelection();
     loadEmployees();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 async function bulkSetActive(isActive) {
@@ -928,7 +1101,7 @@ async function bulkSetActive(isActive) {
     toast(`✅ ${isActive ? 'Активированы' : 'Деактивированы'}: ${ids.length}`);
     clearEmpSelection();
     loadEmployees();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 async function changeEmployeeStore(id, selectEl) {
@@ -952,7 +1125,7 @@ async function changeEmployeeStore(id, selectEl) {
     if (state.storeId && state.storeId !== newStoreId) loadEmployees();
   } catch (e) {
     selectEl.value = String(oldStoreId);
-    toast('❌ ' + e.message);
+    toastError(e);
   } finally {
     selectEl.disabled = false;
   }
@@ -977,7 +1150,7 @@ async function addEmployee() {
     document.getElementById('new-emp-username').value = '';
     document.getElementById('new-emp-store').value = '';
     loadEmployees();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 async function toggleEmployee(id, isActive) {
@@ -990,7 +1163,7 @@ async function toggleEmployee(id, isActive) {
   try {
     await api('PUT', `/employees/${id}`, { isActive });
     loadEmployees();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 // ── Рейтинги ─────────────────────────────────────────────────────────────────
@@ -1085,7 +1258,7 @@ async function saveEmployeeScore(employeeId, storeId, inputEl) {
       year: state.year, month: state.month, storeId, mvpScore,
     });
     toast('✅ Балл сохранён');
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
   finally { inputEl.disabled = false; }
 }
 
@@ -1102,7 +1275,7 @@ async function setEmployeeMvp(employeeId, storeId) {
     });
     toast('✅ Лучший сотрудник назначен');
     loadLeaderboard();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 async function unsetEmployeeMvp(employeeId, storeId) {
@@ -1120,7 +1293,7 @@ async function unsetEmployeeMvp(employeeId, storeId) {
     });
     toast('✅ Статус снят');
     loadLeaderboard();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 async function saveStoreScore(storeId, inputEl) {
@@ -1133,7 +1306,7 @@ async function saveStoreScore(storeId, inputEl) {
     });
     toast('✅ Балл сохранён, рейтинг точек пересчитан');
     loadLeaderboard();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
   finally { inputEl.disabled = false; }
 }
 
@@ -1149,7 +1322,7 @@ async function setStoreTop(storeId) {
     });
     toast('✅ Лучшая точка обновлена');
     loadLeaderboard();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 async function unsetStoreTop(storeId) {
@@ -1166,7 +1339,7 @@ async function unsetStoreTop(storeId) {
     });
     toast('✅ Статус снят');
     loadLeaderboard();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 // ── Утилиты ───────────────────────────────────────────────────────────────────
@@ -1174,6 +1347,14 @@ function toast(msg) {
   const el = document.getElementById('toast');
   el.textContent = msg; el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// Унифицированный показ ошибок: 4xx — это «ты что-то ввёл не так» (⚠️),
+// 5xx или нет связи — «у нас проблема» (❌).
+function toastError(e) {
+  const msg = (e && e.message) || 'Что-то пошло не так';
+  const isUserError = e && e.status >= 400 && e.status < 500;
+  toast((isUserError ? '⚠️ ' : '❌ ') + msg);
 }
 
 // ── Универсальный confirm-диалог ─────────────────────────────────────────────
@@ -1319,14 +1500,14 @@ async function addQuestion() {
     document.getElementById('q-question').value = '';
     [0,1,2,3].forEach(i => document.getElementById(`q-opt${i}`).value = '');
     loadQuizQuestions();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 async function toggleQuestion(id, isActive) {
   try {
     await api('PUT', `/quiz/${id}`, { isActive });
     loadQuizQuestions();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 async function deleteQuestion(id) {
@@ -1340,7 +1521,7 @@ async function deleteQuestion(id) {
     await api('DELETE', `/quiz/${id}`);
     toast('Вопрос удалён');
     loadQuizQuestions();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 // ── CSV-импорт квиза ─────────────────────────────────────────────────────
@@ -1534,7 +1715,7 @@ async function giveCard() {
     toast('✅ Карточка выдана');
     document.getElementById('card-mvp').checked = false;
     loadEmployeeCards();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 async function revokeCard(id) {
@@ -1548,14 +1729,14 @@ async function revokeCard(id) {
     await api('DELETE', `/cards/${id}`);
     toast('Карточка удалена');
     loadEmployeeCards();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 async function toggleCardSpent(id, isSpent) {
   try {
     await api('PATCH', `/cards/${id}/spent`, { isSpent });
     loadEmployeeCards();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 // ── Точки (управление) ──────────────────────────────────────────────────────
@@ -1614,7 +1795,7 @@ async function saveStoreAdmin(id, btn) {
     const s = state.stores.find(x => x.id === id);
     if (s) { s.name = name; s.address = address; s.gis2Id = gis2Id; s.isActive = isActive; }
     populateStoreSelectors();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
   finally { btn.disabled = false; btn.textContent = 'Сохранить'; }
 }
 
@@ -1628,7 +1809,7 @@ async function fetchGis2Rating() {
       document.getElementById('store-rating-score').value = data.rating.toFixed(2);
       toast(`✅ Рейтинг из 2ГИС: ${data.rating.toFixed(2)}`);
     }
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
   finally { btn.disabled = false; btn.innerHTML = '<i data-lucide="map-pin"></i> из 2ГИС'; renderIcons(); }
 }
 
@@ -1642,7 +1823,7 @@ async function addStore() {
     document.getElementById('new-store-name').value = '';
     document.getElementById('new-store-address').value = '';
     loadStoresAdmin();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 // ── Призы ─────────────────────────────────────────────────────────────────────
@@ -1658,19 +1839,37 @@ const PRIZE_TYPE_LABELS = {
   break:        'Доп. перерыв',
 };
 
+let prizesCache = [];
+
 async function loadPrizes() {
   const tbody = document.getElementById('prizes-tbody');
   tbody.innerHTML = skeletonRows(8, 5);
-  const list = await api('GET', '/prizes') || [];
-  if (list.length === 0) {
+  prizesCache = await api('GET', '/prizes') || [];
+  renderPrizes();
+}
+
+function renderPrizes() {
+  const tbody = document.getElementById('prizes-tbody');
+  const search = (document.getElementById('prizes-search')?.value ?? '').trim().toLowerCase();
+  const list = !search ? prizesCache : prizesCache.filter(p =>
+    (p.name || '').toLowerCase().includes(search) ||
+    (p.description || '').toLowerCase().includes(search) ||
+    (PRIZE_TYPE_LABELS[p.prizeType] || '').toLowerCase().includes(search)
+  );
+  if (prizesCache.length === 0) {
     tbody.innerHTML = emptyRow(8, 'gift', 'Призов нет — добавьте первый');
+    renderIcons();
+    return;
+  }
+  if (list.length === 0) {
+    tbody.innerHTML = emptyRow(8, 'search-x', 'Ничего не найдено');
     renderIcons();
     return;
   }
   tbody.innerHTML = list.map(p => `<tr data-prize-id="${p.id}">
     <td style="color:var(--muted);font-size:12px">${p.id}</td>
     <td><input type="text" class="prize-name-in" value="${esc(p.name)}" style="width:100%"></td>
-    <td>
+    <td class="col-hide-sm">
       <select class="prize-type-in" style="width:100%">
         ${Object.entries(PRIZE_TYPE_LABELS).map(([v, l]) =>
           `<option value="${v}"${v === p.prizeType ? ' selected' : ''}>${l}</option>`
@@ -1679,7 +1878,7 @@ async function loadPrizes() {
     </td>
     <td><input type="number" class="prize-cards-in" min="0" value="${p.cardsRequired}" style="width:80px;text-align:right"></td>
     <td><input type="number" class="prize-coins-in" min="0" value="${p.coinsRequired}" style="width:80px;text-align:right"></td>
-    <td><input type="number" class="prize-order-in" value="${p.sortOrder}" style="width:70px;text-align:right"></td>
+    <td class="col-hide-md"><input type="number" class="prize-order-in" value="${p.sortOrder}" style="width:70px;text-align:right"></td>
     <td>
       <select class="prize-active-in" style="width:100%">
         <option value="true"${p.isActive ? ' selected' : ''}>Активен</option>
@@ -1714,7 +1913,7 @@ async function addPrize() {
     ['new-prize-name','new-prize-cards','new-prize-coins','new-prize-desc'].forEach(id =>
       document.getElementById(id).value = id === 'new-prize-cards' || id === 'new-prize-coins' ? '0' : '');
     loadPrizes();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 async function savePrize(id, btn) {
@@ -1732,7 +1931,7 @@ async function savePrize(id, btn) {
   try {
     await api('PUT', `/prizes/${id}`, body);
     toast('✅ Сохранено');
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
   finally { btn.disabled = false; btn.textContent = '💾'; }
 }
 
@@ -1747,7 +1946,7 @@ async function deletePrize(id) {
     await api('DELETE', `/prizes/${id}`);
     toast('Приз удалён');
     loadPrizes();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 // ── Журнал действий ─────────────────────────────────────────────────────────
@@ -1903,7 +2102,7 @@ async function deleteChallenge(id) {
     await api('DELETE', `/challenges/${id}`);
     toast('Челлендж удалён');
     loadChallenges();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 // ID редактируемого челленджа. null => режим создания.
@@ -2076,7 +2275,7 @@ async function _onChallengeHeroFile(input) {
     document.getElementById('ch-new-hero-img').value = data.secure_url;
     toast('Фото загружено');
   } catch (e) {
-    toast('❌ ' + e.message);
+    toastError(e);
   } finally {
     btn.disabled = false; btn.innerHTML = '<i data-lucide="upload"></i>'; renderIcons();
   }
@@ -2096,7 +2295,7 @@ async function createHeroFromChallenge() {
     toast('✅ Карточка создана');
     await refreshChallengeHeroSelect(hero.id);
     document.getElementById('ch-new-hero-form').classList.add('hidden');
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 async function saveChallenge() {
@@ -2154,26 +2353,42 @@ async function saveChallenge() {
     }
     closeChallengeForm();
     loadChallenges();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 // Backward-compat — на случай, если какой-то inline onclick ещё ссылается
 window.addChallenge = saveChallenge;
 
 // ── Герои ─────────────────────────────────────────────────────────────────────
+let heroesCache = [];
+
 async function loadHeroes() {
   const tbody = document.getElementById('heroes-tbody');
   tbody.innerHTML = skeletonRows(7, 6);
-  const list = await api('GET', '/heroes') || [];
-  if (list.length === 0) {
+  heroesCache = await api('GET', '/heroes') || [];
+  renderHeroes();
+}
+
+function renderHeroes() {
+  const tbody = document.getElementById('heroes-tbody');
+  const search = (document.getElementById('heroes-search')?.value ?? '').trim().toLowerCase();
+  const list = !search ? heroesCache : heroesCache.filter(h =>
+    (h.name || '').toLowerCase().includes(search) ||
+    (h.description || '').toLowerCase().includes(search)
+  );
+  if (heroesCache.length === 0) {
     tbody.innerHTML = emptyRow(7, 'image', 'Нет героев');
+    renderIcons(); return;
+  }
+  if (list.length === 0) {
+    tbody.innerHTML = emptyRow(7, 'search-x', 'Ничего не найдено');
     renderIcons(); return;
   }
   tbody.innerHTML = list.map(h => `<tr data-hero-id="${h.id}">
     <td style="color:var(--muted);font-size:12px">${h.id}</td>
     <td><input type="text" class="hero-name-input" value="${esc(h.name)}" style="width:120px;font-weight:600"></td>
-    <td>${h.isLimited ? '<span class="badge badge-mvp">Лимит</span>' : '<span class="badge badge-neutral">Основной</span>'}</td>
-    <td><input type="text" class="hero-desc-input" value="${esc(h.description ?? '')}" placeholder="..." style="width:100%"></td>
+    <td class="col-hide-sm">${h.isLimited ? '<span class="badge badge-mvp">Лимит</span>' : '<span class="badge badge-neutral">Основной</span>'}</td>
+    <td class="col-hide-md"><input type="text" class="hero-desc-input" value="${esc(h.description ?? '')}" placeholder="..." style="width:100%"></td>
     <td>
       <div style="display:flex;gap:6px;align-items:center">
         <input type="text" class="hero-img-input" value="${esc(h.imageUrl ?? '')}" placeholder="https://..." style="flex:1;min-width:0">
@@ -2198,7 +2413,7 @@ async function saveHero(id, btn) {
   try {
     await api('PATCH', `/heroes/${id}`, { name, description, imageUrl });
     toast('✅ Герой обновлён');
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
   finally { btn.disabled = false; btn.innerHTML = '<i data-lucide="save"></i>'; renderIcons(); }
 }
 
@@ -2213,7 +2428,7 @@ async function deleteHero(id) {
     await api('DELETE', `/heroes/${id}`);
     toast('Герой удалён');
     loadHeroes();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 async function addHero() {
@@ -2233,7 +2448,7 @@ async function addHero() {
     document.getElementById('new-hero-season-wrap').style.display = 'none';
     document.getElementById('new-hero-order').value = '0';
     loadHeroes();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 function uploadHeroImage(heroId) {
@@ -2270,7 +2485,7 @@ async function _onHeroFileSelected(input) {
     row.querySelector('.hero-img-input').value = url;
     toast('Фото загружено — нажми «Сохранить»');
   } catch (e) {
-    toast('❌ ' + e.message);
+    toastError(e);
   } finally {
     if (uploadBtn) { uploadBtn.disabled = false; uploadBtn.innerHTML = '<i data-lucide="upload"></i>'; renderIcons(); }
   }
@@ -2395,7 +2610,7 @@ async function saveMvpConfig() {
     await api('PUT', '/config/mvp', { ...weights, ...coins });
     toast('✅ Настройки сохранены');
     loadMvpConfig();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 // ── Дашборд ───────────────────────────────────────────────────────────────────
@@ -2556,7 +2771,7 @@ async function saveEmployeePhone(id, btn) {
   try {
     await api('PUT', `/employees/${id}`, { phone });
     toast('✅ Телефон сохранён');
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
   finally { btn.disabled = false; }
 }
 
@@ -2654,6 +2869,10 @@ function closeEmployeeModal() {
 
 // ── CSV Экспорт ───────────────────────────────────────────────────────────────
 function downloadCsv(filename, headers, rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    toast('⚠️ Нечего экспортировать — данных за этот период нет');
+    return false;
+  }
   const escape = v => {
     const s = String(v ?? '');
     return s.includes(',') || s.includes('"') || s.includes('\n')
@@ -2665,6 +2884,15 @@ function downloadCsv(filename, headers, rows) {
   const a = document.createElement('a');
   a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
+  toast(`✅ Скачано: ${rows.length} ${rowsWord(rows.length)}`);
+  return true;
+}
+
+function rowsWord(n) {
+  const mod10 = n % 10, mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'строка';
+  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return 'строки';
+  return 'строк';
 }
 
 async function exportEmployeesCsv() {
@@ -2751,7 +2979,7 @@ async function addAdminUser() {
   const password = document.getElementById('new-admin-password').value;
   const role     = document.getElementById('new-admin-role').value;
   if (!username) { toast('Введи логин'); return; }
-  if (!password || password.length < 4) { toast('Пароль минимум 4 символа'); return; }
+  if (!password || password.length < 8) { toast('Пароль минимум 8 символов'); return; }
   try {
     await api('POST', '/admin-users', { username, password, role });
     toast('✅ Пользователь создан');
@@ -2759,14 +2987,14 @@ async function addAdminUser() {
     document.getElementById('new-admin-username').value = '';
     document.getElementById('new-admin-password').value = '';
     loadAdminUsers();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 async function updateAdminUserRole(id, role) {
   try {
     await api('PUT', `/admin-users/${id}`, { role });
     toast('Роль обновлена');
-  } catch (e) { toast('❌ ' + e.message); loadAdminUsers(); }
+  } catch (e) { toastError(e); loadAdminUsers(); }
 }
 
 async function toggleAdminActive(id, isActive) {
@@ -2774,7 +3002,7 @@ async function toggleAdminActive(id, isActive) {
     await api('PUT', `/admin-users/${id}`, { isActive });
     toast(isActive ? 'Включён' : 'Отключён');
     loadAdminUsers();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 // id и username админа, которому сейчас сбрасываем пароль (для модалки)
@@ -2799,14 +3027,14 @@ function closeResetPasswordModal() {
 
 async function confirmResetPassword() {
   const password = document.getElementById('rpw-input').value;
-  if (!password || password.length < 4) { toast('Пароль минимум 4 символа'); return; }
+  if (!password || password.length < 8) { toast('Пароль минимум 8 символов'); return; }
   const id = _resetPwTargetId;
   if (!id) return;
   try {
     await api('PUT', `/admin-users/${id}`, { password });
     closeResetPasswordModal();
     toast('✅ Пароль обновлён. Пользователь сменит его при первом входе');
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 async function deleteAdminUser(id) {
@@ -2820,7 +3048,7 @@ async function deleteAdminUser(id) {
     await api('DELETE', `/admin-users/${id}`);
     toast('Удалено');
     loadAdminUsers();
-  } catch (e) { toast('❌ ' + e.message); }
+  } catch (e) { toastError(e); }
 }
 
 // ── Старт ─────────────────────────────────────────────────────────────────────

@@ -630,6 +630,25 @@ table select {
   .col-hide-xs { display: none !important; }
 }
 
+/* ── Challenge chip (быстрый выбор причины-челленджа) ────────────────── */
+.challenge-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--pink-200);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 999px;
+  font-size: 13px; font-weight: 500;
+  cursor: pointer;
+  transition: all var(--t-fast);
+}
+.challenge-chip:hover { background: var(--pink-50); border-color: var(--pink); }
+.challenge-chip .reward {
+  font-weight: 700; color: var(--pink);
+  font-size: 12px;
+}
+.challenge-chip i { width: 14px; height: 14px; color: var(--pink); }
+
 /* ── Confirm dialog ─────────────────────────────────────────────────── */
 .modal-confirm-box {
   max-width: 480px;

@@ -266,6 +266,12 @@
         </div>
       </div>
 
+      <!-- Активные челленджи: один клик — чтобы быстро задать причину как «Челлендж: X» -->
+      <div id="coin-quick-challenges" class="hidden card card-pad" style="margin-bottom:12px;background:linear-gradient(180deg,var(--pink-50),var(--surface));border-color:var(--pink-200)">
+        <p class="section-title" style="margin:0 0 8px"><i data-lucide="flame" style="width:14px;height:14px"></i> Активные челленджи — наградить одним кликом</p>
+        <div id="coin-quick-challenges-chips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+      </div>
+
       <div class="card card-pad" style="margin-bottom:16px">
         <p class="section-title">Начислить или списать</p>
         <div class="form-row">
@@ -296,28 +302,7 @@
             </select>
           </label>
           <label>Количество
-            <select id="coin-amount" style="width:120px">
-              <option value="-10">−10</option>
-              <option value="-9">−9</option>
-              <option value="-8">−8</option>
-              <option value="-7">−7</option>
-              <option value="-6">−6</option>
-              <option value="-5">−5</option>
-              <option value="-4">−4</option>
-              <option value="-3">−3</option>
-              <option value="-2">−2</option>
-              <option value="-1">−1</option>
-              <option value="1" selected>+1</option>
-              <option value="2">+2</option>
-              <option value="3">+3</option>
-              <option value="4">+4</option>
-              <option value="5">+5</option>
-              <option value="6">+6</option>
-              <option value="7">+7</option>
-              <option value="8">+8</option>
-              <option value="9">+9</option>
-              <option value="10">+10</option>
-            </select>
+            <input type="number" id="coin-amount" min="-1000" max="1000" step="1" value="1" style="width:100px">
           </label>
           <label>Примечание
             <input type="text" id="coin-note" placeholder="необязательно" style="width:240px">
@@ -736,15 +721,22 @@
         </div>
       </div>
 
+      <div class="toolbar">
+        <div class="search-input">
+          <i data-lucide="search"></i>
+          <input type="text" id="prizes-search" placeholder="Поиск по названию или описанию" oninput="renderPrizes()">
+        </div>
+      </div>
+
       <div class="table-wrap">
         <table>
           <thead><tr>
             <th style="width:50px">#</th>
             <th>Название</th>
-            <th style="width:140px">Тип</th>
+            <th style="width:140px" class="col-hide-sm">Тип</th>
             <th style="width:100px">Карт.</th>
             <th style="width:100px">Монет</th>
-            <th style="width:80px">Сорт.</th>
+            <th style="width:80px" class="col-hide-md">Сорт.</th>
             <th style="width:130px">Статус</th>
             <th style="width:140px">Действие</th>
           </tr></thead>
@@ -907,13 +899,20 @@
         </div>
       </div>
 
+      <div class="toolbar">
+        <div class="search-input">
+          <i data-lucide="search"></i>
+          <input type="text" id="heroes-search" placeholder="Поиск по имени или описанию" oninput="renderHeroes()">
+        </div>
+      </div>
+
       <div class="table-wrap">
         <table>
           <thead><tr>
             <th style="width:50px">#</th>
             <th>Имя</th>
-            <th style="width:100px">Тип</th>
-            <th>Описание</th>
+            <th style="width:100px" class="col-hide-sm">Тип</th>
+            <th class="col-hide-md">Описание</th>
             <th>URL картинки</th>
             <th style="width:140px">Действие</th>
           </tr></thead>
@@ -1021,7 +1020,7 @@
         <p class="section-title">Новый администратор</p>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
           <label>Логин <input type="text" id="new-admin-username" class="input" placeholder="petrov"></label>
-          <label>Пароль <input type="text" id="new-admin-password" class="input" placeholder="мин. 4 символа"></label>
+          <label>Пароль <input type="text" id="new-admin-password" class="input" placeholder="мин. 8 символов"></label>
           <label>Роль
             <select id="new-admin-role" class="input">
               <option value="superadmin">Суперадмин — полный доступ</option>
@@ -1119,7 +1118,7 @@
     </div>
     <div style="padding:16px">
       <p id="cpw-hint" class="text-muted" style="font-size:13px;margin-bottom:12px">
-        Минимум 4 символа. Новый пароль должен отличаться от текущего.
+        Минимум 8 символов. Новый пароль должен отличаться от текущего и не быть в списке распространённых.
       </p>
       <label style="display:block;margin-bottom:10px">Текущий пароль
         <input type="password" id="cpw-old" class="input" style="width:100%;margin-top:4px">
@@ -1145,7 +1144,7 @@
     <div style="padding:16px">
       <p class="text-muted" style="font-size:13px;margin-bottom:12px">
         Новый пароль для <strong id="rpw-username">—</strong>.<br>
-        Минимум 4 символа. Пользователю придётся сменить его при первом входе.
+        Минимум 8 символов. Пользователю придётся сменить его при первом входе.
       </p>
       <label style="display:block;margin-bottom:14px">Новый пароль
         <input type="password" id="rpw-input" class="input" style="width:100%;margin-top:4px" autocomplete="new-password">

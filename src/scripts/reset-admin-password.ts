@@ -11,12 +11,14 @@
 // (или DATABASE_URL локально) — оба требуют входа в Render-аккаунт владельца.
 
 import { pool } from '../db/pool';
-import { hashPassword } from '../services/adminAuth.service';
+import { hashPassword, validatePassword } from '../services/adminAuth.service';
 
 async function main(): Promise<void> {
   const password = process.argv[2];
-  if (!password || password.length < 4) {
-    console.error('❌ Использование: npm run reset-admin-password -- \'НовыйПароль\' (минимум 4 символа)');
+  const check = password ? validatePassword(password) : { ok: false, error: 'Пароль обязателен' } as const;
+  if (!check.ok) {
+    console.error(`❌ ${check.error}`);
+    console.error("    Использование: npm run reset-admin-password -- 'НовыйПароль' (минимум 8 символов)");
     process.exit(1);
   }
 

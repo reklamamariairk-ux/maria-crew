@@ -1003,6 +1003,14 @@ function showApp(stats) {
   document.getElementById('welcome-overlay').classList.remove('show');
   document.getElementById('app').style.display = 'block';
 
+  // Гарантированно скрываем нативный splash — на случай если inline-pre-check
+  // в <head> не сработал (например, кеш был пуст и сейчас наполнился впервые)
+  try {
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen) {
+      window.Capacitor.Plugins.SplashScreen.hide({ fadeOutDuration: 100 });
+    }
+  } catch (e) {}
+
   const name = employee.name || '?';
   setAvatar(name);
   document.getElementById('header-name').textContent = name;

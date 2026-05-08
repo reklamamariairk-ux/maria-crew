@@ -5,6 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Maria Crew</title>
   <link rel="icon" type="image/png" href="assets/favicon.png">
+  <!-- Pre-render: если в localStorage есть кеш — сразу прячем loading-screen
+       и СРАЗУ скрываем сплэш Capacitor. UI рендерится мгновенно из main.js. -->
+  <script>
+    (function() {
+      try {
+        var hasCache = !!localStorage.getItem('mc_cached_me_v1');
+        if (hasCache) {
+          document.documentElement.dataset.fastBoot = '1';
+          // Сразу прячем splash как только Capacitor готов — параллельно с этим
+          // скриптом, без ожидания DOMContentLoaded.
+          var hideSplash = function() {
+            try {
+              if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen) {
+                window.Capacitor.Plugins.SplashScreen.hide({ fadeOutDuration: 0 });
+              }
+            } catch(e) {}
+          };
+          if (document.readyState !== 'loading') hideSplash();
+          else document.addEventListener('readystatechange', function(){ if (document.readyState === 'interactive') hideSplash(); });
+        }
+      } catch(e) {}
+    })();
+  </script>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <style>
@@ -75,6 +98,8 @@
       text-align: center;
       padding: 0 32px;
     }
+    /* Fast-boot: при наличии кеша loading-экран не показываем вообще */
+    html[data-fast-boot="1"] #loading { display: none !important; }
 
     /* ── Анимации ── */
     @keyframes fadeUp   { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
@@ -1028,6 +1053,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="main.js?v=20260508h"></script>
+<script src="main.js?v=20260508i"></script>
 </body>
 </html>

@@ -7,6 +7,30 @@ const VALID_ROLES: AdminRole[] = ['superadmin', 'editor', 'coin_admin'];
 
 const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 дней
 
+// ── Проверка надёжности пароля ──────────────────────────────────────────────
+// Применяется при создании/смене/сбросе пароля админа. К существующим
+// (уже сохранённым) паролям не применяется — старые слабые пароли логин не
+// ломают, но как только админ меняет пароль, новый должен пройти проверку.
+
+const PASSWORD_BLOCKLIST = new Set([
+  '12345678', '123456789', '1234567890',
+  'qwertyui', 'qwertyuiop', 'asdfghjk', 'asdfghjkl',
+  'password', 'password1', 'password123',
+  'admin123', 'administrator',
+  '11111111', '22222222', '88888888', '00000000',
+  'iloveyou', 'qwerty12', 'abc12345',
+]);
+
+export function validatePassword(password: string): { ok: true } | { ok: false; error: string } {
+  if (typeof password !== 'string') return { ok: false, error: 'Пароль обязателен' };
+  if (password.length < 8) return { ok: false, error: 'Пароль должен быть не короче 8 символов' };
+  if (password.length > 128) return { ok: false, error: 'Пароль слишком длинный (максимум 128 символов)' };
+  if (PASSWORD_BLOCKLIST.has(password.toLowerCase())) {
+    return { ok: false, error: 'Этот пароль слишком распространён — выбери другой' };
+  }
+  return { ok: true };
+}
+
 // ── Пароли (scrypt) ─────────────────────────────────────────────────────────
 
 export function hashPassword(password: string): string {
