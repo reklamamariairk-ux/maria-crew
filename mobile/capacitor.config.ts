@@ -33,6 +33,8 @@ const config: CapacitorConfig = {
     // url: 'https://maria-crew.onrender.com/webapp',
     androidScheme: 'https',
     cleartext: false,
+    // Whitelist для cross-origin fetch — иначе WebView может блочить запросы
+    allowNavigation: ['maria-crew.onrender.com', '*.onrender.com'],
   },
 
   plugins: {

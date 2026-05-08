@@ -1,6 +1,12 @@
 /* global Telegram */
-const API = '/api/webapp';
-const API_V1 = '/api/v1';
+// В Capacitor (нативное приложение) WebView грузит ассеты с https://localhost,
+// поэтому относительные URL `/api/...` уходят в никуда. Определяем нативную
+// среду и подставляем абсолютный хост сервера.
+const SERVER_BASE = (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())
+  ? 'https://maria-crew.onrender.com'
+  : '';
+const API = SERVER_BASE + '/api/webapp';
+const API_V1 = SERVER_BASE + '/api/v1';
 const REQUEST_TIMEOUT_MS = 30000;
 
 let tg = null;
