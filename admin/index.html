@@ -157,9 +157,9 @@
           </div>
         </div>
         <div class="card card-pad">
-          <p class="section-title"><i data-lucide="flame" style="width:14px;height:14px"></i> Активные челленджи</p>
-          <div id="dash-challenges">
-            <p class="text-muted">Нет активных челленджей</p>
+          <p class="section-title"><i data-lucide="zap" style="width:14px;height:14px"></i> Топ-10 за месяц <span id="dash-perf-period" class="text-muted" style="font-size:12px;font-weight:400"></span></p>
+          <div id="dash-top-performers">
+            <p class="text-muted">Загрузка...</p>
           </div>
         </div>
       </div>
@@ -1172,6 +1172,34 @@
         <button class="btn btn-ghost" onclick="closeRejectModal()">Отмена</button>
         <button class="btn btn-danger" onclick="confirmReject()"><i data-lucide="x"></i> Отклонить</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Модалка: История начислений по челленджу ─────────────────────────── -->
+<div id="modal-challenge-history" class="modal-overlay hidden" onclick="if(event.target===this)closeChallengeHistory()">
+  <div class="modal-box" style="max-width:760px;width:95%">
+    <div class="modal-header">
+      <div>
+        <h2 class="modal-title" id="chh-title">История начислений</h2>
+        <p id="chh-meta" class="text-muted" style="font-size:12px;margin:4px 0 0">Загрузка...</p>
+      </div>
+      <button class="modal-close" onclick="closeChallengeHistory()" aria-label="Закрыть"><i data-lucide="x"></i></button>
+    </div>
+    <div style="overflow-y:auto;max-height:65vh">
+      <table style="margin:0">
+        <thead>
+          <tr>
+            <th>Когда</th>
+            <th>Сотрудник</th>
+            <th style="width:80px">Сумма</th>
+            <th>Комментарий</th>
+          </tr>
+        </thead>
+        <tbody id="chh-tbody">
+          <tr><td colspan="4" class="empty">Загрузка...</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </div>

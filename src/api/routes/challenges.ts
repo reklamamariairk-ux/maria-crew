@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { pool } from '../../db/pool';
 import { listChallenges, createChallenge, updateChallenge, awardChallengeCard, deleteChallenge } from '../../services/challenge.service';
 import { logAudit } from '../../services/audit.service';
 
@@ -175,6 +176,68 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction): P
     if (!ok) { res.status(404).json({ error: 'Челлендж не найден' }); return; }
     res.json({ ok: true });
     logAudit('challenge_delete', { challengeId: id }, req.ip).catch(() => {});
+  } catch (err) { next(err); }
+});
+
+// GET /api/challenges/:id/transactions — история ручных начислений
+// по этому челленджу. Опирается на стабильный паттерн `Челлендж #{id}:`
+// в note (см. admin/app.js: awardCoins/bulkAwardCoins).
+router.get('/:id/transactions', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Неверный id' }); return; }
+    const { rows } = await pool.query<{
+      id: number; createdAt: Date; amount: number; note: string | null;
+      employeeId: number; employeeName: string; storeName: string | null;
+      adminUsername: string | null;
+    }>(
+      `SELECT ct.id,
+              ct.created_at AS "createdAt",
+              ct.amount,
+              ct.note,
+              ct.employee_id AS "employeeId",
+              e.name AS "employeeName",
+              s.name AS "storeName",
+              au.username AS "adminUsername"
+       FROM coin_transactions ct
+       JOIN employees e   ON e.id = ct.employee_id
+       LEFT JOIN stores s ON s.id = e.store_id
+       LEFT JOIN admin_users au ON au.id = ct.created_by
+       WHERE ct.note LIKE $1 OR ct.note LIKE $2
+       ORDER BY ct.created_at DESC
+       LIMIT 500`,
+      // 1) Новый формат: `Челлендж #{id}: ...`
+      // 2) Старый: `Челлендж: ...` — без id, может оставаться в исторических данных
+      //    одного челленджа. Для совпадающих имён даст ложные положительные,
+      //    но иначе старые транзакции в истории не появятся вообще.
+      [`Челлендж #${id}:%`, `Челлендж: %`]
+    );
+    // Для запроса по id фильтруем «старый» формат: только если у челленджа
+    // нет одноимённых конкурентов; иначе показываем только #id.
+    const { rows: chRow } = await pool.query<{ name: string; sameNameCount: string }>(
+      `SELECT sc.name,
+              (SELECT COUNT(*)::text FROM seasonal_challenges WHERE name = sc.name) AS "sameNameCount"
+       FROM seasonal_challenges sc WHERE sc.id = $1`,
+      [id]
+    );
+    const challenge = chRow[0];
+    if (!challenge) { res.status(404).json({ error: 'Челлендж не найден' }); return; }
+
+    const filtered = rows.filter(r => {
+      const note = r.note ?? '';
+      if (note.startsWith(`Челлендж #${id}:`)) return true;
+      // Старый формат принимаем только если имя челленджа уникально
+      if (parseInt(challenge.sameNameCount, 10) === 1 && note.startsWith(`Челлендж: ${challenge.name}`)) return true;
+      return false;
+    });
+
+    res.json({
+      challengeName: challenge.name,
+      total: filtered.length,
+      coinsTotal: filtered.reduce((s, r) => s + (r.amount || 0), 0),
+      uniqueEmployees: new Set(filtered.map(r => r.employeeId)).size,
+      transactions: filtered,
+    });
   } catch (err) { next(err); }
 });
 

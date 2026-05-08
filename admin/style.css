@@ -630,6 +630,50 @@ table select {
   .col-hide-xs { display: none !important; }
 }
 
+/* ── Top performers (Дашборд) ────────────────────────────────────────── */
+.perf-row {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.perf-row:last-child { border-bottom: none; }
+.perf-rank {
+  font-size: 18px; min-width: 24px; text-align: center;
+  font-weight: 700; color: var(--text-2);
+  padding-top: 1px;
+}
+.perf-body { flex: 1; min-width: 0; }
+.perf-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 8px;
+}
+.perf-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.perf-total {
+  font-size: 14px; font-weight: 700; color: var(--pink);
+  white-space: nowrap;
+}
+.perf-bar {
+  display: flex; height: 6px;
+  background: var(--border);
+  border-radius: 999px; overflow: hidden;
+  margin: 4px 0;
+}
+.perf-seg { display: block; height: 100%; }
+.perf-seg.q { background: #6366F1; }   /* квиз — индиго */
+.perf-seg.c { background: #10B981; }   /* чек-лист — зелёный */
+.perf-seg.h { background: #F59E0B; }   /* челленджи — оранжевый */
+.perf-seg.o { background: var(--pink); } /* прочее — розовый */
+.perf-meta {
+  font-size: 12px; color: var(--text-3);
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+}
+.perf-chip {
+  font-size: 11px;
+  background: var(--surface-2);
+  padding: 1px 7px; border-radius: 999px;
+  color: var(--text-2);
+}
+
 /* ── Challenge chip (быстрый выбор причины-челленджа) ────────────────── */
 .challenge-chip {
   display: inline-flex; align-items: center; gap: 6px;

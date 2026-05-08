@@ -754,7 +754,9 @@ async function awardCoins() {
   let finalAmount;
   if (ch) {
     finalAmount = ch.ch.coinReward;
-    const challengeNote = `Челлендж: ${ch.ch.name}` + (note ? ` — ${note}` : '');
+    // Стабильный паттерн `Челлендж #{id}:` нужен бэку для фильтрации истории
+    // и подсчёта статистики (имена челленджей могут совпадать).
+    const challengeNote = `Челлендж #${ch.ch.id}: ${ch.ch.name}` + (note ? ` — ${note}` : '');
     payload = { employeeId, reason: 'manual', amount: finalAmount, note: challengeNote };
   } else {
     if (rawReason === 'manual' && (isNaN(amount) || amount === 0)) {
@@ -1055,7 +1057,7 @@ async function bulkAwardCoins() {
       employeeIds: ids,
       reason: 'manual',
       amount: ch.ch.coinReward,
-      note: `Челлендж: ${ch.ch.name}`,
+      note: `Челлендж #${ch.ch.id}: ${ch.ch.name}`,
     };
     label = `Челлендж: ${ch.ch.name} (+${ch.ch.coinReward})`;
     isDeduction = false;
@@ -2081,6 +2083,7 @@ async function loadChallenges() {
       <td>${statusBadge}</td>
       <td>
         <div class="row-actions">
+          <button class="btn btn-ghost btn-sm btn-icon" onclick="showChallengeHistory(${ch.id})" title="История начислений"><i data-lucide="history"></i></button>
           <button class="btn btn-ghost btn-sm btn-icon" onclick="editChallenge(${ch.id})" title="Редактировать"><i data-lucide="pencil"></i></button>
           <button class="btn btn-ghost btn-sm btn-icon" onclick="duplicateChallenge(${ch.id})" title="Копировать"><i data-lucide="copy"></i></button>
           <button class="btn btn-danger btn-sm btn-icon" onclick="deleteChallenge(${ch.id})" title="Удалить"><i data-lucide="trash-2"></i></button>
@@ -2089,6 +2092,60 @@ async function loadChallenges() {
     </tr>`;
   }).join('');
   renderIcons();
+}
+
+async function showChallengeHistory(id) {
+  const modal = document.getElementById('modal-challenge-history');
+  document.getElementById('chh-title').textContent = 'История начислений';
+  document.getElementById('chh-meta').textContent = 'Загрузка...';
+  document.getElementById('chh-tbody').innerHTML = `<tr><td colspan="4" class="empty">Загрузка...</td></tr>`;
+  modal.classList.remove('hidden');
+  renderIcons();
+
+  try {
+    const data = await api('GET', `/challenges/${id}/transactions`);
+    if (!data) return;
+    document.getElementById('chh-title').textContent = data.challengeName;
+    document.getElementById('chh-meta').textContent = data.total === 0
+      ? 'Пока ничего не начислено по этому челленджу'
+      : `${data.total} начислений · ${data.coinsTotal} монет · ${data.uniqueEmployees} сотрудников`;
+
+    const tbody = document.getElementById('chh-tbody');
+    if (data.transactions.length === 0) {
+      tbody.innerHTML = emptyRow(4, 'history', 'Нет начислений');
+      renderIcons();
+      return;
+    }
+    tbody.innerHTML = data.transactions.map(t => {
+      // Из note вырезаем префикс «Челлендж #N: name» — оставляем только
+      // комментарий админа после « — » (если был).
+      const m = (t.note ?? '').match(/^Челлендж[^—]*(?: — (.*))?$/);
+      const comment = m && m[1] ? m[1] : '';
+      return `<tr>
+        <td style="color:var(--muted);font-size:12px;white-space:nowrap">${formatDateTime(t.createdAt)}</td>
+        <td><strong>${esc(t.employeeName)}</strong>${t.storeName ? `<br><span class="text-muted" style="font-size:12px">${esc(t.storeName)}</span>` : ''}</td>
+        <td style="color:var(--green);font-weight:600">+${t.amount}</td>
+        <td style="font-size:13px;color:var(--text-2)">${esc(comment) || '<span class="text-muted">—</span>'}${t.adminUsername ? ` <span class="text-muted" style="font-size:11px">(${esc(t.adminUsername)})</span>` : ''}</td>
+      </tr>`;
+    }).join('');
+    renderIcons();
+  } catch (e) { toastError(e); }
+}
+
+function closeChallengeHistory() {
+  document.getElementById('modal-challenge-history').classList.add('hidden');
+}
+
+function formatDateTime(d) {
+  if (!d) return '—';
+  const dt = new Date(d);
+  // Иркутское время для UI
+  const irk = new Date(dt.getTime() + 8 * 60 * 60 * 1000);
+  const day = irk.getUTCDate();
+  const mon = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'][irk.getUTCMonth()];
+  const hh = String(irk.getUTCHours()).padStart(2, '0');
+  const mm = String(irk.getUTCMinutes()).padStart(2, '0');
+  return `${day} ${mon}, ${hh}:${mm}`;
 }
 
 async function deleteChallenge(id) {
@@ -2650,24 +2707,42 @@ async function loadDashboard() {
     top3El.innerHTML = '<p class="text-muted">Заполни метрики во вкладке «Метрики» — топ-3 появится автоматически.</p>';
   }
 
-  // Active challenges
-  const challEl = document.getElementById('dash-challenges');
-  if (data.activeChallenges && data.activeChallenges.length > 0) {
-    challEl.innerHTML = data.activeChallenges.map(c => {
-      const pct = c.completionPercent;
-      const label = `${SEASON_LABELS_DASH[c.season] ?? c.season} ${c.year}`;
-      return `<div style="margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
-          <span style="font-size:13px;font-weight:600">${esc(c.name)}</span>
-          <span style="font-size:12px;color:var(--text-3)">${label} · ${c.completedCount}/${c.totalCount ?? '?'} (${pct}%)</span>
-        </div>
-        <div style="background:var(--border);border-radius:999px;height:6px">
-          <div style="background:var(--pink);border-radius:999px;height:6px;width:${pct}%;transition:width .4s"></div>
+  // Top performers (текущий месяц, Иркутск). По сумме положительных монет
+  // с разбивкой: квиз / чек-лист / челленджи / прочее.
+  const perfEl = document.getElementById('dash-top-performers');
+  const periodEl = document.getElementById('dash-perf-period');
+  if (periodEl) {
+    const irkNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    periodEl.textContent = `· ${MONTH_NAMES[irkNow.getUTCMonth() + 1]} ${irkNow.getUTCFullYear()}`;
+  }
+  if (data.topPerformers && data.topPerformers.length > 0) {
+    perfEl.innerHTML = data.topPerformers.map((p, i) => {
+      const c = p.byCategory || {};
+      const max = p.totalCoins || 1;
+      const seg = (val, cls) => val > 0
+        ? `<span class="perf-seg ${cls}" style="flex:${val}" title="${esc(cls)}: ${val}"></span>`
+        : '';
+      const chips = [
+        c.quiz      > 0 ? `<span class="perf-chip" title="Квиз">🧠 ${c.quiz}</span>` : '',
+        c.checklist > 0 ? `<span class="perf-chip" title="Чек-лист">✅ ${c.checklist}</span>` : '',
+        c.challenge > 0 ? `<span class="perf-chip" title="Челленджи">🔥 ${c.challenge}</span>` : '',
+        c.other     > 0 ? `<span class="perf-chip" title="Прочее">⭐ ${c.other}</span>` : '',
+      ].filter(Boolean).join('');
+      const rank = i < 3 ? ['🥇','🥈','🥉'][i] : `${i + 1}`;
+      return `<div class="perf-row">
+        <span class="perf-rank">${rank}</span>
+        <div class="perf-body">
+          <div class="perf-head">
+            <span class="perf-name">${esc(p.name)}</span>
+            <span class="perf-total">${p.totalCoins}</span>
+          </div>
+          <div class="perf-bar">${seg(c.quiz, 'q')}${seg(c.checklist, 'c')}${seg(c.challenge, 'h')}${seg(c.other, 'o')}</div>
+          <div class="perf-meta">${esc(p.storeName ?? '')} ${chips ? '· ' + chips : ''}</div>
         </div>
       </div>`;
     }).join('');
   } else {
-    challEl.innerHTML = '<p class="text-muted">Нет активных челленджей</p>';
+    perfEl.innerHTML = '<p class="text-muted">В этом месяце ещё никто ничего не получил</p>';
   }
 
   renderIcons();

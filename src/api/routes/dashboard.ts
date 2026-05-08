@@ -13,7 +13,7 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
     const year = irkNow.getUTCFullYear();
     const month = irkNow.getUTCMonth() + 1;
 
-    const [empResult, pendingResult, top3Result, coinsResult, challengeResult] = await Promise.all([
+    const [empResult, pendingResult, top3Result, coinsResult, topPerformersResult] = await Promise.all([
       pool.query<{ count: string }>(
         `SELECT COUNT(*)::text AS count FROM employees WHERE is_active = true`
       ),
@@ -63,15 +63,31 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
            AND EXTRACT(MONTH FROM created_at AT TIME ZONE 'Asia/Irkutsk') = $2`,
         [year, month]
       ),
-      pool.query<{ id: number; name: string; season: string; year: number; endDate: string; completedCount: string }>(
-        `SELECT sc.id, sc.name, sc.season, sc.year, sc.end_date::text AS "endDate",
-                COUNT(sce.employee_id)::text AS "completedCount"
-         FROM seasonal_challenges sc
-         LEFT JOIN seasonal_challenge_entries sce ON sce.challenge_id = sc.id
-         WHERE sc.end_date >= CURRENT_DATE AND sc.is_active = true
-         GROUP BY sc.id, sc.name, sc.season, sc.year, sc.end_date
-         ORDER BY sc.end_date ASC
-         LIMIT 5`
+      // Топ-10 по активности за текущий месяц (Иркутск). Считаем сумму
+      // положительных транзакций по категориям: квиз, чек-лист, челленджи,
+      // прочее. Списания и spend не учитываем — это не «выполненные задачи».
+      pool.query<{
+        id: number; name: string; storeName: string | null;
+        totalCoins: string; quizCoins: string; checklistCoins: string;
+        challengeCoins: string;
+      }>(
+        `SELECT e.id, e.name, s.name AS "storeName",
+                SUM(CASE WHEN ct.amount > 0 THEN ct.amount ELSE 0 END)::text AS "totalCoins",
+                SUM(CASE WHEN ct.reason = 'quiz'          AND ct.amount > 0 THEN ct.amount ELSE 0 END)::text AS "quizCoins",
+                SUM(CASE WHEN ct.reason = 'checklist_day' AND ct.amount > 0 THEN ct.amount ELSE 0 END)::text AS "checklistCoins",
+                SUM(CASE WHEN ct.reason = 'manual' AND ct.note LIKE 'Челлендж #%' AND ct.amount > 0 THEN ct.amount ELSE 0 END)::text AS "challengeCoins"
+         FROM employees e
+         JOIN coin_transactions ct ON ct.employee_id = e.id
+         LEFT JOIN stores s ON s.id = e.store_id
+         WHERE ct.amount > 0
+           AND EXTRACT(YEAR  FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $1
+           AND EXTRACT(MONTH FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $2
+           AND e.is_active = true
+         GROUP BY e.id, e.name, s.name
+         HAVING SUM(CASE WHEN ct.amount > 0 THEN ct.amount ELSE 0 END) > 0
+         ORDER BY SUM(CASE WHEN ct.amount > 0 THEN ct.amount ELSE 0 END) DESC
+         LIMIT 10`,
+        [year, month]
       ),
     ]);
 
@@ -99,23 +115,26 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
       ? { year: top3Mvp[0].year, month: top3Mvp[0].month }
       : null;
 
+    const topPerformers = topPerformersResult.rows.map(r => {
+      const total      = parseInt(r.totalCoins, 10);
+      const quiz       = parseInt(r.quizCoins, 10);
+      const checklist  = parseInt(r.checklistCoins, 10);
+      const challenge  = parseInt(r.challengeCoins, 10);
+      const other      = total - quiz - checklist - challenge;
+      return {
+        id: r.id, name: r.name, storeName: r.storeName,
+        totalCoins: total,
+        byCategory: { quiz, checklist, challenge, other },
+      };
+    });
+
     res.json({
       activeEmployees: totalActiveEmps,
       pendingExchanges: parseInt(pendingResult.rows[0].count, 10),
       top3Mvp: top3Mvp.map(({ year: _y, month: _m, ...rest }) => rest),
       mvpPeriod,
       coinsIssuedThisMonth: parseInt(coinsResult.rows[0].total, 10),
-      activeChallenges: challengeResult.rows.map(c => ({
-        id: c.id,
-        name: c.name,
-        season: c.season,
-        year: c.year,
-        endDate: c.endDate,
-        completedCount: parseInt(c.completedCount, 10),
-        completionPercent: totalActiveEmps > 0
-          ? Math.round(parseInt(c.completedCount, 10) / totalActiveEmps * 100)
-          : 0,
-      })),
+      topPerformers,
     });
   } catch (err) { next(err); }
 });
