@@ -25,12 +25,12 @@ router.post(
   rateLimit(10, 60 * 60 * 1000),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { phone } = req.body as { phone?: string };
-      if (!phone || typeof phone !== 'string') {
-        res.status(400).json({ error: 'phone обязателен' });
+      const { phone, email } = req.body as { phone?: string; email?: string };
+      if (!phone && !email) {
+        res.status(400).json({ error: 'phone или email обязателен' });
         return;
       }
-      const result = await requestPin(phone);
+      const result = await requestPin({ phone, email });
       if ('error' in result) {
         res.status(result.status).json({ error: result.error });
         return;
@@ -74,12 +74,12 @@ router.post(
   rateLimit(20, 60 * 60 * 1000),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { phone, pin } = req.body as { phone?: string; pin?: string };
-      if (!phone || !pin) {
-        res.status(400).json({ error: 'phone и pin обязательны' });
+      const { phone, email, pin } = req.body as { phone?: string; email?: string; pin?: string };
+      if ((!phone && !email) || !pin) {
+        res.status(400).json({ error: 'phone или email + pin обязательны' });
         return;
       }
-      const result = await verifyPinAndIssueToken(phone, pin);
+      const result = await verifyPinAndIssueToken({ phone, email, pin });
       if ('error' in result) {
         res.status(result.status).json({ error: result.error });
         return;
@@ -101,11 +101,15 @@ router.post(
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { phone, name, storeId, email } = req.body as { phone?: string; name?: string; storeId?: number; email?: string };
-      if (!phone || !name || !storeId) {
-        res.status(400).json({ error: 'phone, name и storeId обязательны' });
+      if (!name || !storeId) {
+        res.status(400).json({ error: 'name и storeId обязательны' });
         return;
       }
-      const result = await registerNewEmployee({ phone, name, storeId: Number(storeId), email });
+      if (!phone && !email) {
+        res.status(400).json({ error: 'Нужен телефон или email' });
+        return;
+      }
+      const result = await registerNewEmployee({ phone, email, name, storeId: Number(storeId) });
       if ('error' in result) {
         res.status(result.status).json({ error: result.error });
         return;
@@ -177,7 +181,7 @@ router.post(
 
       // Сразу шлём PIN на новый email (если RESEND настроен)
       if (process.env.RESEND_API_KEY) {
-        const result = await requestPin(phone);
+        const result = await requestPin({ phone });
         if ('error' in result) {
           // email сохранили, но pin не послали — попросим юзера запросить ещё раз
           res.json({ ok: true, emailSaved: true, pinSent: false, error: result.error });

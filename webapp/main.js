@@ -284,8 +284,21 @@ function showLoginScreen() {
         <p id="login-subtitle" style="font-size:13px;color:var(--hint);margin-bottom:24px">Введи свой телефон — пришлём код входа</p>
 
         <div id="login-step-phone">
+          <!-- Переключатель способа входа -->
+          <div style="display:flex;background:#f3f4f6;border-radius:12px;padding:4px;margin-bottom:12px">
+            <button type="button" id="login-mode-phone" onclick="switchLoginMode('phone')"
+                    style="flex:1;padding:10px;background:#fff;color:var(--text);border:0;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.05)">
+              📞 По телефону
+            </button>
+            <button type="button" id="login-mode-email" onclick="switchLoginMode('email')"
+                    style="flex:1;padding:10px;background:transparent;color:var(--hint);border:0;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">
+              ✉️ По email
+            </button>
+          </div>
           <input type="tel" id="login-phone" inputmode="tel" placeholder="+7 999 123 45 67" autocomplete="tel"
                  style="width:100%;padding:14px;border:1.5px solid #ddd;border-radius:12px;font-size:16px;margin-bottom:12px">
+          <input type="email" id="login-email" inputmode="email" placeholder="ivan@example.com" autocomplete="email"
+                 style="width:100%;padding:14px;border:1.5px solid #ddd;border-radius:12px;font-size:16px;margin-bottom:12px;display:none">
           <button id="login-request-btn" class="mc-primary-btn">Получить код</button>
         </div>
 
@@ -384,21 +397,53 @@ function switchLoginStep(step) {
   document.getElementById('login-error').textContent = '';
 }
 
+let __loginMode = 'phone'; // 'phone' | 'email'
+window.switchLoginMode = function (mode) {
+  __loginMode = mode;
+  const phoneTab = document.getElementById('login-mode-phone');
+  const emailTab = document.getElementById('login-mode-email');
+  const phoneInp = document.getElementById('login-phone');
+  const emailInp = document.getElementById('login-email');
+  const sub = document.getElementById('login-subtitle');
+  if (mode === 'phone') {
+    phoneTab.style.background = '#fff'; phoneTab.style.color = 'var(--text)'; phoneTab.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)';
+    emailTab.style.background = 'transparent'; emailTab.style.color = 'var(--hint)'; emailTab.style.boxShadow = 'none';
+    phoneInp.style.display = ''; emailInp.style.display = 'none';
+    if (sub) sub.textContent = 'Введи свой телефон — пришлём код входа';
+    setTimeout(() => phoneInp.focus(), 50);
+  } else {
+    emailTab.style.background = '#fff'; emailTab.style.color = 'var(--text)'; emailTab.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)';
+    phoneTab.style.background = 'transparent'; phoneTab.style.color = 'var(--hint)'; phoneTab.style.boxShadow = 'none';
+    emailInp.style.display = ''; phoneInp.style.display = 'none';
+    if (sub) sub.textContent = 'Введи свой email — пришлём код входа';
+    setTimeout(() => emailInp.focus(), 50);
+  }
+};
+
 function loginError(msg) {
   document.getElementById('login-error').textContent = msg || '';
 }
 
 async function doLoginRequestPin() {
   const phone = document.getElementById('login-phone').value.trim();
-  if (!phone) { loginError('Введи номер телефона'); return; }
+  const email = document.getElementById('login-email').value.trim();
+  const id = (__loginMode === 'email') ? email : phone;
+  if (!id) {
+    loginError(__loginMode === 'email' ? 'Введи email' : 'Введи номер телефона');
+    return;
+  }
+  if (__loginMode === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    loginError('Неверный формат email'); return;
+  }
   loginError('');
   const btn = document.getElementById('login-request-btn');
   btn.disabled = true; btn.textContent = 'Отправляем...';
   try {
+    const body = __loginMode === 'email' ? { email } : { phone };
     const res = await fetch(API_V1 + '/auth/request-pin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
     // 404 — сотрудник не найден → предлагаем зарегистрироваться
@@ -484,12 +529,19 @@ async function doLoginSetEmail() {
 }
 
 async function doLoginRegister() {
-  const phone = document.getElementById('login-phone').value.trim();
+  const phoneInput = document.getElementById('login-phone').value.trim();
+  const emailInput = document.getElementById('login-email').value.trim();
   const name = document.getElementById('reg-name').value.trim();
-  const email = document.getElementById('reg-email').value.trim();
+  const regEmail = document.getElementById('reg-email').value.trim();
   const storeId = parseInt(document.getElementById('reg-store-mobile').value);
+
+  // Источник определяем по выбранному режиму login screen
+  const phone = (__loginMode === 'phone') ? phoneInput : '';
+  const email = (__loginMode === 'email') ? emailInput : (regEmail || '');
+
   if (!name) { loginError('Введи имя'); return; }
   if (!storeId) { loginError('Выбери точку'); return; }
+  if (!phone && !email) { loginError('Нужен телефон или email'); return; }
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     loginError('Неверный формат email'); return;
   }
@@ -500,7 +552,7 @@ async function doLoginRegister() {
     const res = await fetch(API_V1 + '/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone, name, storeId, email: email || undefined }),
+      body: JSON.stringify({ phone: phone || undefined, name, storeId, email: email || undefined }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { loginError(data.error || 'Ошибка регистрации'); return; }
@@ -571,6 +623,53 @@ async function setupPushNotifications() {
 
   await Push.register();
 }
+
+// ── Обязательная привязка телефона после входа по email ─────────────────────
+function maybePromptPhoneRequired() {
+  if (!employee) return;
+  // Если телефона нет — показываем модалку. Закрыть нельзя пока не введёт.
+  if (!employee.phone) {
+    const overlay = document.getElementById('phone-required-overlay');
+    if (overlay) {
+      overlay.style.display = 'flex';
+      const inp = document.getElementById('phone-required-input');
+      if (inp) {
+        inp.value = '';
+        setTimeout(() => inp.focus(), 100);
+        inp.onkeydown = (e) => { if (e.key === 'Enter') savePhoneRequired(); };
+      }
+      document.getElementById('phone-required-error').textContent = '';
+    }
+  }
+}
+
+window.savePhoneRequired = async function () {
+  const phone = document.getElementById('phone-required-input').value.trim();
+  const errEl = document.getElementById('phone-required-error');
+  if (!phone) { errEl.textContent = 'Введи номер'; return; }
+  // Простая валидация — 10-11 цифр
+  const digits = phone.replace(/\D+/g, '');
+  if (digits.length < 10 || digits.length > 11) {
+    errEl.textContent = 'Введи 10-11 цифр номера'; return;
+  }
+  errEl.textContent = '';
+  const btn = document.getElementById('phone-required-btn');
+  btn.disabled = true; btn.textContent = 'Сохраняем...';
+  try {
+    const data = await apiFetch('/account', {
+      method: 'PATCH',
+      body: JSON.stringify({ phone }),
+    });
+    employee.phone = data.phone;
+    saveCachedMe(employee);
+    document.getElementById('phone-required-overlay').style.display = 'none';
+    showToast('✅ Номер сохранён');
+  } catch (e) {
+    errEl.textContent = e.message || 'Не удалось сохранить';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Сохранить';
+  }
+};
 
 // ── Inbox уведомлений (колокольчик) ──────────────────────────────────────────
 
@@ -805,16 +904,18 @@ window.doDeleteAccount = async function () {
 
 async function doLoginVerifyPin() {
   const phone = document.getElementById('login-phone').value.trim();
+  const email = document.getElementById('login-email').value.trim();
   const pin = document.getElementById('login-pin').value.trim();
   if (!/^\d{6}$/.test(pin)) { loginError('Введи 6 цифр'); return; }
   loginError('');
   const btn = document.getElementById('login-verify-btn');
   btn.disabled = true; btn.textContent = '⏳ Проверяем...';
   try {
+    const body = __loginMode === 'email' ? { email, pin } : { phone, pin };
     const res = await fetch(API_V1 + '/auth/verify-pin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone, pin }),
+      body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { loginError(data.error || 'Неверный код'); return; }
@@ -1123,6 +1224,10 @@ function showApp(stats) {
   if (!window._inboxRefreshTimer) {
     window._inboxRefreshTimer = setInterval(refreshInboxBadge, 60_000);
   }
+
+  // Если у сотрудника нет телефона (вошёл по email) — обязательная привязка.
+  // По номеру начисляются награды и призы (связь с 1С).
+  maybePromptPhoneRequired();
 
   // Авто-обновление баланса/счётчиков из /me каждые 60 сек +
   // когда приложение возвращается из фона (visibility API).

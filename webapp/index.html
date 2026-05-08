@@ -977,6 +977,28 @@
     <button onclick="doDeleteAccount()" style="background:transparent;border:0;color:#e53935;font-size:12px;text-decoration:underline;cursor:pointer">Удалить аккаунт</button>
   </div>
 
+  <!-- Обязательная привязка телефона после входа по email -->
+  <div id="phone-required-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10000;align-items:center;justify-content:center;padding:20px">
+    <div style="background:#fff;border-radius:20px;width:100%;max-width:380px;padding:28px 24px;animation:fadeUp 0.25s ease">
+      <div style="text-align:center;font-size:36px;margin-bottom:8px">📞</div>
+      <h2 style="font-size:18px;font-weight:900;margin:0 0 12px;text-align:center;color:#dc1e3c">Добавь номер телефона</h2>
+      <p style="font-size:14px;color:var(--text);line-height:1.5;margin:0 0 16px">
+        Это <strong>важно</strong>: по номеру телефона начисляются награды и призы.
+        Без него руководитель не сможет связать твою активность в Maria Crew с премией в 1С.
+      </p>
+      <input type="tel" id="phone-required-input" inputmode="tel" placeholder="+7 999 123 45 67" autocomplete="tel"
+             style="width:100%;padding:14px;border:1.5px solid #ddd;border-radius:12px;font-size:16px;margin-bottom:14px">
+      <div id="phone-required-error" style="font-size:13px;color:#e53935;margin-bottom:10px;min-height:18px"></div>
+      <button onclick="savePhoneRequired()" id="phone-required-btn"
+              style="width:100%;padding:14px;background:#dc1e3c;color:#fff;border:0;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer">
+        Сохранить
+      </button>
+      <p style="font-size:11px;color:var(--hint);text-align:center;margin:14px 0 0">
+        Номер можно поменять позже в профиле. Без него призы не будут начисляться.
+      </p>
+    </div>
+  </div>
+
   <!-- Модалка редактирования профиля (mobile/standalone) -->
   <div id="profile-edit-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:flex-end;justify-content:center;padding:0">
     <div style="background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:480px;padding:20px;animation:fadeUp 0.25s ease">
@@ -1061,6 +1083,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="main.js?v=20260508m"></script>
+<script src="main.js?v=20260508n"></script>
 </body>
 </html>

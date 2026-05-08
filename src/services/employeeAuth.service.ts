@@ -40,18 +40,34 @@ export interface RegisterEmployeeResult {
  * требует подключения шлюза (стоит денег).
  */
 export async function registerNewEmployee(input: {
-  phone: string;
+  phone?: string | null;
+  email?: string | null;
   name: string;
   storeId: number;
-  email?: string | null;
 }): Promise<RegisterEmployeeResult | { error: string; status: number }> {
-  const phoneNorm = normalizePhone(input.phone);
-  if (phoneNorm.length !== 11) return { error: 'Неверный формат телефона. Введи 11 цифр (например 89991234567)', status: 400 };
-
   const name = (input.name ?? '').trim();
   if (!name || name.length > 100) return { error: 'Имя должно быть от 1 до 100 символов', status: 400 };
-
   if (!Number.isInteger(input.storeId) || input.storeId <= 0) return { error: 'Выбери точку', status: 400 };
+
+  const hasPhone = !!(input.phone && input.phone.trim());
+  const hasEmail = !!(input.email && input.email.trim());
+  if (!hasPhone && !hasEmail) {
+    return { error: 'Нужен телефон или email', status: 400 };
+  }
+
+  // Нормализация
+  let phoneNorm: string | null = null;
+  let phoneFormatted: string | null = null;
+  if (hasPhone) {
+    phoneNorm = normalizePhone(input.phone!);
+    if (phoneNorm.length !== 11) return { error: 'Неверный формат телефона. Введи 11 цифр (например 89991234567)', status: 400 };
+    phoneFormatted = '+' + phoneNorm;
+  }
+  let emailNorm: string | null = null;
+  if (hasEmail) {
+    emailNorm = input.email!.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm)) return { error: 'Неверный формат email', status: 400 };
+  }
 
   // Проверяем что точка существует и активна
   const { rows: storeRows } = await pool.query<{ id: number }>(
@@ -60,18 +76,13 @@ export async function registerNewEmployee(input: {
   );
   if (!storeRows[0]) return { error: 'Точка не найдена или неактивна', status: 404 };
 
-  // Проверяем дубликат
-  const { rows: existing } = await pool.query<{ id: number }>(
-    `SELECT id FROM employees WHERE phone_normalized = $1`,
-    [phoneNorm]
-  );
-  if (existing[0]) return { error: 'Этот номер уже зарегистрирован. Войди как обычно через получение кода.', status: 409 };
-
-  // Сохраняем телефон в +7-формате для совместимости с тем как его собирает бот
-  const phoneFormatted = '+' + phoneNorm;
-  const emailNorm = input.email && input.email.trim() ? input.email.trim().toLowerCase() : null;
-
-  // Если задан email — проверяем что не занят
+  // Дубликаты
+  if (phoneNorm) {
+    const { rows: dup } = await pool.query<{ id: number }>(
+      `SELECT id FROM employees WHERE phone_normalized = $1`, [phoneNorm]
+    );
+    if (dup[0]) return { error: 'Этот номер уже зарегистрирован. Войди через получение кода.', status: 409 };
+  }
   if (emailNorm) {
     const { rows: dup } = await pool.query<{ id: number }>(
       `SELECT id FROM employees WHERE LOWER(email) = $1`, [emailNorm]
@@ -132,22 +143,41 @@ export interface PinRequestResult {
 }
 
 /**
- * Запрос PIN. Возвращает raw PIN — caller (route) должен сам отправить его
- * через бота. PIN-хеш сохраняется в БД.
+ * Запрос PIN — по телефону ИЛИ по email. Возвращает raw PIN; caller сам
+ * отправляет через нужный канал.
  */
-export async function requestPin(phone: string): Promise<PinRequestResult | { error: string; status: number }> {
-  const phoneNorm = normalizePhone(phone);
-  if (phoneNorm.length < 10) return { error: 'Неверный формат телефона', status: 400 };
+export async function requestPin(input: { phone?: string; email?: string }): Promise<PinRequestResult | { error: string; status: number }> {
+  let employee: { id: number; telegramId: string | null; phone: string | null; email: string | null } | undefined;
 
-  const { rows } = await pool.query<{ id: number; telegramId: string | null; phone: string | null; email: string | null }>(
-    `SELECT id, telegram_id::text AS "telegramId", phone, email
-     FROM employees
-     WHERE phone_normalized = $1 AND is_active = true
-     ORDER BY id LIMIT 1`,
-    [phoneNorm]
-  );
-  const employee = rows[0];
-  if (!employee) return { error: 'Сотрудник с таким номером не найден', status: 404 };
+  if (input.email) {
+    const emailNorm = input.email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm)) {
+      return { error: 'Неверный формат email', status: 400 };
+    }
+    const { rows } = await pool.query<{ id: number; telegramId: string | null; phone: string | null; email: string | null }>(
+      `SELECT id, telegram_id::text AS "telegramId", phone, email
+       FROM employees
+       WHERE LOWER(email) = $1 AND is_active = true
+       ORDER BY id LIMIT 1`,
+      [emailNorm]
+    );
+    employee = rows[0];
+    if (!employee) return { error: 'Сотрудник с таким email не найден', status: 404 };
+  } else if (input.phone) {
+    const phoneNorm = normalizePhone(input.phone);
+    if (phoneNorm.length < 10) return { error: 'Неверный формат телефона', status: 400 };
+    const { rows } = await pool.query<{ id: number; telegramId: string | null; phone: string | null; email: string | null }>(
+      `SELECT id, telegram_id::text AS "telegramId", phone, email
+       FROM employees
+       WHERE phone_normalized = $1 AND is_active = true
+       ORDER BY id LIMIT 1`,
+      [phoneNorm]
+    );
+    employee = rows[0];
+    if (!employee) return { error: 'Сотрудник с таким номером не найден', status: 404 };
+  } else {
+    return { error: 'Нужен phone или email', status: 400 };
+  }
 
   // Канал доставки: Telegram (если привязан) ИЛИ Email (если задан и Resend настроен)
   const hasTelegram = !!employee.telegramId;
@@ -199,23 +229,32 @@ export interface VerifyPinResult {
 }
 
 /**
- * Проверяет PIN и выдаёт JWT. PIN помечается использованным.
+ * Проверяет PIN и выдаёт JWT. Принимает phone ИЛИ email.
  */
 export async function verifyPinAndIssueToken(
-  phone: string,
-  pin: string
+  input: { phone?: string; email?: string; pin: string }
 ): Promise<VerifyPinResult | { error: string; status: number }> {
-  const phoneNorm = normalizePhone(phone);
-  if (phoneNorm.length < 10) return { error: 'Неверный формат телефона', status: 400 };
-  if (!/^\d{6}$/.test(pin)) return { error: 'PIN должен быть 6 цифр', status: 400 };
+  if (!/^\d{6}$/.test(input.pin)) return { error: 'PIN должен быть 6 цифр', status: 400 };
 
-  const { rows } = await pool.query<{ id: number }>(
-    `SELECT id FROM employees
-     WHERE phone_normalized = $1 AND is_active = true
-     ORDER BY id LIMIT 1`,
-    [phoneNorm]
-  );
-  const employee = rows[0];
+  let employee: { id: number } | undefined;
+  if (input.email) {
+    const emailNorm = input.email.trim().toLowerCase();
+    const { rows } = await pool.query<{ id: number }>(
+      `SELECT id FROM employees WHERE LOWER(email) = $1 AND is_active = true ORDER BY id LIMIT 1`,
+      [emailNorm]
+    );
+    employee = rows[0];
+  } else if (input.phone) {
+    const phoneNorm = normalizePhone(input.phone);
+    if (phoneNorm.length < 10) return { error: 'Неверный формат телефона', status: 400 };
+    const { rows } = await pool.query<{ id: number }>(
+      `SELECT id FROM employees WHERE phone_normalized = $1 AND is_active = true ORDER BY id LIMIT 1`,
+      [phoneNorm]
+    );
+    employee = rows[0];
+  } else {
+    return { error: 'Нужен phone или email', status: 400 };
+  }
   if (!employee) return { error: 'Сотрудник не найден', status: 404 };
 
   // Берём последний неиспользованный, не истёкший PIN. Берём ОДИН — повторные запросы
@@ -228,7 +267,7 @@ export async function verifyPinAndIssueToken(
   );
   if (!pinRows[0]) return { error: 'Код не найден или истёк. Запроси новый.', status: 401 };
 
-  if (!verifyPin(pin, pinRows[0].pinHash)) {
+  if (!verifyPin(input.pin, pinRows[0].pinHash)) {
     return { error: 'Неверный код', status: 401 };
   }
 
