@@ -33,9 +33,18 @@ function verifyPin(pin: string, stored: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-/** Нормализует телефон: оставляет только цифры. */
+/**
+ * Нормализует телефон: оставляет только цифры. Для российских номеров
+ * приводит «8XXXXXXXXXX» к «7XXXXXXXXXX» — это один и тот же номер
+ * в разных нотациях, и пользователь может ввести как угодно.
+ */
 export function normalizePhone(phone: string): string {
-  return phone.replace(/\D+/g, '');
+  let digits = phone.replace(/\D+/g, '');
+  // Российский трюк: 8 в начале 11-значного номера = +7
+  if (digits.length === 11 && digits.startsWith('8')) {
+    digits = '7' + digits.slice(1);
+  }
+  return digits;
 }
 
 export interface PinRequestResult {

@@ -42,8 +42,17 @@ describe('employeeAuth: JWT round-trip', () => {
 describe('employeeAuth: normalizePhone', () => {
   it('убирает плюсы, скобки, пробелы и тире', () => {
     expect(normalizePhone('+7 (999) 123-45-67')).toBe('79991234567');
-    expect(normalizePhone('8-999-123-45-67')).toBe('89991234567');
     expect(normalizePhone('+79991234567')).toBe('79991234567');
+  });
+
+  it('преобразует 8XXXXXXXXXX → 7XXXXXXXXXX для 11-значного номера', () => {
+    expect(normalizePhone('89991234567')).toBe('79991234567');
+    expect(normalizePhone('8-999-123-45-67')).toBe('79991234567');
+    expect(normalizePhone('8 999 123 45 67')).toBe('79991234567');
+  });
+
+  it('не трогает 8 в коротких номерах (не 11 цифр)', () => {
+    expect(normalizePhone('8123456')).toBe('8123456');
   });
 
   it('пустая строка → пустая', () => {
