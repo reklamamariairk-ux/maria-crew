@@ -473,32 +473,46 @@ function updateStreakBadge(streak) {
 async function init() {
   initTelegramContext();
 
-  // Standalone-режим (вне Telegram): требуется JWT
-  if (!hasTelegramUser || !initData) {
+  const isStandalone = !hasTelegramUser || !initData;
+
+  // Standalone-режим (мобильное приложение / браузер вне Telegram): требуется JWT.
+  if (isStandalone) {
     if (!mobileToken) {
       showLoginScreen();
       return;
     }
-    // Есть сохранённый токен — пробуем загрузить /me
+
+    // Есть сохранённый токен — грузим профиль через /me и сразу показываем UI,
+    // минуя authMiniApp (он требует Telegram initData, которого тут нет).
     try {
+      setLoadingHint('Подключаемся к Maria Crew...');
       const me = await apiFetch('/me');
       if (!me || !me.id) throw new Error('Не авторизован');
+      employee = me;
+      myStatsCache = me;
+
+      const footer = document.getElementById('standalone-footer');
+      if (footer) footer.style.display = '';
+
+      showApp({
+        availableCards: me.availableCards ?? 0,
+        coinBalance: me.coinBalance ?? 0,
+        uniqueHeroes: me.uniqueHeroes ?? 0,
+      });
+
+      setupPushNotifications().catch(err => console.warn('[push] setup failed:', err));
     } catch (err) {
+      // Токен протух или сервер недоступен — обратно на login
       saveMobileToken(null);
       showLoginScreen();
-      return;
     }
-    // Показать standalone-футер с logout/delete account
-    const footer = document.getElementById('standalone-footer');
-    if (footer) footer.style.display = '';
-    // Регистрация push-токена (только в native — в браузере window.Capacitor отсутствует)
-    setupPushNotifications().catch(err => console.warn('[push] setup failed:', err));
+    return;
   }
 
+  // Telegram Mini App — оригинальный поток с initData
   try {
     setLoadingHint('Подключаемся к Maria Crew...');
     const data = await authMiniApp();
-    // Не перетираем tgUser из initDataUnsafe — там лежит photo_url. Серверный user меньше.
     if (!tgUser && data.user) tgUser = data.user;
 
     if (data.employee && data.stats) {
