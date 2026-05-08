@@ -277,9 +277,11 @@ function showLoginScreen() {
     screen.style.cssText = 'min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:var(--bg)';
     screen.innerHTML = `
       <div style="max-width:340px;width:100%;text-align:center">
-        <div class="mc-logo-mark" aria-hidden="true">МК</div>
+        <div class="mc-logo-mark" aria-hidden="true">
+          <img src="assets/logo-girl-red.png" alt="Maria Crew" style="width:64%;height:auto;display:block" onerror="this.style.display='none';this.parentElement.textContent='МК'">
+        </div>
         <h1 style="font-size:22px;font-weight:900;margin:14px 0 6px;color:var(--text)">Maria Crew</h1>
-        <p id="login-subtitle" style="font-size:13px;color:var(--hint);margin-bottom:24px">Введи свой телефон — пришлём код в Telegram</p>
+        <p id="login-subtitle" style="font-size:13px;color:var(--hint);margin-bottom:24px">Введи свой телефон — пришлём код входа</p>
 
         <div id="login-step-phone">
           <input type="tel" id="login-phone" inputmode="tel" placeholder="+7 999 123 45 67" autocomplete="tel"
@@ -288,7 +290,7 @@ function showLoginScreen() {
         </div>
 
         <div id="login-step-pin" style="display:none">
-          <p style="font-size:13px;color:var(--hint);margin-bottom:12px">Открой Telegram-бот <strong>@Mariaprod_bot</strong> и введи 6-значный код</p>
+          <p id="pin-hint" style="font-size:13px;color:var(--hint);margin-bottom:12px">Введи 6-значный код, который мы прислали</p>
           <input type="text" id="login-pin" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code"
                  style="width:100%;padding:14px;border:1.5px solid #ddd;border-radius:12px;font-size:20px;text-align:center;letter-spacing:6px;margin-bottom:12px">
           <button id="login-verify-btn" class="mc-primary-btn">Войти</button>
@@ -318,12 +320,14 @@ function showLoginScreen() {
     const style = document.createElement('style');
     style.textContent = `
       .mc-logo-mark {
-        width:88px;height:88px;margin:0 auto;display:flex;align-items:center;justify-content:center;
+        width:96px;height:96px;margin:0 auto;display:flex;align-items:center;justify-content:center;
         font-weight:900;font-size:32px;color:#fff;letter-spacing:1px;
-        background: linear-gradient(135deg, #d4920a, #e8639b);
-        border-radius:22px;
-        box-shadow: 0 6px 20px rgba(212,146,10,0.35);
+        background: #DC1E3C;
+        border-radius:24px;
+        box-shadow: 0 6px 20px rgba(220,30,60,0.35);
+        overflow:hidden;
       }
+      .mc-logo-mark img { filter: brightness(0) invert(1); }
       .mc-primary-btn {
         width:100%;padding:14px;background:var(--brand);color:#fff;border:0;border-radius:12px;
         font-size:15px;font-weight:700;cursor:pointer;
@@ -385,6 +389,14 @@ async function doLoginRequestPin() {
     }
     if (!res.ok) { loginError(data.error || 'Ошибка'); return; }
     switchLoginStep('pin');
+    // Динамическая подсказка: куда именно ушёл код
+    const hint = document.getElementById('pin-hint');
+    if (hint) {
+      const ch = (data.channels || []).join(' и ');
+      hint.textContent = ch
+        ? `Код отправлен в ${ch}. Введи 6 цифр ниже.`
+        : 'Введи 6-значный код, который мы прислали';
+    }
     document.getElementById('login-pin').focus();
   } catch (e) {
     loginError('Нет связи с сервером');

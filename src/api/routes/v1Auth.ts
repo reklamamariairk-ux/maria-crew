@@ -11,6 +11,7 @@ import { rateLimit } from '../middleware/rateLimit';
 import { employeeAuth } from '../middleware/employeeAuth';
 import { requestPin, verifyPinAndIssueToken, registerNewEmployee } from '../../services/employeeAuth.service';
 import { sendLoginPin, notifyManagersOfNewEmployee } from '../../bot/notifications/sender';
+import { sendSms } from '../../services/sms.service';
 import { pool } from '../../db/pool';
 
 const router = Router();
@@ -34,13 +35,35 @@ router.post(
         res.status(result.status).json({ error: result.error });
         return;
       }
-      // Отправляем PIN через бота — синхронно, потому что юзер ждёт фидбэка
-      const sent = await sendLoginPin(result.telegramChatId, result.pin);
+      // Параллельно отправляем PIN через все доступные каналы.
+      // Считаем успехом если хотя бы один канал доставил.
+      const channels: string[] = [];
+      const tasks: Promise<boolean>[] = [];
+
+      if (result.telegramChatId) {
+        tasks.push(sendLoginPin(result.telegramChatId, result.pin).then(ok => {
+          if (ok) channels.push('Telegram');
+          return ok;
+        }));
+      }
+      if (result.phone && process.env.SMSRU_API_KEY) {
+        const text = `Maria Crew: код для входа ${result.pin}. Никому не сообщай.`;
+        tasks.push(sendSms(result.phone, text).then(r => {
+          if (r.ok) channels.push('SMS');
+          return r.ok;
+        }));
+      }
+      const sent = (await Promise.all(tasks)).some(Boolean);
+
       if (!sent) {
-        res.status(502).json({ error: 'Не удалось отправить код в Telegram. Попробуй ещё раз через минуту.' });
+        res.status(502).json({ error: 'Не удалось отправить код. Попробуй через минуту.' });
         return;
       }
-      res.json({ ok: true, ttlSeconds: result.ttlSeconds });
+      res.json({
+        ok: true,
+        ttlSeconds: result.ttlSeconds,
+        channels, // куда отправили (для UI: «Код отправлен в Telegram и SMS»)
+      });
     } catch (err) { next(err); }
   }
 );

@@ -116,8 +116,9 @@ export function normalizePhone(phone: string): string {
 export interface PinRequestResult {
   ok: true;
   ttlSeconds: number;
-  telegramChatId: string; // куда мы отправили PIN
-  pin: string;            // raw PIN — caller сам отправит через бота
+  telegramChatId: string | null; // null если нет привязки — отправляем по SMS
+  phone: string | null;
+  pin: string;            // raw PIN — caller сам отправит через бота / SMS
 }
 
 /**
@@ -128,8 +129,8 @@ export async function requestPin(phone: string): Promise<PinRequestResult | { er
   const phoneNorm = normalizePhone(phone);
   if (phoneNorm.length < 10) return { error: 'Неверный формат телефона', status: 400 };
 
-  const { rows } = await pool.query<{ id: number; telegramId: string | null }>(
-    `SELECT id, telegram_id::text AS "telegramId"
+  const { rows } = await pool.query<{ id: number; telegramId: string | null; phone: string | null }>(
+    `SELECT id, telegram_id::text AS "telegramId", phone
      FROM employees
      WHERE phone_normalized = $1 AND is_active = true
      ORDER BY id LIMIT 1`,
@@ -137,9 +138,14 @@ export async function requestPin(phone: string): Promise<PinRequestResult | { er
   );
   const employee = rows[0];
   if (!employee) return { error: 'Сотрудник с таким номером не найден', status: 404 };
-  if (!employee.telegramId) {
+
+  // Канал доставки: Telegram (если привязан) ИЛИ SMS (через SMSRU_API_KEY).
+  // Если ни одного канала нет — ошибка с понятной подсказкой.
+  const hasTelegram = !!employee.telegramId;
+  const hasSmsConfig = !!process.env.SMSRU_API_KEY;
+  if (!hasTelegram && !hasSmsConfig) {
     return {
-      error: 'Сначала запусти бота @Mariaprod_bot и нажми /start — мы должны связать номер с Telegram-аккаунтом, чтобы прислать код',
+      error: 'Сначала запусти бота @Mariaprod_bot и нажми /start — нужно связать номер с Telegram, чтобы прислать код. Либо настройте SMS-шлюз.',
       status: 409,
     };
   }
@@ -172,6 +178,7 @@ export async function requestPin(phone: string): Promise<PinRequestResult | { er
     ok: true,
     ttlSeconds: Math.floor(PIN_TTL_MS / 1000),
     telegramChatId: employee.telegramId,
+    phone: employee.phone, // для SMS-канала — берём оригинальный (с +)
     pin,
   };
 }
