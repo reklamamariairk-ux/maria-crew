@@ -43,6 +43,7 @@ export async function registerNewEmployee(input: {
   phone: string;
   name: string;
   storeId: number;
+  email?: string | null;
 }): Promise<RegisterEmployeeResult | { error: string; status: number }> {
   const phoneNorm = normalizePhone(input.phone);
   if (phoneNorm.length !== 11) return { error: 'Неверный формат телефона. Введи 11 цифр (например 89991234567)', status: 400 };
@@ -68,12 +69,21 @@ export async function registerNewEmployee(input: {
 
   // Сохраняем телефон в +7-формате для совместимости с тем как его собирает бот
   const phoneFormatted = '+' + phoneNorm;
+  const emailNorm = input.email && input.email.trim() ? input.email.trim().toLowerCase() : null;
+
+  // Если задан email — проверяем что не занят
+  if (emailNorm) {
+    const { rows: dup } = await pool.query<{ id: number }>(
+      `SELECT id FROM employees WHERE LOWER(email) = $1`, [emailNorm]
+    );
+    if (dup[0]) return { error: 'Этот email уже зарегистрирован', status: 409 };
+  }
 
   const { rows } = await pool.query<{ id: number }>(
-    `INSERT INTO employees (name, phone, phone_normalized, store_id, joined_at, role, is_active)
-     VALUES ($1, $2, $3, $4, CURRENT_DATE, 'employee', true)
+    `INSERT INTO employees (name, phone, phone_normalized, email, store_id, joined_at, role, is_active)
+     VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, 'employee', true)
      RETURNING id`,
-    [name, phoneFormatted, phoneNorm, input.storeId]
+    [name, phoneFormatted, phoneNorm, emailNorm, input.storeId]
   );
   const employeeId = rows[0].id;
 
@@ -116,9 +126,9 @@ export function normalizePhone(phone: string): string {
 export interface PinRequestResult {
   ok: true;
   ttlSeconds: number;
-  telegramChatId: string | null; // null если нет привязки — отправляем по SMS
-  phone: string | null;
-  pin: string;            // raw PIN — caller сам отправит через бота / SMS
+  telegramChatId: string | null; // null если нет привязки → отправляем по email
+  email: string | null;
+  pin: string;            // raw PIN — caller сам отправит через бота / email
 }
 
 /**
@@ -129,8 +139,8 @@ export async function requestPin(phone: string): Promise<PinRequestResult | { er
   const phoneNorm = normalizePhone(phone);
   if (phoneNorm.length < 10) return { error: 'Неверный формат телефона', status: 400 };
 
-  const { rows } = await pool.query<{ id: number; telegramId: string | null; phone: string | null }>(
-    `SELECT id, telegram_id::text AS "telegramId", phone
+  const { rows } = await pool.query<{ id: number; telegramId: string | null; phone: string | null; email: string | null }>(
+    `SELECT id, telegram_id::text AS "telegramId", phone, email
      FROM employees
      WHERE phone_normalized = $1 AND is_active = true
      ORDER BY id LIMIT 1`,
@@ -139,13 +149,12 @@ export async function requestPin(phone: string): Promise<PinRequestResult | { er
   const employee = rows[0];
   if (!employee) return { error: 'Сотрудник с таким номером не найден', status: 404 };
 
-  // Канал доставки: Telegram (если привязан) ИЛИ SMS (через SMSRU_API_KEY).
-  // Если ни одного канала нет — ошибка с понятной подсказкой.
+  // Канал доставки: Telegram (если привязан) ИЛИ Email (если задан и Resend настроен)
   const hasTelegram = !!employee.telegramId;
-  const hasSmsConfig = !!process.env.SMSRU_API_KEY;
-  if (!hasTelegram && !hasSmsConfig) {
+  const hasEmail = !!employee.email && !!process.env.RESEND_API_KEY;
+  if (!hasTelegram && !hasEmail) {
     return {
-      error: 'Сначала запусти бота @Mariaprod_bot и нажми /start — нужно связать номер с Telegram, чтобы прислать код. Либо настройте SMS-шлюз.',
+      error: 'Не задан ни Telegram, ни email. Запусти бота @Mariaprod_bot и нажми /start, либо добавь email в профиле.',
       status: 409,
     };
   }
@@ -178,7 +187,7 @@ export async function requestPin(phone: string): Promise<PinRequestResult | { er
     ok: true,
     ttlSeconds: Math.floor(PIN_TTL_MS / 1000),
     telegramChatId: employee.telegramId,
-    phone: employee.phone, // для SMS-канала — берём оригинальный (с +)
+    email: employee.email,
     pin,
   };
 }

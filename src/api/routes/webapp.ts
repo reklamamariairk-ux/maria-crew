@@ -92,7 +92,7 @@ async function getEmployee(telegramId: number): Promise<Employee | null> {
   const { rows } = await withDbRetry('getEmployee', () => pool.query<Employee>(
     `SELECT e.id, e.name, e.store_id AS "storeId", s.name AS "storeName",
             e.telegram_id AS "telegramId", e.telegram_username AS "telegramUsername",
-            e.telegram_photo_url AS "telegramPhotoUrl", e.role, e.phone
+            e.telegram_photo_url AS "telegramPhotoUrl", e.role, e.phone, e.email
      FROM employees e JOIN stores s ON s.id = e.store_id
      WHERE e.telegram_id = $1 AND e.is_active = true`,
     [telegramId]
@@ -139,7 +139,7 @@ async function requireAuth(req: Request, res: Response): Promise<{ user: { id: n
     const { rows } = await pool.query<Employee>(
       `SELECT e.id, e.name, e.store_id AS "storeId", s.name AS "storeName",
               e.telegram_id AS "telegramId", e.telegram_username AS "telegramUsername",
-              e.telegram_photo_url AS "telegramPhotoUrl", e.role, e.phone
+              e.telegram_photo_url AS "telegramPhotoUrl", e.role, e.phone, e.email
        FROM employees e LEFT JOIN stores s ON s.id = e.store_id
        WHERE e.id = $1 AND e.is_active = true`,
       [payload.uid]
@@ -541,8 +541,8 @@ router.patch('/account', async (req: Request, res: Response, next: NextFunction)
     if (!auth) return;
     const employeeId = auth.employee.id;
 
-    const { name, phone, avatarUrl } = req.body as {
-      name?: string; phone?: string; avatarUrl?: string | null;
+    const { name, phone, avatarUrl, email } = req.body as {
+      name?: string; phone?: string; avatarUrl?: string | null; email?: string | null;
     };
 
     const sets: string[] = [];
@@ -566,6 +566,22 @@ router.patch('/account', async (req: Request, res: Response, next: NextFunction)
       vals.push(phoneNorm); sets.push(`phone_normalized = $${vals.length}`);
     }
 
+    if (email !== undefined) {
+      const trimmed = email && email.trim() ? email.trim().toLowerCase() : null;
+      if (trimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+        res.status(400).json({ error: 'Неверный формат email' });
+        return;
+      }
+      if (trimmed) {
+        const { rows: dup } = await pool.query<{ id: number }>(
+          `SELECT id FROM employees WHERE LOWER(email) = $1 AND id <> $2`,
+          [trimmed, employeeId]
+        );
+        if (dup[0]) { res.status(409).json({ error: 'Этот email уже занят' }); return; }
+      }
+      vals.push(trimmed); sets.push(`email = $${vals.length}`);
+    }
+
     if (avatarUrl !== undefined) {
       const url = avatarUrl && avatarUrl.trim() ? avatarUrl.trim() : null;
       vals.push(url); sets.push(`telegram_photo_url = $${vals.length}`);
@@ -576,7 +592,7 @@ router.patch('/account', async (req: Request, res: Response, next: NextFunction)
     vals.push(employeeId);
     const { rows } = await pool.query(
       `UPDATE employees SET ${sets.join(', ')} WHERE id = $${vals.length}
-       RETURNING id, name, phone, telegram_photo_url AS "telegramPhotoUrl",
+       RETURNING id, name, phone, email, telegram_photo_url AS "telegramPhotoUrl",
                  store_id AS "storeId", role`,
       vals
     );

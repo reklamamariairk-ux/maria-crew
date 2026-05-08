@@ -11,7 +11,7 @@ import { rateLimit } from '../middleware/rateLimit';
 import { employeeAuth } from '../middleware/employeeAuth';
 import { requestPin, verifyPinAndIssueToken, registerNewEmployee } from '../../services/employeeAuth.service';
 import { sendLoginPin, notifyManagersOfNewEmployee } from '../../bot/notifications/sender';
-import { sendSms } from '../../services/sms.service';
+import { sendEmail, buildLoginPinEmail } from '../../services/email.service';
 import { pool } from '../../db/pool';
 
 const router = Router();
@@ -46,10 +46,10 @@ router.post(
           return ok;
         }));
       }
-      if (result.phone && process.env.SMSRU_API_KEY) {
-        const text = `Maria Crew: код для входа ${result.pin}. Никому не сообщай.`;
-        tasks.push(sendSms(result.phone, text).then(r => {
-          if (r.ok) channels.push('SMS');
+      if (result.email && process.env.RESEND_API_KEY) {
+        const { subject, html } = buildLoginPinEmail(result.pin);
+        tasks.push(sendEmail(result.email, subject, html).then(r => {
+          if (r.ok) channels.push('Email');
           return r.ok;
         }));
       }
@@ -100,12 +100,12 @@ router.post(
   rateLimit(5, 60 * 60 * 1000),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { phone, name, storeId } = req.body as { phone?: string; name?: string; storeId?: number };
+      const { phone, name, storeId, email } = req.body as { phone?: string; name?: string; storeId?: number; email?: string };
       if (!phone || !name || !storeId) {
         res.status(400).json({ error: 'phone, name и storeId обязательны' });
         return;
       }
-      const result = await registerNewEmployee({ phone, name, storeId: Number(storeId) });
+      const result = await registerNewEmployee({ phone, name, storeId: Number(storeId), email });
       if ('error' in result) {
         res.status(result.status).json({ error: result.error });
         return;

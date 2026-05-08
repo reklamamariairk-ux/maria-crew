@@ -62,9 +62,13 @@ export interface Employee {
   id: number;
   telegramId: bigint | null;
   telegramUsername: string | null;
+  telegramPhotoUrl?: string | null;
   name: string;
   storeId: number;
+  storeName?: string | null;
   role: Role;
+  phone?: string | null;
+  email?: string | null;
   isActive: boolean;
   joinedAt: Date | null;
   createdAt: Date;

@@ -302,6 +302,9 @@ function showLoginScreen() {
           <label style="display:block;font-size:12px;color:var(--hint);margin-bottom:4px">Имя и фамилия</label>
           <input type="text" id="reg-name" placeholder="Иван Иванов" autocomplete="name"
                  style="width:100%;padding:12px;border:1.5px solid #ddd;border-radius:12px;font-size:15px;margin-bottom:12px">
+          <label style="display:block;font-size:12px;color:var(--hint);margin-bottom:4px">Email <span style="color:var(--text-3,#999)">(чтобы получать код входа)</span></label>
+          <input type="email" id="reg-email" placeholder="ivan@example.com" autocomplete="email" inputmode="email"
+                 style="width:100%;padding:12px;border:1.5px solid #ddd;border-radius:12px;font-size:15px;margin-bottom:12px">
           <label style="display:block;font-size:12px;color:var(--hint);margin-bottom:4px">Точка</label>
           <select id="reg-store-mobile"
                  style="width:100%;padding:12px;border:1.5px solid #ddd;border-radius:12px;font-size:15px;margin-bottom:16px;background:#fff">
@@ -424,9 +427,13 @@ async function loadStoresForRegistration() {
 async function doLoginRegister() {
   const phone = document.getElementById('login-phone').value.trim();
   const name = document.getElementById('reg-name').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
   const storeId = parseInt(document.getElementById('reg-store-mobile').value);
   if (!name) { loginError('Введи имя'); return; }
   if (!storeId) { loginError('Выбери точку'); return; }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    loginError('Неверный формат email'); return;
+  }
   loginError('');
   const btn = document.getElementById('login-register-btn');
   btn.disabled = true; btn.textContent = 'Регистрируем...';
@@ -434,7 +441,7 @@ async function doLoginRegister() {
     const res = await fetch(API_V1 + '/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone, name, storeId }),
+      body: JSON.stringify({ phone, name, storeId, email: email || undefined }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { loginError(data.error || 'Ошибка регистрации'); return; }
@@ -630,6 +637,7 @@ window.openProfileEdit = function () {
   if (!employee) return;
   document.getElementById('prof-name').value = employee.name ?? '';
   document.getElementById('prof-phone').value = employee.phone ?? '';
+  document.getElementById('prof-email').value = employee.email ?? '';
   document.getElementById('prof-avatar').value = employee.telegramPhotoUrl ?? '';
   document.getElementById('prof-error').textContent = '';
   const overlay = document.getElementById('profile-edit-overlay');
@@ -674,19 +682,28 @@ window._onProfileAvatarFile = async function (input) {
 window.saveProfileEdit = async function () {
   const name = document.getElementById('prof-name').value.trim();
   const phone = document.getElementById('prof-phone').value.trim();
+  const email = document.getElementById('prof-email').value.trim();
   const avatarUrl = document.getElementById('prof-avatar').value.trim();
   if (!name) { document.getElementById('prof-error').textContent = 'Имя не может быть пустым'; return; }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    document.getElementById('prof-error').textContent = 'Неверный формат email'; return;
+  }
 
   const btn = document.getElementById('prof-save-btn');
   btn.disabled = true; btn.textContent = 'Сохраняем...';
   try {
-    // apiFetch сам подставит правильный auth (initData в Telegram, Bearer в standalone)
     const data = await apiFetch('/account', {
       method: 'PATCH',
-      body: JSON.stringify({ name, phone: phone || undefined, avatarUrl: avatarUrl || null }),
+      body: JSON.stringify({
+        name,
+        phone: phone || undefined,
+        email: email !== undefined ? (email || null) : undefined,
+        avatarUrl: avatarUrl || null,
+      }),
     });
     employee.name = data.name;
     employee.phone = data.phone;
+    employee.email = data.email;
     employee.telegramPhotoUrl = data.telegramPhotoUrl;
     document.getElementById('header-name').textContent = data.name;
     setAvatar(data.name);
