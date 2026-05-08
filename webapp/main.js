@@ -50,6 +50,33 @@ function clearCachedMe() {
   try { localStorage.removeItem(CACHE_KEY); } catch {}
 }
 
+// Универсальный кеш для всех данных приложения. Stale-while-revalidate:
+// 1. readCachedView(key) → возвращает данные сразу (или null)
+// 2. apiFetch(...) тянет свежие
+// 3. writeCachedView(key, data) сохраняет на следующий раз
+// TTL 24 часа — старее этого считаем устаревшим (не доверяем).
+function readCachedView(key) {
+  try {
+    const raw = localStorage.getItem('mc_view_' + key);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj || !obj.t || !obj.d) return null;
+    if (Date.now() - obj.t > CACHE_TTL_MS) return null;
+    return obj.d;
+  } catch { return null; }
+}
+function writeCachedView(key, data) {
+  try { localStorage.setItem('mc_view_' + key, JSON.stringify({ t: Date.now(), d: data })); }
+  catch { /* quota exceeded */ }
+}
+function clearAllCachedViews() {
+  try {
+    Object.keys(localStorage).forEach(k => {
+      if (k.startsWith('mc_view_') || k === CACHE_KEY) localStorage.removeItem(k);
+    });
+  } catch {}
+}
+
 let employee = null;
 let currentTab = 'collection';
 let storeTab = 'cards';
@@ -477,19 +504,27 @@ const INBOX_TYPE_EMOJI = {
   system: '🔔',
 };
 
+function renderInboxBadge(count) {
+  const el = document.getElementById('bell-count');
+  if (!el) return;
+  if (count > 0) {
+    el.textContent = count > 99 ? '99+' : String(count);
+    el.style.display = '';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
 async function refreshInboxBadge() {
+  // Stale-while-revalidate: показываем кешированный счётчик мгновенно
+  const cached = readCachedView('inbox_count');
+  if (cached !== null && typeof cached === 'number') renderInboxBadge(cached);
   try {
     const data = await apiFetch('/notifications?limit=1');
     const count = data.unread || 0;
-    const el = document.getElementById('bell-count');
-    if (!el) return;
-    if (count > 0) {
-      el.textContent = count > 99 ? '99+' : String(count);
-      el.style.display = '';
-    } else {
-      el.style.display = 'none';
-    }
-  } catch { /* network error — ignore, попробуем при следующем открытии */ }
+    writeCachedView('inbox_count', count);
+    renderInboxBadge(count);
+  } catch { /* network error — оставляем кеш */ }
 }
 
 window.openInbox = async function () {
@@ -643,7 +678,7 @@ window.saveProfileEdit = async function () {
 window.doMobileLogout = function () {
   if (!confirm('Выйти из приложения?')) return;
   saveMobileToken(null);
-  clearCachedMe();
+  clearAllCachedViews();
   location.reload();
 };
 
@@ -658,7 +693,7 @@ window.doDeleteAccount = async function () {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { showToast(data.error || 'Не удалось удалить'); return; }
     saveMobileToken(null);
-    clearCachedMe();
+    clearAllCachedViews();
     alert('Аккаунт удалён.');
     location.reload();
   } catch (e) {
@@ -964,8 +999,13 @@ function showApp(stats) {
   prizesCache = null;
   switchTab('collection');
 
-  // Load streak info
-  apiFetch('/streak').then(updateStreakBadge).catch(() => {});
+  // Load streak info — мгновенно из кеша, обновление в фоне
+  const cachedStreak = readCachedView('streak');
+  if (cachedStreak) updateStreakBadge(cachedStreak);
+  apiFetch('/streak').then(s => {
+    writeCachedView('streak', s);
+    updateStreakBadge(s);
+  }).catch(() => {});
 
   // Загрузим счётчик непрочитанных в колокольчик. Дальше обновляется при
   // открытии inbox и периодически (каждые 60 сек, если приложение открыто).
@@ -1243,13 +1283,31 @@ async function loadDailyActionsBar() {
 
 async function loadCollection() {
   const grid = document.getElementById('hero-grid');
-  grid.innerHTML = '<div class="empty"><div class="empty-icon">🃏</div><div class="empty-text">Загружаем...</div></div>';
-  document.getElementById('collection-howto').innerHTML = '';
+  // Если есть кеш — мгновенно отрендерим, fetch обновит позже
+  const cached = readCachedView('collection');
+  if (cached && cached.heroes) {
+    renderCollection(cached);
+  } else {
+    grid.innerHTML = '<div class="empty"><div class="empty-icon">🃏</div><div class="empty-text">Загружаем...</div></div>';
+    document.getElementById('collection-howto').innerHTML = '';
+  }
   loadDailyActionsBar();
   loadChallengeBanner();
 
   try {
-    const { heroes, owned, mvpIds, counts } = await apiFetch('/collection');
+    const data = await apiFetch('/collection');
+    writeCachedView('collection', data);
+    renderCollection(data);
+  } catch (err) {
+    if (!cached) {
+      grid.innerHTML = '<div class="empty"><div class="empty-icon">😕</div><div class="empty-text">' + escapeHtml(err.message || 'Ошибка') + '</div></div>';
+    }
+  }
+}
+
+function renderCollection({ heroes, owned, mvpIds, counts }) {
+  const grid = document.getElementById('hero-grid');
+  try {
     const ownedSet = new Set(owned);
     const mvpSet = new Set(mvpIds);
     const cardCounts = counts || {};
