@@ -297,6 +297,19 @@ function showLoginScreen() {
           <button id="login-back-btn" class="mc-link-btn">← Изменить номер</button>
         </div>
 
+        <div id="login-step-set-email" style="display:none;text-align:left">
+          <h3 style="font-size:15px;font-weight:800;margin:0 0 8px;text-align:center">Куда прислать код?</h3>
+          <p style="font-size:13px;color:var(--hint);margin-bottom:14px;text-align:center">У тебя пока не задан способ получать код. Введи email — пришлём туда сразу.</p>
+          <label style="display:block;font-size:12px;color:var(--hint);margin-bottom:4px">Email</label>
+          <input type="email" id="login-set-email" inputmode="email" autocomplete="email" placeholder="ivan@example.com"
+                 style="width:100%;padding:12px;border:1.5px solid #ddd;border-radius:12px;font-size:15px;margin-bottom:14px">
+          <button id="login-set-email-btn" class="mc-primary-btn">Сохранить и получить код</button>
+          <button id="login-set-email-back-btn" class="mc-link-btn">← Назад</button>
+          <div style="font-size:11px;color:var(--hint);text-align:center;margin-top:14px;padding-top:14px;border-top:1px solid #eee">
+            Или открой Telegram-бот <strong>@Mariaprod_bot</strong>, нажми /start — тогда код будет приходить в Telegram.
+          </div>
+        </div>
+
         <div id="login-step-register" style="display:none;text-align:left">
           <h3 style="font-size:15px;font-weight:800;margin:0 0 12px;text-align:center">Регистрация в команде</h3>
           <label style="display:block;font-size:12px;color:var(--hint);margin-bottom:4px">Имя и фамилия</label>
@@ -348,18 +361,23 @@ function showLoginScreen() {
     document.getElementById('login-register-btn').onclick = doLoginRegister;
     document.getElementById('login-back-btn').onclick = () => switchLoginStep('phone');
     document.getElementById('login-register-back-btn').onclick = () => switchLoginStep('phone');
+    document.getElementById('login-set-email-btn').onclick = doLoginSetEmail;
+    document.getElementById('login-set-email-back-btn').onclick = () => switchLoginStep('phone');
     document.getElementById('login-phone').addEventListener('keydown', e => {
       if (e.key === 'Enter') doLoginRequestPin();
     });
     document.getElementById('login-pin').addEventListener('keydown', e => {
       if (e.key === 'Enter') doLoginVerifyPin();
     });
+    document.getElementById('login-set-email').addEventListener('keydown', e => {
+      if (e.key === 'Enter') doLoginSetEmail();
+    });
   }
   screen.style.display = 'flex';
 }
 
 function switchLoginStep(step) {
-  ['phone', 'pin', 'register'].forEach(s => {
+  ['phone', 'pin', 'register', 'set-email'].forEach(s => {
     const el = document.getElementById('login-step-' + s);
     if (el) el.style.display = (s === step) ? '' : 'none';
   });
@@ -388,6 +406,12 @@ async function doLoginRequestPin() {
       await loadStoresForRegistration();
       switchLoginStep('register');
       document.getElementById('reg-name').focus();
+      return;
+    }
+    // 409 — нет канала доставки (нет ни Telegram ни email) → предлагаем привязать email
+    if (res.status === 409) {
+      switchLoginStep('set-email');
+      document.getElementById('login-set-email').focus();
       return;
     }
     if (!res.ok) { loginError(data.error || 'Ошибка'); return; }
@@ -421,6 +445,41 @@ async function loadStoresForRegistration() {
     });
   } catch (e) {
     document.getElementById('reg-store-mobile').innerHTML = '<option value="">Не удалось загрузить</option>';
+  }
+}
+
+async function doLoginSetEmail() {
+  const phone = document.getElementById('login-phone').value.trim();
+  const email = document.getElementById('login-set-email').value.trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    loginError('Неверный формат email'); return;
+  }
+  loginError('');
+  const btn = document.getElementById('login-set-email-btn');
+  btn.disabled = true; btn.textContent = 'Сохраняем...';
+  try {
+    const res = await fetch(API_V1 + '/auth/set-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, email }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { loginError(data.error || 'Не удалось'); return; }
+    if (data.pinSent) {
+      // Email сохранён И код уже отправлен — сразу на ввод PIN
+      switchLoginStep('pin');
+      const hint = document.getElementById('pin-hint');
+      if (hint) hint.textContent = `Код отправлен на ${email}. Введи 6 цифр ниже.`;
+      document.getElementById('login-pin').focus();
+    } else {
+      // Email сохранён, но PIN не успел уйти (бэк без RESEND_API_KEY)
+      loginError(data.error || 'Email сохранён. Запроси код ещё раз.');
+      switchLoginStep('phone');
+    }
+  } catch (e) {
+    loginError('Нет связи с сервером');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Сохранить и получить код';
   }
 }
 

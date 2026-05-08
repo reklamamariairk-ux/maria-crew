@@ -132,6 +132,67 @@ router.get('/stores', async (_req: Request, res: Response, next: NextFunction): 
   } catch (err) { next(err); }
 });
 
+// POST /api/v1/auth/set-email — привязка email прямо из login screen,
+// для случая когда у сотрудника нет ни email ни Telegram-привязки.
+// После привязки сразу шлёт PIN на этот email.
+//
+// Безопасность: позволяем установить email только если он ещё не задан.
+// Дальнейшая смена — только через залогиненный профиль (PATCH /account).
+router.post(
+  '/set-email',
+  rateLimit(10, 60 * 60 * 1000),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { phone, email } = req.body as { phone?: string; email?: string };
+      if (!phone || !email) { res.status(400).json({ error: 'phone и email обязательны' }); return; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        res.status(400).json({ error: 'Неверный формат email' }); return;
+      }
+      const { normalizePhone } = await import('../../services/employeeAuth.service');
+      const phoneNorm = normalizePhone(phone);
+      if (phoneNorm.length !== 11) { res.status(400).json({ error: 'Неверный телефон' }); return; }
+      const emailNorm = email.trim().toLowerCase();
+
+      // Ищем сотрудника по телефону
+      const { rows } = await pool.query<{ id: number; email: string | null; telegramId: string | null }>(
+        `SELECT id, email, telegram_id::text AS "telegramId"
+         FROM employees WHERE phone_normalized = $1 AND is_active = true LIMIT 1`,
+        [phoneNorm]
+      );
+      const emp = rows[0];
+      if (!emp) { res.status(404).json({ error: 'Сотрудник с таким телефоном не найден' }); return; }
+      if (emp.email) {
+        res.status(409).json({ error: 'Email уже задан. Войди и поменяй его в профиле.' });
+        return;
+      }
+
+      // Email не должен быть занят кем-то ещё
+      const { rows: dup } = await pool.query<{ id: number }>(
+        `SELECT id FROM employees WHERE LOWER(email) = $1 AND id <> $2`,
+        [emailNorm, emp.id]
+      );
+      if (dup[0]) { res.status(409).json({ error: 'Этот email уже занят другим сотрудником' }); return; }
+
+      await pool.query(`UPDATE employees SET email = $1 WHERE id = $2`, [emailNorm, emp.id]);
+
+      // Сразу шлём PIN на новый email (если RESEND настроен)
+      if (process.env.RESEND_API_KEY) {
+        const result = await requestPin(phone);
+        if ('error' in result) {
+          // email сохранили, но pin не послали — попросим юзера запросить ещё раз
+          res.json({ ok: true, emailSaved: true, pinSent: false, error: result.error });
+          return;
+        }
+        const { subject, html } = buildLoginPinEmail(result.pin);
+        const sendRes = await sendEmail(emailNorm, subject, html);
+        res.json({ ok: true, emailSaved: true, pinSent: sendRes.ok, ttlSeconds: result.ttlSeconds });
+      } else {
+        res.json({ ok: true, emailSaved: true, pinSent: false, error: 'Email-сервис пока не настроен на сервере' });
+      }
+    } catch (err) { next(err); }
+  }
+);
+
 // ── Авторизованные эндпоинты ──────────────────────────────────────────────
 
 router.get('/me', employeeAuth, async (req: Request, res: Response): Promise<void> => {
