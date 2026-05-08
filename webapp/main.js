@@ -500,7 +500,10 @@ async function init() {
         uniqueHeroes: me.uniqueHeroes ?? 0,
       });
 
-      setupPushNotifications().catch(err => console.warn('[push] setup failed:', err));
+      // Push-уведомления отключены до настройки Firebase (google-services.json
+      // в android/app/). Без него Push.register() крашит нативный процесс.
+      // Раскомментировать после Firebase setup:
+      // setupPushNotifications().catch(err => console.warn('[push] setup failed:', err));
     } catch (err) {
       // Токен протух или сервер недоступен — обратно на login
       saveMobileToken(null);
