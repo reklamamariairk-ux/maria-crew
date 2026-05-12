@@ -150,7 +150,7 @@ router.get('/:id/summary', async (req: Request, res: Response, next: NextFunctio
       `SELECT e.id, e.name, e.role, e.is_active AS "isActive", e.joined_at AS "joinedAt",
               e.telegram_id AS "telegramId", e.telegram_username AS "telegramUsername",
               e.telegram_photo_url AS "telegramPhotoUrl", e.last_seen_at AS "lastSeenAt",
-              e.phone AS "phone",
+              e.phone AS "phone", e.email AS "email",
               e.store_id AS "storeId", s.name AS "storeName"
        FROM employees e JOIN stores s ON s.id = e.store_id
        WHERE e.id = $1`,
@@ -224,9 +224,9 @@ router.patch('/:id/name', async (req: Request, res: Response, next: NextFunction
 // PUT /api/employees/:id
 router.put('/:id', denyCoinAdminForWrites, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { name, storeId, role, isActive, telegramUsername, phone } = req.body as {
+    const { name, storeId, role, isActive, telegramUsername, phone, email } = req.body as {
       name?: string; storeId?: number; role?: string; isActive?: boolean;
-      telegramUsername?: string; phone?: string | null;
+      telegramUsername?: string; phone?: string | null; email?: string | null;
     };
     if (role !== undefined && !VALID_EMPLOYEE_ROLES.has(role)) {
       res.status(400).json({ error: `role должен быть: ${[...VALID_EMPLOYEE_ROLES].join(', ')}` });
@@ -239,11 +239,47 @@ router.put('/:id', denyCoinAdminForWrites, async (req: Request, res: Response, n
     const username = telegramUsername !== undefined
       ? (telegramUsername ? telegramUsername.replace(/^@/, '').toLowerCase() : null)
       : undefined;
-    const phoneNorm = phone !== undefined
-      ? (phone && phone.trim() ? phone.trim() : null)
-      : undefined;
+
+    // Нормализация телефона + phone_normalized (для login по телефону)
+    let phoneFmt: string | null | undefined;
+    let phoneNorm: string | null | undefined;
+    if (phone !== undefined) {
+      if (phone && phone.trim()) {
+        const digits = phone.replace(/\D+/g, '');
+        const normalized = digits.length === 11 && digits.startsWith('8') ? '7' + digits.slice(1) : digits;
+        if (normalized.length !== 11) {
+          res.status(400).json({ error: 'Неверный формат телефона (нужно 11 цифр)' });
+          return;
+        }
+        phoneFmt = '+' + normalized;
+        phoneNorm = normalized;
+      } else {
+        phoneFmt = null;
+        phoneNorm = null;
+      }
+    }
+
+    // Нормализация email + проверка дубликата
+    let emailNorm: string | null | undefined;
     const empId = parseInt(req.params.id, 10);
     if (isNaN(empId)) { res.status(400).json({ error: 'Неверный id' }); return; }
+    if (email !== undefined) {
+      if (email && email.trim()) {
+        emailNorm = email.trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm)) {
+          res.status(400).json({ error: 'Неверный формат email' });
+          return;
+        }
+        const { rows: dup } = await pool.query<{ id: number }>(
+          `SELECT id FROM employees WHERE LOWER(email) = $1 AND id <> $2`,
+          [emailNorm, empId]
+        );
+        if (dup[0]) { res.status(409).json({ error: 'Этот email уже занят другим сотрудником' }); return; }
+      } else {
+        emailNorm = null;
+      }
+    }
+
     const { rows } = await pool.query(
       `UPDATE employees SET
          name              = COALESCE($1, name),
@@ -251,25 +287,29 @@ router.put('/:id', denyCoinAdminForWrites, async (req: Request, res: Response, n
          role              = COALESCE($3, role),
          is_active         = COALESCE($4, is_active),
          telegram_username = COALESCE($5, telegram_username),
-         phone             = CASE WHEN $7::boolean THEN $6 ELSE phone END
-       WHERE id = $8 RETURNING *`,
+         phone             = CASE WHEN $7::boolean THEN $6 ELSE phone END,
+         phone_normalized  = CASE WHEN $7::boolean THEN $8 ELSE phone_normalized END,
+         email             = CASE WHEN $10::boolean THEN $9 ELSE email END
+       WHERE id = $11 RETURNING *`,
       [
         name ?? null, storeId ?? null, role ?? null, isActive ?? null,
-        username ?? null, phoneNorm ?? null, phoneNorm !== undefined, empId,
+        username ?? null,
+        phoneFmt ?? null, phone !== undefined, phoneNorm ?? null,
+        emailNorm ?? null, email !== undefined,
+        empId,
       ]
     );
     if (!rows[0]) { res.status(404).json({ error: 'Не найден' }); return; }
     res.json(rows[0]);
 
-    // Аудит
     if (storeId !== undefined) {
       logAudit('employee_store_change', { employeeId: rows[0].id, newStoreId: storeId }).catch(() => {});
     }
     if (isActive !== undefined) {
       logAudit(isActive ? 'employee_activate' : 'employee_deactivate', { employeeId: rows[0].id }).catch(() => {});
     }
-    if (name !== undefined || role !== undefined || username !== undefined || phone !== undefined) {
-      logAudit('employee_update', { employeeId: rows[0].id, name, role, telegramUsername: username, phone: phoneNorm }).catch(() => {});
+    if (name !== undefined || role !== undefined || username !== undefined || phone !== undefined || email !== undefined) {
+      logAudit('employee_update', { employeeId: rows[0].id, name, role, telegramUsername: username, phone: phoneNorm, email: emailNorm }).catch(() => {});
     }
   } catch (err) { next(err); }
 });

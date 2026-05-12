@@ -2887,6 +2887,22 @@ async function saveEmployeePhone(id, btn) {
   finally { btn.disabled = false; }
 }
 
+async function saveEmployeeEmail(id, btn) {
+  const input = document.getElementById('emp-email-input');
+  if (!input) return;
+  const email = input.value.trim() || null;
+  // Простая валидация формата (если не пустой)
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    toast('⚠️ Неверный формат email'); return;
+  }
+  btn.disabled = true;
+  try {
+    await api('PUT', `/employees/${id}`, { email });
+    toast('✅ Email сохранён');
+  } catch (e) { toastError(e); }
+  finally { btn.disabled = false; }
+}
+
 async function saveEmployeeName(id, btn) {
   const input = document.getElementById('emp-name-input');
   if (!input) return;
@@ -2971,11 +2987,18 @@ async function showEmployeeModal(id) {
       </div>
     </div>
 
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:20px;padding:12px;background:var(--bg-2,#f8f8f8);border-radius:8px">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;padding:12px;background:var(--bg-2,#f8f8f8);border-radius:8px">
       <i data-lucide="phone" style="width:16px;height:16px;color:var(--text-2)"></i>
       <span style="font-size:13px;color:var(--text-2)">Телефон:</span>
       <input type="tel" id="emp-phone-input" value="${esc(summary.phone ?? '')}" placeholder="+7..." style="flex:1;min-width:140px">
       <button class="btn btn-primary btn-sm" onclick="saveEmployeePhone(${summary.id}, this)"><i data-lucide="save"></i> Сохранить</button>
+    </div>
+
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:20px;padding:12px;background:var(--bg-2,#f8f8f8);border-radius:8px">
+      <i data-lucide="mail" style="width:16px;height:16px;color:var(--text-2)"></i>
+      <span style="font-size:13px;color:var(--text-2)">Email:</span>
+      <input type="email" id="emp-email-input" value="${esc(summary.email ?? '')}" placeholder="ivan@example.com" style="flex:1;min-width:180px">
+      <button class="btn btn-primary btn-sm" onclick="saveEmployeeEmail(${summary.id}, this)"><i data-lucide="save"></i> Сохранить</button>
     </div>
 
     <p class="section-title">Последние монеты</p>
