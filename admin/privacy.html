@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Политика конфиденциальности — Maria Crew</title>
+  <meta name="description" content="Политика конфиденциальности приложения Maria Crew для сотрудников кондитерских «Мария», Иркутск.">
+  <meta name="robots" content="index, follow">
+  <link rel="icon" type="image/png" href="/webapp/assets/favicon.png">
+  <style>
+    :root {
+      --pink:#d42139;
+      --pink-50:#fef3f5;
+      --text:#1f2937;
+      --text-2:#4b5563;
+      --text-3:#6b7280;
+      --bg:#fffefb;
+      --surface:#ffffff;
+      --border:#e5e7eb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      margin: 0;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+    .container {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+    }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 20px;
+      margin-bottom: 28px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .brand img { height: 36px; }
+    .brand span {
+      font-weight: 700;
+      color: var(--text);
+      font-size: 18px;
+    }
+    h1 {
+      font-size: 28px;
+      margin: 0 0 8px;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .meta {
+      color: var(--text-3);
+      font-size: 13px;
+    }
+    .meta strong { color: var(--text-2); }
+    h2 {
+      font-size: 18px;
+      margin: 32px 0 12px;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    p, ul { margin: 0 0 12px; }
+    ul { padding-left: 22px; }
+    li { margin-bottom: 6px; }
+    a { color: var(--pink); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .intro {
+      background: var(--pink-50);
+      border-left: 3px solid var(--pink);
+      padding: 14px 18px;
+      border-radius: 6px;
+      font-size: 15px;
+      color: var(--text-2);
+    }
+    footer {
+      margin-top: 48px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text-3);
+    }
+    @media print {
+      .intro { background: none; border-color: #999; }
+      a { color: var(--text); }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="brand">
+      <img src="/webapp/assets/logo-light.png" alt="Кондитерская Мария">
+      <span>Maria Crew</span>
+    </div>
+    <h1>Политика конфиденциальности</h1>
+    <p class="meta">
+      <strong>Дата вступления в силу:</strong> 12 мая 2026 ·
+      <strong>Контакт:</strong> <a href="mailto:bbf2018.ru@gmail.com">bbf2018.ru@gmail.com</a>
+    </p>
+  </header>
+
+  <p class="intro">
+    Maria Crew — внутреннее приложение мотивации сотрудников кондитерских «Мария»
+    (Иркутск). Эта политика описывает, какие данные мы собираем, зачем и как
+    ими распоряжаемся.
+  </p>
+
+  <h2>1. Какие данные собираем</h2>
+  <ul>
+    <li><strong>ФИО</strong> — для идентификации сотрудника</li>
+    <li><strong>Email</strong> (опц.) — для входа в мобильное приложение и обратной связи</li>
+    <li><strong>Телефон</strong> — для связи и интеграции с 1С (начисление премий)</li>
+    <li><strong>Telegram ID и username</strong> (опц.) — для уведомлений через Telegram-бот</li>
+    <li><strong>Фото профиля</strong> (опц.) — берётся из Telegram-аккаунта</li>
+    <li><strong>Точка работы</strong> — конкретная кондитерская «Мария»</li>
+    <li><strong>История активности</strong> — чек-ины, ответы в квизе, начисления и списания Mария-монет, полученные карточки, заявки на призы из Maria Store</li>
+    <li><strong>Push-токены (FCM / APNs)</strong> — только для отправки уведомлений в мобильном приложении. Никому не передаются и хранятся только локально на нашем сервере.</li>
+  </ul>
+
+  <h2>2. Как используем</h2>
+  <ul>
+    <li><strong>Вход и идентификация</strong> — email + одноразовый PIN, либо вход через Telegram Mini App. Постоянные пароли для рядовых сотрудников не используются.</li>
+    <li><strong>Уведомления</strong> — Telegram-бот и push в мобильном приложении.</li>
+    <li><strong>Внутренние отчёты</strong> — рейтинги сотрудников и точек, аналитика квиза, топ-исполнителей за месяц.</li>
+    <li><strong>Бухгалтерия</strong> — синхронизация с 1С для начисления премий.</li>
+  </ul>
+
+  <h2>3. Где храним</h2>
+  <ul>
+    <li><strong>База данных PostgreSQL</strong> — основной хост: Render (регион Oregon, US). Резервная база в Neon (EU) на период миграции (до 1 июня 2026).</li>
+    <li><strong>Бэкенд</strong> — Render Web Service (Oregon, US).</li>
+    <li><strong>Файлы (фото героев)</strong> — Cloudinary (без личных данных).</li>
+    <li><strong>Push-токены</strong> — в нашей PostgreSQL, исходящая отправка через Firebase Cloud Messaging.</li>
+  </ul>
+  <p>Доступ к данным имеют только администраторы организации «Мария». AI-сервисы (Anthropic, OpenAI и другие) к личным данным сотрудников не имеют доступа.</p>
+
+  <h2>4. Срок хранения</h2>
+  <ul>
+    <li><strong>Активный сотрудник</strong> — пока работает плюс 6 месяцев после увольнения для отчётности.</li>
+    <li><strong>Удалённый аккаунт</strong> — личные данные (имя, телефон, email, Telegram) удаляются немедленно. История транзакций по Mария-монетам обезличивается, но сохраняется для бухгалтерии.</li>
+  </ul>
+
+  <h2>5. Ваши права</h2>
+  <ul>
+    <li><strong>Удалить аккаунт</strong> — кнопка в настройках мобильного приложения. Удаляется немедленно.</li>
+    <li><strong>Запросить копию данных</strong> — напишите на <a href="mailto:bbf2018.ru@gmail.com">bbf2018.ru@gmail.com</a>.</li>
+    <li><strong>Исправить данные</strong> — обратитесь к руководителю точки или на тот же email.</li>
+    <li><strong>Отозвать согласие</strong> — равнозначно удалению аккаунта.</li>
+  </ul>
+
+  <h2>6. Третьи стороны</h2>
+  <ul>
+    <li><strong>Telegram</strong> (политика: <a href="https://telegram.org/privacy" target="_blank" rel="noopener">telegram.org/privacy</a>) — авторизация через Mini App и уведомления через бот.</li>
+    <li><strong>Firebase Cloud Messaging</strong> (политика: <a href="https://firebase.google.com/support/privacy" target="_blank" rel="noopener">firebase.google.com/support/privacy</a>) — push в мобильном приложении.</li>
+    <li><strong>Cloudinary</strong> (политика: <a href="https://cloudinary.com/privacy" target="_blank" rel="noopener">cloudinary.com/privacy</a>) — хранение фото героев. Личных данных сотрудников там нет.</li>
+    <li><strong>Render</strong>, <strong>Neon</strong> — хостинг бэкенда и базы данных.</li>
+  </ul>
+
+  <h2>7. Безопасность</h2>
+  <ul>
+    <li>Постоянных паролей для рядовых сотрудников нет — только одноразовые PIN-коды, действующие 10 минут.</li>
+    <li>Пароли администраторов хранятся в формате scrypt-хеша с уникальной солью; минимальная длина — 8 символов, проверяется чёрный список распространённых паролей.</li>
+    <li>JWT-токены подписаны HMAC-SHA256, действуют 30 дней (мобильное приложение) или 7 дней (админ-панель).</li>
+    <li>Все сетевые запросы — HTTPS. Соединение с базой данных — TLS-only.</li>
+    <li>Rate-limit на эндпоинты входа: 10 попыток за 15 минут с одного IP.</li>
+  </ul>
+
+  <h2>8. Дети</h2>
+  <p>Приложение не предназначено для лиц младше 18 лет.</p>
+
+  <h2>9. Изменения</h2>
+  <p>Об изменениях политики предупредим через мобильное приложение и Telegram-бот. История версий ведётся в Git-репозитории проекта.</p>
+
+  <h2>10. Контакты</h2>
+  <p>По любым вопросам: <a href="mailto:bbf2018.ru@gmail.com">bbf2018.ru@gmail.com</a></p>
+  <p>Юр. лицо: ООО «Мария», г. Иркутск.</p>
+
+  <footer>
+    © 2026 ООО «Мария» · <a href="/">Maria Crew</a>
+  </footer>
+</div>
+</body>
+</html>

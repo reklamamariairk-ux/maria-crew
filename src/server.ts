@@ -126,6 +126,10 @@ export function createServer(bot: Bot<BotContext>, webhookSecret: string): expre
 
   const adminDir = path.join(__dirname, '../admin');
   app.use(express.static(adminDir));
+  // Публичная страница Политики конфиденциальности — требуется для подачи
+  // в App Store / Google Play (постоянный URL). Не закрыта авторизацией,
+  // короткий URL без .html для использования в маркетах.
+  app.get('/privacy', (_req, res) => res.sendFile(path.join(adminDir, 'privacy.html')));
   app.get('*', (_req, res) => res.sendFile(path.join(adminDir, 'index.html')));
 
   app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
