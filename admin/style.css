@@ -381,6 +381,39 @@ label { font-size: 13px; color: var(--text-2); font-weight: 500; }
 .stat-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
 .stat-card .value { font-size: 26px; font-weight: 700; color: var(--text); letter-spacing: -0.02em; }
 
+/* ── Dashboard stat grid + clickable cards ─────────────────────────── */
+.dash-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.stat-card-link {
+  position: relative;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: transform .12s, box-shadow .12s, border-color .12s;
+}
+.stat-card-link:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--pink-200);
+}
+.stat-card-link:active { transform: translateY(0); }
+.stat-card-arrow {
+  position: absolute;
+  top: 18px; right: 16px;
+  width: 16px; height: 16px;
+  color: var(--text-3);
+  transition: transform .15s, color .15s;
+}
+.stat-card-link:hover .stat-card-arrow {
+  transform: translateX(2px);
+  color: var(--pink);
+}
+
 /* ── Status badges ───────────────────────────────────────────────────── */
 .badge {
   display: inline-flex; align-items: center; gap: 4px;
@@ -630,13 +663,30 @@ table select {
   .col-hide-xs { display: none !important; }
 }
 
+/* ── Топ-3 MVP строки на дашборде (clickable) ────────────────────────── */
+.dash-top3-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: background .12s;
+}
+.dash-top3-row:last-child { border-bottom: none; }
+.dash-top3-row:hover { background: var(--surface-2); }
+
 /* ── Top performers (Дашборд) ────────────────────────────────────────── */
 .perf-row {
   display: flex; gap: 10px; align-items: flex-start;
-  padding: 10px 0;
+  padding: 10px 6px;
   border-bottom: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
 }
 .perf-row:last-child { border-bottom: none; }
+.perf-row-link { cursor: pointer; transition: background .12s; }
+.perf-row-link:hover { background: var(--surface-2); }
 .perf-rank {
   font-size: 18px; min-width: 24px; text-align: center;
   font-weight: 700; color: var(--text-2);
@@ -768,7 +818,46 @@ table select {
 #dash-pending-card.has-pending .stat-card-icon { background: var(--red-50, #fee2e2); color: var(--red, #ef4444); }
 
 /* ── Dashboard grid responsive ──────────────────────────────────────── */
-.dashboard-grid { grid-template-columns: 1fr 1fr; }
+.dashboard-grid { grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+
+/* ── Дашборд: мобильные тюнинги ───────────────────────────────────────
+   ≤ 768px: 2-колоночный dashboard-grid становится 1-колоночным,
+            3 стат-карты ужимаются в одну строку (мини).
+   ≤ 480px: стат-карты в горизонтальный list-стиль (иконка слева,
+            цифра и подпись справа), engagement-chart с h-скроллом. */
+@media (max-width: 768px) {
+  .dash-stats { gap: 10px; }
+  .stat-card { padding: 12px 14px; }
+  .stat-card .value { font-size: 22px; }
+  .stat-card .label { font-size: 10px; }
+  .stat-card-arrow { top: 14px; right: 12px; }
+
+  /* Engagement chart: фиксируем ширину бара, контейнер скроллится */
+  #engagement-chart { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .eng-chart { min-width: 480px; }
+}
+@media (max-width: 480px) {
+  /* Стат-карта горизонтально: иконка слева, текст справа */
+  .dash-stats { grid-template-columns: 1fr; gap: 8px; }
+  .stat-card {
+    flex-direction: row;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 14px;
+  }
+  .stat-card-icon { margin-bottom: 0; flex-shrink: 0; }
+  .stat-card .value { font-size: 22px; order: 2; margin-left: auto; }
+  .stat-card .label { font-size: 11px; flex: 1; text-transform: none; letter-spacing: 0; order: 1; }
+  .stat-card-arrow { position: static; margin-left: 4px; }
+
+  /* Топ-10 на узких — экономим горизонталь */
+  .perf-row { padding: 10px 4px; gap: 8px; }
+  .perf-rank { font-size: 16px; min-width: 20px; }
+  .perf-name { font-size: 13px; }
+  .perf-total { font-size: 13px; }
+  .perf-meta { font-size: 11px; }
+  .perf-chip { padding: 1px 6px; }
+}
 
 /* ── Notification form ───────────────────────────────────────────────── */
 .notify-result-ok  { color: var(--green, #22c55e); font-weight: 600; }

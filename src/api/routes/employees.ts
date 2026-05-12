@@ -72,17 +72,30 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
   } catch (err) { next(err); }
 });
 
-// GET /api/employees/engagement?days=30 — уникальных чек-инов по дням
+// GET /api/employees/engagement?days=30&storeId=N — уникальных чек-инов по дням.
+// storeId фильтрует по точке сотрудника (для отображения вовлечённости одной точки
+// на дашборде, когда выбран фильтр-точка).
 router.get('/engagement', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const days = Math.min(Math.max(parseInt(String(req.query.days ?? '30'), 10) || 30, 1), 90);
+    const storeId = req.query.storeId ? parseInt(String(req.query.storeId), 10) : null;
+    const params: (number | null)[] = [days];
+    let storeJoin = '';
+    let storeWhere = '';
+    if (storeId && !isNaN(storeId)) {
+      params.push(storeId);
+      storeJoin = `JOIN employees e ON e.id = dc.employee_id`;
+      storeWhere = `AND e.store_id = $${params.length}`;
+    }
     const { rows } = await pool.query<{ date: string; uniqueUsers: string }>(
-      `SELECT checkin_date::text AS date, COUNT(DISTINCT employee_id)::text AS "uniqueUsers"
-       FROM daily_checkins
-       WHERE checkin_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Irkutsk')::date - $1::int
-       GROUP BY checkin_date
-       ORDER BY checkin_date ASC`,
-      [days]
+      `SELECT dc.checkin_date::text AS date, COUNT(DISTINCT dc.employee_id)::text AS "uniqueUsers"
+       FROM daily_checkins dc
+       ${storeJoin}
+       WHERE dc.checkin_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Irkutsk')::date - $1::int
+         ${storeWhere}
+       GROUP BY dc.checkin_date
+       ORDER BY dc.checkin_date ASC`,
+      params
     );
     res.json(rows.map(r => ({ date: r.date, uniqueUsers: parseInt(r.uniqueUsers, 10) })));
   } catch (err) { next(err); }

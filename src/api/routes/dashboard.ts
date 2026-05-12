@@ -5,21 +5,42 @@ import { calcMvpScore } from '../../services/rating.service';
 
 const router = Router();
 
-// GET /api/dashboard — сводная статистика для главной страницы
-router.get('/', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+// GET /api/dashboard?storeId=N — сводная статистика для главной страницы.
+// Параметр storeId фильтрует все блоки (активные сотрудники, заявки, монеты,
+// топ-3 MVP, топ-10 исполнителей) — чтобы выбранная в сайдбаре точка
+// синхронно влияла на дашборд.
+router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     // Иркутск (UTC+8) — чтобы счётчик «монет в этом месяце» не «прыгал» в полночь UTC
     const irkNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
     const year = irkNow.getUTCFullYear();
     const month = irkNow.getUTCMonth() + 1;
 
+    const storeIdRaw = req.query.storeId;
+    const storeId = storeIdRaw && !Array.isArray(storeIdRaw)
+      ? parseInt(String(storeIdRaw), 10)
+      : NaN;
+    const hasStore = Number.isInteger(storeId) && storeId > 0;
+
     const [empResult, pendingResult, top3Result, coinsResult, topPerformersResult] = await Promise.all([
-      pool.query<{ count: string }>(
-        `SELECT COUNT(*)::text AS count FROM employees WHERE is_active = true`
-      ),
-      pool.query<{ count: string }>(
-        `SELECT COUNT(*)::text AS count FROM store_exchanges WHERE status = 'pending'`
-      ),
+      hasStore
+        ? pool.query<{ count: string }>(
+            `SELECT COUNT(*)::text AS count FROM employees WHERE is_active = true AND store_id = $1`,
+            [storeId]
+          )
+        : pool.query<{ count: string }>(
+            `SELECT COUNT(*)::text AS count FROM employees WHERE is_active = true`
+          ),
+      hasStore
+        ? pool.query<{ count: string }>(
+            `SELECT COUNT(*)::text AS count FROM store_exchanges se
+             JOIN employees e ON e.id = se.employee_id
+             WHERE se.status = 'pending' AND e.store_id = $1`,
+            [storeId]
+          )
+        : pool.query<{ count: string }>(
+            `SELECT COUNT(*)::text AS count FROM store_exchanges WHERE status = 'pending'`
+          ),
       // Метрики свежайшего месяца + сохранённый mvp_score (если был «Обработать месяц»).
       // Если ничего нет — всё равно показываем сотрудников с любыми проставленными полями.
       pool.query<{
@@ -49,20 +70,33 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
          JOIN employees e ON e.id = mm.employee_id
          JOIN stores s ON s.id = e.store_id
          JOIN latest l ON l.year = mm.year AND l.month = mm.month
-         WHERE e.is_active = true`
+         WHERE e.is_active = true
+           ${hasStore ? `AND e.store_id = $1` : ''}`,
+        hasStore ? [storeId] : []
       ),
       // Месяц считаем по иркутскому времени — синхронно с getMonthlySummary
       // и месячными агрегациями на фронте Mini App. Без AT TIME ZONE EXTRACT
       // работает в UTC, и транзакция 1 числа в 02:00 Иркутска (18:00 UTC
       // прошлого дня) попадала бы в прошлый месяц.
-      pool.query<{ total: string }>(
-        `SELECT COALESCE(SUM(amount), 0)::text AS total
-         FROM coin_transactions
-         WHERE amount > 0
-           AND EXTRACT(YEAR  FROM created_at AT TIME ZONE 'Asia/Irkutsk') = $1
-           AND EXTRACT(MONTH FROM created_at AT TIME ZONE 'Asia/Irkutsk') = $2`,
-        [year, month]
-      ),
+      hasStore
+        ? pool.query<{ total: string }>(
+            `SELECT COALESCE(SUM(ct.amount), 0)::text AS total
+             FROM coin_transactions ct
+             JOIN employees e ON e.id = ct.employee_id
+             WHERE ct.amount > 0
+               AND e.store_id = $3
+               AND EXTRACT(YEAR  FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $1
+               AND EXTRACT(MONTH FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $2`,
+            [year, month, storeId]
+          )
+        : pool.query<{ total: string }>(
+            `SELECT COALESCE(SUM(amount), 0)::text AS total
+             FROM coin_transactions
+             WHERE amount > 0
+               AND EXTRACT(YEAR  FROM created_at AT TIME ZONE 'Asia/Irkutsk') = $1
+               AND EXTRACT(MONTH FROM created_at AT TIME ZONE 'Asia/Irkutsk') = $2`,
+            [year, month]
+          ),
       // Топ-10 по активности за текущий месяц (Иркутск). Считаем сумму
       // положительных транзакций по категориям: квиз, чек-лист, челленджи,
       // прочее. Списания и spend не учитываем — это не «выполненные задачи».
@@ -83,11 +117,12 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
            AND EXTRACT(YEAR  FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $1
            AND EXTRACT(MONTH FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $2
            AND e.is_active = true
+           ${hasStore ? `AND e.store_id = $3` : ''}
          GROUP BY e.id, e.name, s.name
          HAVING SUM(CASE WHEN ct.amount > 0 THEN ct.amount ELSE 0 END) > 0
          ORDER BY SUM(CASE WHEN ct.amount > 0 THEN ct.amount ELSE 0 END) DESC
          LIMIT 10`,
-        [year, month]
+        hasStore ? [year, month, storeId] : [year, month]
       ),
     ]);
 
@@ -135,6 +170,7 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
       mvpPeriod,
       coinsIssuedThisMonth: parseInt(coinsResult.rows[0].total, 10),
       topPerformers,
+      storeId: hasStore ? storeId : null,
     });
   } catch (err) { next(err); }
 });

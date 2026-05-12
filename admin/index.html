@@ -126,27 +126,30 @@
       <div class="page-head">
         <div>
           <h1 class="page-title">Дашборд</h1>
-          <p class="page-subtitle">Сводная статистика системы Maria Crew</p>
+          <p class="page-subtitle"><span id="dash-scope">Все точки</span> · Сводная статистика</p>
         </div>
         <button class="btn btn-ghost" onclick="loadDashboard()"><i data-lucide="refresh-cw"></i> Обновить</button>
       </div>
 
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px">
-        <div class="stat-card">
+      <div class="dash-stats">
+        <button type="button" class="stat-card stat-card-link" onclick="dashGoToEmployees()" title="Перейти к сотрудникам">
           <div class="stat-card-icon"><i data-lucide="users"></i></div>
           <div class="value" id="dash-active-emp-val">—</div>
           <div class="label">Активных сотрудников</div>
-        </div>
-        <div class="stat-card" id="dash-pending-card">
+          <i class="stat-card-arrow" data-lucide="chevron-right"></i>
+        </button>
+        <button type="button" class="stat-card stat-card-link" id="dash-pending-card" onclick="dashGoToPendingExchanges()" title="Открыть заявки, ожидающие выдачи">
           <div class="stat-card-icon"><i data-lucide="shopping-bag"></i></div>
           <div class="value" id="dash-pending-ex-val">—</div>
           <div class="label">Ожидают выдачи</div>
-        </div>
-        <div class="stat-card">
+          <i class="stat-card-arrow" data-lucide="chevron-right"></i>
+        </button>
+        <button type="button" class="stat-card stat-card-link" onclick="dashGoToCoinsExport()" title="Экспортировать монеты за этот месяц">
           <div class="stat-card-icon"><i data-lucide="coins"></i></div>
           <div class="value" id="dash-coins-val">—</div>
           <div class="label">Монет выдано в этом месяце</div>
-        </div>
+          <i class="stat-card-arrow" data-lucide="chevron-right"></i>
+        </button>
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px" class="dashboard-grid">

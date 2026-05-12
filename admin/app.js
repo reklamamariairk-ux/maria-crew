@@ -2673,8 +2673,43 @@ async function saveMvpConfig() {
 // ── Дашборд ───────────────────────────────────────────────────────────────────
 const SEASON_LABELS_DASH = { spring: 'Весна', summer: 'Лето', autumn: 'Осень', winter: 'Зима' };
 
+// ── Drill-down с дашборда ─────────────────────────────────────────────────────
+// Стат-карты кликабельны — переключаемся в соответствующую вкладку с pre-set
+// фильтром, чтобы цифра в дашборде сразу давала контекст к ответу «а это что?».
+function dashGoToEmployees() {
+  switchTab('employees');
+}
+function dashGoToPendingExchanges() {
+  switchTab('exchanges');
+  const statusSel = document.getElementById('exchanges-status');
+  if (statusSel) {
+    statusSel.value = 'pending';
+    loadExchanges();
+  }
+}
+function dashGoToCoinsExport() {
+  switchTab('coins');
+  // Подождём, пока вкладка отрисуется, и откроем форму экспорта на текущий месяц
+  setTimeout(() => {
+    const form = document.getElementById('coins-export-form');
+    if (form && form.classList.contains('hidden')) {
+      openCoinsExport();
+    } else if (form) {
+      form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, 60);
+}
+
 async function loadDashboard() {
-  const data = await api('GET', '/dashboard');
+  // Передаём текущий фильтр-точку — все блоки на дашборде подстраиваются.
+  const url = state.storeId ? `/dashboard?storeId=${state.storeId}` : '/dashboard';
+  // Подписываем scope (видно из заголовка, какая точка фильтруется)
+  const scopeEl = document.getElementById('dash-scope');
+  if (scopeEl) {
+    const store = state.stores.find(s => s.id === state.storeId);
+    scopeEl.textContent = store ? `Точка: ${store.name}` : 'Все точки';
+  }
+  const data = await api('GET', url);
   if (!data) return;
 
   document.getElementById('dash-active-emp-val').textContent = data.activeEmployees;
@@ -2694,9 +2729,9 @@ async function loadDashboard() {
       ? `<div style="font-size:12px;color:var(--text-3);margin-bottom:8px">за ${MONTH_NAMES[data.mvpPeriod.month]} ${data.mvpPeriod.year}</div>`
       : '';
     top3El.innerHTML = periodLabel + data.top3Mvp.map((e, i) =>
-      `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+      `<div class="dash-top3-row" onclick="showEmployeeModal(${e.id})" title="Открыть карточку сотрудника">
         <span style="font-size:20px">${medals[i] ?? ''}</span>
-        <div style="flex:1">
+        <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:14px">${esc(e.name)}</div>
           <div style="font-size:12px;color:var(--text-3)">${esc(e.storeName)}</div>
         </div>
@@ -2729,7 +2764,7 @@ async function loadDashboard() {
         c.other     > 0 ? `<span class="perf-chip" title="Прочее">⭐ ${c.other}</span>` : '',
       ].filter(Boolean).join('');
       const rank = i < 3 ? ['🥇','🥈','🥉'][i] : `${i + 1}`;
-      return `<div class="perf-row">
+      return `<div class="perf-row perf-row-link" onclick="showEmployeeModal(${p.id})" title="Открыть карточку сотрудника">
         <span class="perf-rank">${rank}</span>
         <div class="perf-body">
           <div class="perf-head">
@@ -2750,8 +2785,10 @@ async function loadDashboard() {
 }
 
 async function loadEngagement() {
-  // Cache-busting + явный запрос свежих данных
-  const data = await api('GET', `/employees/engagement?days=30&_=${Date.now()}`);
+  // Cache-busting + явный запрос свежих данных. Применяем фильтр-точку,
+  // чтобы график вовлечённости соответствовал остальному дашборду.
+  const storeParam = state.storeId ? `&storeId=${state.storeId}` : '';
+  const data = await api('GET', `/employees/engagement?days=30${storeParam}&_=${Date.now()}`);
   const el = document.getElementById('engagement-chart');
   if (!el) return;
 
