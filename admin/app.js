@@ -2887,6 +2887,24 @@ async function saveEmployeePhone(id, btn) {
   finally { btn.disabled = false; }
 }
 
+async function saveEmployeeName(id, btn) {
+  const input = document.getElementById('emp-name-input');
+  if (!input) return;
+  const name = input.value.trim();
+  if (!name) { toast('⚠️ Имя не может быть пустым'); return; }
+  if (name.length > 100) { toast('⚠️ Имя слишком длинное (максимум 100 символов)'); return; }
+  btn.disabled = true;
+  try {
+    await api('PUT', `/employees/${id}`, { name });
+    toast('✅ Имя обновлено');
+    // Синхронизируем заголовок модалки + строку в таблице
+    const title = document.getElementById('modal-emp-title');
+    if (title) title.textContent = name;
+    if (typeof loadEmployees === 'function') loadEmployees();
+  } catch (e) { toastError(e); }
+  finally { btn.disabled = false; }
+}
+
 // ── Карточка сотрудника (модалка) ─────────────────────────────────────────────
 async function showEmployeeModal(id) {
   const modal = document.getElementById('modal-employee');
@@ -2910,7 +2928,20 @@ async function showEmployeeModal(id) {
   const roleLabel = { employee: 'Сотрудник', manager: 'Менеджер', admin: 'Администратор' };
   const lastSeen  = summary.lastSeenAt ? formatDate(summary.lastSeenAt) : 'Не заходил';
 
+  // Редактирование имени доступно superadmin и editor; coin_admin не может
+  // менять сотрудников (backend denyCoinAdminForWrites).
+  const canEditName = state.role !== 'coin_admin';
+  const nameEditor = canEditName ? `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;padding:12px;background:var(--bg-2,#f8f8f8);border-radius:8px">
+      <i data-lucide="user" style="width:16px;height:16px;color:var(--text-2)"></i>
+      <span style="font-size:13px;color:var(--text-2)">Имя:</span>
+      <input type="text" id="emp-name-input" value="${esc(summary.name)}" maxlength="100" placeholder="Имя сотрудника" style="flex:1;min-width:140px">
+      <button class="btn btn-primary btn-sm" onclick="saveEmployeeName(${summary.id}, this)"><i data-lucide="save"></i> Сохранить</button>
+    </div>
+  ` : '';
+
   body.innerHTML = `
+    ${nameEditor}
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px">
       <div style="flex:1;min-width:200px">
         <div style="font-size:13px;color:var(--text-2);margin-bottom:4px">Точка</div>
