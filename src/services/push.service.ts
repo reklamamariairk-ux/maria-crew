@@ -1,17 +1,17 @@
 // Push-уведомления для мобильного приложения через Firebase Cloud Messaging.
 // FCM умеет в Android и iOS (через APNs proxy) — один SDK, один сервер-ключ.
 //
-// Состояние:
-// - Endpoints для регистрации/удаления токенов работают.
-// - sendPush() ниже — заглушка-логгер: пока не настроен Firebase service account,
-//   возвращаем всегда true и пишем в консоль. Когда придёт время — раскомментировать
-//   firebase-admin интеграцию (~10 строк, см. TODO в коде).
-//
-// Why: чтобы не блокировать разработку фронта мобильного приложения. Все
-// nofityXxx-функции уже могут вызывать sendPushToEmployee(), а реальная отправка
-// включится позже добавлением FIREBASE_SERVICE_ACCOUNT_JSON в env.
+// Поведение:
+// - Если env FIREBASE_SERVICE_ACCOUNT_JSON не задан — отправка no-op,
+//   логируем в консоль. Это позволяет backend жить без Firebase до того
+//   как админ создаст project и пропишет ключ.
+// - Когда ключ есть — firebase-admin инициализируется лениво (на первый
+//   вызов sendPushToEmployee), сразу шлёт через sendEachForMulticast,
+//   и подчищает невалидные токены в БД.
 
 import { pool } from '../db/pool';
+import { initializeApp, cert, App, getApps } from 'firebase-admin/app';
+import { getMessaging, Messaging } from 'firebase-admin/messaging';
 
 export interface DeviceToken {
   id: number;
@@ -53,6 +53,38 @@ export interface PushPayload {
   data?: Record<string, string>;
 }
 
+// ── Firebase Admin lazy init ────────────────────────────────────────────────
+// Инициализируем один раз при первой отправке. Парсим JSON-ключ из env.
+// Возвращаем null, если ключ не задан или некорректен — тогда отправка no-op.
+let firebaseApp: App | null = null;
+let firebaseInitFailed = false;
+
+function getFirebaseMessaging(): Messaging | null {
+  if (firebaseInitFailed) return null;
+  if (firebaseApp) return getMessaging(firebaseApp);
+
+  const json = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (!json) return null;
+
+  try {
+    // Если firebase-admin уже инициализирован где-то (на CI, в тестах) — переиспользуем.
+    const existing = getApps()[0];
+    if (existing) {
+      firebaseApp = existing;
+      return getMessaging(firebaseApp);
+    }
+
+    const serviceAccount = JSON.parse(json);
+    firebaseApp = initializeApp({ credential: cert(serviceAccount) });
+    console.log('[push] Firebase initialized');
+    return getMessaging(firebaseApp);
+  } catch (err) {
+    firebaseInitFailed = true;
+    console.error('[push] Firebase init failed:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 /**
  * Отправляет push-уведомление на все зарегистрированные устройства сотрудника.
  * Возвращает количество устройств, на которые удалось отправить.
@@ -71,31 +103,41 @@ export async function sendPushToEmployee(
   );
   if (rows.length === 0) return 0;
 
-  const fcmConfigured = !!process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  if (!fcmConfigured) {
+  const messaging = getFirebaseMessaging();
+  if (!messaging) {
     console.log(`[push] would send to employee=${employeeId} (${rows.length} devices): "${payload.title}" — FCM не настроен`);
     return 0;
   }
 
-  // TODO: реальная отправка через firebase-admin. Раскомментировать когда добавим зависимость:
-  //
-  //   import { getMessaging } from 'firebase-admin/messaging';
-  //   import { initializeApp, cert } from 'firebase-admin/app';
-  //   const app = initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON!)) });
-  //   const messaging = getMessaging(app);
-  //   const result = await messaging.sendEachForMulticast({
-  //     tokens: rows.map(r => r.token),
-  //     notification: { title: payload.title, body: payload.body },
-  //     data: payload.data,
-  //   });
-  //   // Чистим невалидные токены из БД
-  //   for (let i = 0; i < result.responses.length; i++) {
-  //     const r = result.responses[i];
-  //     if (!r.success && r.error?.code?.includes('registration-token-not-registered')) {
-  //       await pool.query(`DELETE FROM device_tokens WHERE token = $1`, [rows[i].token]);
-  //     }
-  //   }
-  //   return result.successCount;
+  try {
+    const result = await messaging.sendEachForMulticast({
+      tokens: rows.map(r => r.token),
+      notification: { title: payload.title, body: payload.body },
+      data: payload.data,
+    });
 
-  return 0;
+    // Чистим невалидные токены, чтобы база не разрослась мёртвыми записями.
+    // FCM возвращает specific error codes для удалённых / неактивных токенов.
+    const deadCodes = new Set([
+      'messaging/registration-token-not-registered',
+      'messaging/invalid-registration-token',
+      'messaging/invalid-argument',
+    ]);
+    const toDelete: string[] = [];
+    for (let i = 0; i < result.responses.length; i++) {
+      const r = result.responses[i];
+      if (!r.success && r.error && deadCodes.has(r.error.code)) {
+        toDelete.push(rows[i].token);
+      }
+    }
+    if (toDelete.length > 0) {
+      await pool.query(`DELETE FROM device_tokens WHERE token = ANY($1::text[])`, [toDelete]);
+      console.log(`[push] cleaned ${toDelete.length} dead tokens`);
+    }
+
+    return result.successCount;
+  } catch (err) {
+    console.error('[push] sendEachForMulticast failed:', err instanceof Error ? err.message : err);
+    return 0;
+  }
 }
