@@ -181,7 +181,7 @@ export async function requestPin(input: { phone?: string; email?: string }): Pro
 
   // Канал доставки: Telegram (если привязан) ИЛИ Email (если задан и Resend настроен)
   const hasTelegram = !!employee.telegramId;
-  const hasEmail = !!employee.email && !!process.env.RESEND_API_KEY;
+  const hasEmail = !!employee.email && !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
   if (!hasTelegram && !hasEmail) {
     return {
       error: 'Не задан ни Telegram, ни email. Запусти бота @Mariaprod_bot и нажми /start, либо добавь email в профиле.',

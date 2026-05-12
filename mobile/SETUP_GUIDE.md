@@ -296,18 +296,31 @@ Codemagic умеет автоматически загружать в TestFlight
 
 ## Чеклист готовности
 
-Перед выпуском первой версии:
-- [ ] Установлен Node.js, Git, Android Studio
-- [ ] Создан Firebase project с Android и iOS-приложениями
+Перед выпуском первой версии. Обновлено 2026-05-12.
+
+**Уже сделано:**
+- [x] Node.js, Git, Android Studio установлены (`mobile/node_modules/` есть)
+- [x] Capacitor wrapper настроен (`mobile/capacitor.config.ts`, `appId: ru.mariairk.crew`)
+- [x] Android-проект создан (`npx cap add android` выполнен)
+- [x] Иконка + сплеш сгенерированы (новый дизайн — стилизованная М)
+- [x] `@capacitor/push-notifications` плагин подключён
+- [x] Privacy Policy опубликована: **https://maria-crew.onrender.com/privacy**
+- [x] Логин в мобильном приложении (email + телефон) реализован
+
+**Осталось:**
+- [ ] Создан Firebase project, скачаны `google-services.json` (Android) и `GoogleService-Info.plist` (iOS)
 - [ ] `FIREBASE_SERVICE_ACCOUNT_JSON` прописан в Render
-- [ ] Зарегистрирован Google Play Console ($25)
-- [ ] (опц.) Зарегистрирован Apple Developer ($99)
-- [ ] Готовы иконка 1024×1024 и сплеш 2732×2732
-- [ ] PRIVACY.md опубликован на https://maria-irk.ru/privacy
-- [ ] Создан keystore для подписи Android, пароль сохранён надёжно
-- [ ] Первый билд протестирован на эмуляторе/устройстве
-- [ ] Push-уведомления проверены
-- [ ] AAB загружен в Internal Testing → проверен реальными людьми
+- [ ] Создан keystore для подписи Android (см. `mobile/scripts/create-keystore.ps1`)
+- [ ] Signing config прописан в `mobile/android/app/build.gradle` + `mobile/android/keystore.properties`
+- [ ] Зарегистрирован Google Play Console ($25 единоразово)
+- [ ] Первый AAB протестирован на реальном устройстве
+- [ ] AAB загружен в Internal Testing в Play Console
+- [ ] (опц.) Зарегистрирован Apple Developer ($99/год)
+- [ ] (опц.) iOS-сборка через Codemagic
+
+**Privacy Policy URL для маркетов:**
+- App Store Connect → App Information → Privacy Policy URL → `https://maria-crew.onrender.com/privacy`
+- Play Console → Main store listing → Privacy Policy → тот же URL
 
 ---
 

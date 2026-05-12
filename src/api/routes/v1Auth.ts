@@ -46,7 +46,7 @@ router.post(
           return ok;
         }));
       }
-      if (result.email && process.env.RESEND_API_KEY) {
+      if (result.email && process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
         const { subject, html } = buildLoginPinEmail(result.pin);
         tasks.push(sendEmail(result.email, subject, html).then(r => {
           if (r.ok) channels.push('Email');
@@ -179,8 +179,8 @@ router.post(
 
       await pool.query(`UPDATE employees SET email = $1 WHERE id = $2`, [emailNorm, emp.id]);
 
-      // Сразу шлём PIN на новый email (если RESEND настроен)
-      if (process.env.RESEND_API_KEY) {
+      // Сразу шлём PIN на новый email (если Gmail SMTP настроен)
+      if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
         const result = await requestPin({ phone });
         if ('error' in result) {
           // email сохранили, но pin не послали — попросим юзера запросить ещё раз

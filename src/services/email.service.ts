@@ -1,11 +1,16 @@
-// Email-уведомления через Resend (https://resend.com).
-// Бесплатно 3000 писем/месяц + 100 в день, без необходимости подтверждать домен
-// для transactional. Активируется через env RESEND_API_KEY. Без ключа — no-op.
+// Email через Gmail SMTP (nodemailer).
+// Без сторонних сервисов, без подтверждения домена — отправка от вашего gmail.
 //
-// Доменом-отправителем по умолчанию используется onboarding@resend.dev (тестовый
-// домен Resend, разрешён для тестов). Когда захотите свой — пропишите
-// RESEND_FROM = "Maria Crew <noreply@yourdomain.ru>" + добавьте DNS записи
-// (SPF/DKIM) в Resend dashboard.
+// Активация через env переменные:
+//   GMAIL_USER         — gmail-адрес отправителя (например reklama.maria.irk@gmail.com)
+//   GMAIL_APP_PASSWORD — application password Gmail (НЕ обычный пароль, а специальный)
+//
+// Лимит: 500 писем/день для обычного аккаунта, 2000 для Google Workspace.
+//
+// Без переменных sendEmail() возвращает no-op (логирует, но не падает).
+
+import nodemailer from 'nodemailer';
+import type { Transporter } from 'nodemailer';
 
 export interface EmailResult {
   ok: boolean;
@@ -13,8 +18,21 @@ export interface EmailResult {
 }
 
 export function isValidEmail(email: string): boolean {
-  // Простая валидация — подробная не нужна, всё равно сервер бекенда отвергнет невалидное
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+let _transporter: Transporter | null = null;
+function getTransporter(): Transporter | null {
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+  if (!user || !pass) return null;
+  if (_transporter) return _transporter;
+
+  _transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user, pass },
+  });
+  return _transporter;
 }
 
 export async function sendEmail(
@@ -22,39 +40,28 @@ export async function sendEmail(
   subject: string,
   html: string
 ): Promise<EmailResult> {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    console.log(`[email] no RESEND_API_KEY — would send to ${to}: "${subject}"`);
+  const transporter = getTransporter();
+  if (!transporter) {
+    console.log(`[email] no GMAIL_USER/GMAIL_APP_PASSWORD — would send to ${to}: "${subject}"`);
     return { ok: false, error: 'Email-сервис не настроен' };
   }
   if (!isValidEmail(to)) {
     return { ok: false, error: 'Неверный email' };
   }
 
-  const from = process.env.RESEND_FROM || 'Maria Crew <onboarding@resend.dev>';
-
   try {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ from, to, subject, html }),
-      signal: AbortSignal.timeout(10_000),
+    const info = await transporter.sendMail({
+      from: `Maria Crew <${process.env.GMAIL_USER}>`,
+      to,
+      subject,
+      html,
     });
-    const data = await res.json() as { id?: string; message?: string; name?: string };
-    if (!res.ok) {
-      const err = data.message || data.name || `HTTP ${res.status}`;
-      console.warn(`[email] failed for ${to}: ${err}`);
-      return { ok: false, error: err };
-    }
-    console.log(`[email] sent to ${to} via Resend (id=${data.id})`);
+    console.log(`[email] sent to ${to} via Gmail SMTP (id=${info.messageId})`);
     return { ok: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[email] network error for ${to}: ${msg}`);
-    return { ok: false, error: 'Email-сервис недоступен' };
+    console.error(`[email] failed for ${to}: ${msg}`);
+    return { ok: false, error: msg };
   }
 }
 
