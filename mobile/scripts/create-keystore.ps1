@@ -68,7 +68,9 @@ if ($LASTEXITCODE -ne 0) {
 # Создаём keystore.properties (читается из build.gradle)
 $propsContent = @"
 # Пароли для подписи Android-приложения. ЭТОТ ФАЙЛ В .gitignore — не коммить.
-storeFile=../maria-crew.keystore
+# storeFile путь — относительно build.gradle (mobile/android/app/),
+# поэтому ../../maria-crew.keystore = mobile/maria-crew.keystore.
+storeFile=../../maria-crew.keystore
 keyAlias=maria-crew
 storePassword=$passwordPlain
 keyPassword=$passwordPlain
