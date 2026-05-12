@@ -4,3 +4,8 @@ ios/
 www/
 .DS_Store
 *.log
+
+# Firebase секреты — не коммитим
+ios-config/
+*.keystore
+keystore.properties
