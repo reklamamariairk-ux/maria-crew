@@ -818,7 +818,7 @@ table select {
 #dash-pending-card.has-pending .stat-card-icon { background: var(--red-50, #fee2e2); color: var(--red, #ef4444); }
 
 /* ── Dashboard grid responsive ──────────────────────────────────────── */
-.dashboard-grid { grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+.dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
 
 /* ── Дашборд: мобильные тюнинги ───────────────────────────────────────
    ≤ 768px: 2-колоночный dashboard-grid становится 1-колоночным,
