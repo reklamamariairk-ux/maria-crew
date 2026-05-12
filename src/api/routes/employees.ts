@@ -200,6 +200,27 @@ router.post('/', denyCoinAdminForWrites, async (req: Request, res: Response, nex
   } catch (err) { next(err); }
 });
 
+// PATCH /api/employees/:id/name — отдельный эндпоинт только для имени.
+// Доступен всем админам (включая coin_admin), потому что переименование —
+// безобидная операция (часто требуется поправить опечатку в ФИО), а полный
+// PUT остаётся закрытым для coin_admin.
+router.patch('/:id/name', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Неверный id' }); return; }
+    const { name } = req.body as { name?: string };
+    if (!name || !name.trim()) { res.status(400).json({ error: 'name обязателен' }); return; }
+    if (name.trim().length > 100) { res.status(400).json({ error: 'name слишком длинный (максимум 100 символов)' }); return; }
+    const { rows } = await pool.query(
+      `UPDATE employees SET name = $1 WHERE id = $2 RETURNING *`,
+      [name.trim(), id]
+    );
+    if (!rows[0]) { res.status(404).json({ error: 'Не найден' }); return; }
+    res.json(rows[0]);
+    logAudit('employee_update', { employeeId: id, name: name.trim(), via: 'patch_name' }).catch(() => {});
+  } catch (err) { next(err); }
+});
+
 // PUT /api/employees/:id
 router.put('/:id', denyCoinAdminForWrites, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {

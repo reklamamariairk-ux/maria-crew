@@ -2895,7 +2895,9 @@ async function saveEmployeeName(id, btn) {
   if (name.length > 100) { toast('⚠️ Имя слишком длинное (максимум 100 символов)'); return; }
   btn.disabled = true;
   try {
-    await api('PUT', `/employees/${id}`, { name });
+    // PATCH /:id/name доступен всем админам, включая coin_admin —
+    // в отличие от PUT, где coin_admin блокируется denyCoinAdminForWrites.
+    await api('PATCH', `/employees/${id}/name`, { name });
     toast('✅ Имя обновлено');
     // Синхронизируем заголовок модалки + строку в таблице
     const title = document.getElementById('modal-emp-title');
@@ -2928,17 +2930,17 @@ async function showEmployeeModal(id) {
   const roleLabel = { employee: 'Сотрудник', manager: 'Менеджер', admin: 'Администратор' };
   const lastSeen  = summary.lastSeenAt ? formatDate(summary.lastSeenAt) : 'Не заходил';
 
-  // Редактирование имени доступно superadmin и editor; coin_admin не может
-  // менять сотрудников (backend denyCoinAdminForWrites).
-  const canEditName = state.role !== 'coin_admin';
-  const nameEditor = canEditName ? `
+  // Редактирование имени — отдельный эндпоинт PATCH /employees/:id/name,
+  // доступный всем админам (включая coin_admin). Опечатки в ФИО обычное
+  // дело, незачем требовать superadmin/editor только ради этого.
+  const nameEditor = `
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;padding:12px;background:var(--bg-2,#f8f8f8);border-radius:8px">
       <i data-lucide="user" style="width:16px;height:16px;color:var(--text-2)"></i>
       <span style="font-size:13px;color:var(--text-2)">Имя:</span>
       <input type="text" id="emp-name-input" value="${esc(summary.name)}" maxlength="100" placeholder="Имя сотрудника" style="flex:1;min-width:140px">
       <button class="btn btn-primary btn-sm" onclick="saveEmployeeName(${summary.id}, this)"><i data-lucide="save"></i> Сохранить</button>
     </div>
-  ` : '';
+  `;
 
   body.innerHTML = `
     ${nameEditor}
