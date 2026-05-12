@@ -5,6 +5,7 @@ import { getBalance, earn } from '../../services/coin.service';
 import { logAudit } from '../../services/audit.service';
 import { notifyCoinAward } from '../../bot/notifications/sender';
 import { requireRole } from '../middleware/adminAuth';
+import { normalizePhone } from '../../services/employeeAuth.service';
 
 const router = Router();
 
@@ -240,13 +241,12 @@ router.put('/:id', denyCoinAdminForWrites, async (req: Request, res: Response, n
       ? (telegramUsername ? telegramUsername.replace(/^@/, '').toLowerCase() : null)
       : undefined;
 
-    // Нормализация телефона + phone_normalized (для login по телефону)
+    // Нормализация телефона + phone_normalized (через общую функцию из auth-сервиса).
     let phoneFmt: string | null | undefined;
     let phoneNorm: string | null | undefined;
     if (phone !== undefined) {
       if (phone && phone.trim()) {
-        const digits = phone.replace(/\D+/g, '');
-        const normalized = digits.length === 11 && digits.startsWith('8') ? '7' + digits.slice(1) : digits;
+        const normalized = normalizePhone(phone);
         if (normalized.length !== 11) {
           res.status(400).json({ error: 'Неверный формат телефона (нужно 11 цифр)' });
           return;
@@ -311,7 +311,22 @@ router.put('/:id', denyCoinAdminForWrites, async (req: Request, res: Response, n
     if (name !== undefined || role !== undefined || username !== undefined || phone !== undefined || email !== undefined) {
       logAudit('employee_update', { employeeId: rows[0].id, name, role, telegramUsername: username, phone: phoneNorm, email: emailNorm }).catch(() => {});
     }
-  } catch (err) { next(err); }
+  } catch (err) {
+    // Преобразуем unique-constraint violation (race condition) в понятный 409.
+    // Защищает от ситуации когда два админа одновременно ставят один email
+    // разным сотрудникам — БД-индекс idx_employees_email_unique поймает.
+    if (err instanceof Error && /unique constraint|duplicate key/i.test(err.message)) {
+      if (/email/i.test(err.message)) {
+        res.status(409).json({ error: 'Этот email уже занят другим сотрудником' });
+        return;
+      }
+      if (/phone/i.test(err.message)) {
+        res.status(409).json({ error: 'Этот телефон уже занят' });
+        return;
+      }
+    }
+    next(err);
+  }
 });
 
 // POST /api/employees/bulk-coins — начислить монеты сразу нескольким сотрудникам

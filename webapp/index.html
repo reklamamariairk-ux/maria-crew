@@ -977,8 +977,10 @@
     <button onclick="doDeleteAccount()" style="background:transparent;border:0;color:#e53935;font-size:12px;text-decoration:underline;cursor:pointer">Удалить аккаунт</button>
   </div>
 
-  <!-- Обязательная привязка телефона после входа по email -->
-  <div id="phone-required-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10000;align-items:center;justify-content:center;padding:20px">
+  <!-- Обязательная привязка телефона после входа по email.
+       z-index 10000 — выше любого другого UI. pointer-events:auto и
+       полупрозрачный фон гарантируют что клик мимо ничего не сделает. -->
+  <div id="phone-required-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:10000;align-items:center;justify-content:center;padding:20px;touch-action:none" onclick="event.stopPropagation()">
     <div style="background:#fff;border-radius:20px;width:100%;max-width:380px;padding:28px 24px;animation:fadeUp 0.25s ease">
       <div style="text-align:center;font-size:36px;margin-bottom:8px">📞</div>
       <h2 style="font-size:18px;font-weight:900;margin:0 0 12px;text-align:center;color:#dc1e3c">Добавь номер телефона</h2>
