@@ -23,6 +23,7 @@ import v1AuthRoutes from './routes/v1Auth';
 import v1DevicesRoutes from './routes/v1Devices';
 import v1AccountRoutes from './routes/v1Account';
 import v1NotificationsRoutes from './routes/v1Notifications';
+import backupRoutes from './routes/backup';
 
 const router = Router();
 
@@ -95,5 +96,8 @@ router.use('/dashboard', dashboardRoutes);
 
 // Управление админ-пользователями — только superadmin
 router.use('/admin-users', requireRole('superadmin'), adminUsersRoutes);
+
+// Бэкап БД — только superadmin
+router.use('/backup', denyForCoinAdmin, backupRoutes);
 
 export default router;

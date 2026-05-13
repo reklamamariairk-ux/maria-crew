@@ -233,6 +233,44 @@ async function downloadCoinsCsv() {
   } catch (e) { toastError(e); }
 }
 
+// ── Бэкап БД ──────────────────────────────────────────────────────────
+async function downloadBackup(btn) {
+  if (!confirm('Скачать полный бэкап базы данных?\n\nПроцесс может занять 5-30 секунд.')) return;
+  const statusEl = document.getElementById('backup-status');
+  const originalText = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i data-lucide="loader-2"></i> Готовим...';
+  if (statusEl) statusEl.textContent = 'Читаем все таблицы из БД...';
+  renderIcons();
+  try {
+    const res = await fetch('/api/backup', {
+      headers: { Authorization: `Bearer ${state.token}` },
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(errText || 'Ошибка ' + res.status);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+    a.href = url;
+    a.download = `maria-crew-backup-${stamp}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    const sizeMB = (blob.size / 1024 / 1024).toFixed(2);
+    if (statusEl) statusEl.textContent = `✅ Скачано: ${sizeMB} МБ. Храни этот файл в надёжном месте.`;
+    toast('✅ Бэкап скачан');
+  } catch (e) {
+    if (statusEl) statusEl.textContent = '❌ ' + (e.message || 'Ошибка');
+    toastError(e);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalText;
+    renderIcons();
+  }
+}
+
 async function submitChangePassword() {
   const oldPassword = document.getElementById('cpw-old').value;
   const newPassword = document.getElementById('cpw-new').value;

@@ -1009,6 +1009,20 @@
         </div>
         <p id="cfg-last-updated" class="text-muted" style="font-size:12px;margin-top:10px"></p>
       </div>
+
+      <!-- Бэкап БД — отдельный блок, только суперадмин -->
+      <div class="card card-pad" style="max-width:560px;margin-top:16px">
+        <p class="section-title"><i data-lucide="database" style="width:14px;height:14px"></i> Бэкап базы данных</p>
+        <p class="text-muted" style="font-size:13px;margin-bottom:14px">
+          Скачивает полный дамп всех таблиц в JSON-файл на твой компьютер.
+          Делай регулярно (раз в неделю) — будет страховка на случай если
+          Neon упадёт или данные повредятся.
+        </p>
+        <button class="btn btn-primary" onclick="downloadBackup(this)">
+          <i data-lucide="download"></i> Скачать бэкап (.json)
+        </button>
+        <p id="backup-status" class="text-muted" style="font-size:12px;margin-top:10px"></p>
+      </div>
     </div>
 
     <!-- ── Доступы (суперадмин) ──────────────────────────────────── -->
