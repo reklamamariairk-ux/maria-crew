@@ -973,8 +973,30 @@
        Скрыто в Telegram Mini App. -->
   <div id="standalone-footer" style="display:none;text-align:center;padding:14px 16px 80px;font-size:12px;color:var(--hint)">
     <button onclick="openProfileEdit()" style="background:transparent;border:0;color:var(--brand);font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer;margin-right:14px">Мой профиль</button>
+    <button onclick="openFeedback()" style="background:transparent;border:0;color:var(--brand);font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer;margin-right:14px">Сообщить о проблеме</button>
     <button onclick="doMobileLogout()" style="background:transparent;border:0;color:var(--hint);font-size:12px;text-decoration:underline;cursor:pointer;margin-right:14px">Выйти</button>
     <button onclick="doDeleteAccount()" style="background:transparent;border:0;color:#e53935;font-size:12px;text-decoration:underline;cursor:pointer">Удалить аккаунт</button>
+  </div>
+
+  <!-- Модалка фидбэка (видна и в Telegram Mini App, и в standalone) -->
+  <div id="feedback-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9998;align-items:flex-end;justify-content:center;padding:0" onclick="if(event.target===this)closeFeedback()">
+    <div style="background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:480px;padding:20px;animation:fadeUp 0.25s ease">
+      <h2 style="font-size:17px;font-weight:900;margin:0 0 6px">💬 Сообщить о проблеме</h2>
+      <p style="font-size:13px;color:var(--hint);margin:0 0 14px">Что неудобно? Что не работает? Что улучшить? Текст увидит руководитель.</p>
+      <textarea id="feedback-text" rows="6" maxlength="2000" placeholder="Опиши что случилось..."
+                style="width:100%;padding:12px;border:1.5px solid #ddd;border-radius:12px;font-size:15px;font-family:inherit;resize:vertical"></textarea>
+      <div id="feedback-error" style="font-size:13px;color:#e53935;margin-top:8px;min-height:18px"></div>
+      <div style="display:flex;gap:10px;margin-top:8px">
+        <button onclick="sendFeedback()" id="feedback-send-btn"
+                style="flex:1;padding:12px;background:#dc1e3c;color:#fff;border:0;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer">
+          Отправить
+        </button>
+        <button onclick="closeFeedback()"
+                style="padding:12px 20px;background:#f3f4f6;border:0;border-radius:12px;font-size:14px;cursor:pointer">
+          Отмена
+        </button>
+      </div>
+    </div>
   </div>
 
   <!-- Обязательная привязка телефона после входа по email.
@@ -1040,6 +1062,14 @@
           Отмена
         </button>
       </div>
+
+      <!-- Фидбэк всегда доступен из профиля (в Telegram + standalone) -->
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid #eee;text-align:center">
+        <button onclick="closeProfileEdit();openFeedback()"
+                style="background:transparent;border:0;color:var(--brand);font-size:13px;font-weight:600;cursor:pointer;padding:6px 14px">
+          💬 Сообщить о проблеме
+        </button>
+      </div>
     </div>
   </div>
 
@@ -1085,6 +1115,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="main.js?v=20260513a"></script>
+<script src="main.js?v=20260513b"></script>
 </body>
 </html>

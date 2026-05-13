@@ -601,6 +601,50 @@ router.patch('/account', async (req: Request, res: Response, next: NextFunction)
   } catch (err) { next(err); }
 });
 
+// POST /api/webapp/feedback — фидбэк/багрепорт сотрудника владельцу в Telegram.
+// Принимает оба способа auth (initData в Mini App, Bearer в standalone/мобилке).
+router.post('/feedback', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const employeeId = auth.employee.id;
+    const { message, context } = req.body as { message?: string; context?: Record<string, unknown> };
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      res.status(400).json({ error: 'Сообщение обязательно' });
+      return;
+    }
+    if (message.length > 4000) {
+      res.status(400).json({ error: 'Слишком длинное сообщение (макс 4000 символов)' });
+      return;
+    }
+
+    const ownerId = process.env.OWNER_TELEGRAM_ID;
+    if (!ownerId) {
+      console.error('[feedback] OWNER_TELEGRAM_ID не задан, фидбэк потерян:', { employeeId, message });
+      res.json({ ok: true, delivered: false });
+      return;
+    }
+
+    const { sendBroadcast } = await import('../../bot/notifications/sender');
+    const platform = typeof context?.platform === 'string' ? context.platform : 'unknown';
+    const version = typeof context?.version === 'string' ? context.version : '?';
+    const screen = typeof context?.screen === 'string' ? context.screen : '';
+    const escHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    const text =
+      `📝 <b>Фидбэк от сотрудника</b>\n\n` +
+      `<b>Сотрудник:</b> ${escHtml(auth.employee.name)} (id=${employeeId})\n` +
+      `<b>Точка:</b> ${escHtml(auth.employee.storeName ?? '—')}\n` +
+      `<b>Платформа:</b> ${escHtml(platform)}\n` +
+      `<b>Версия:</b> ${escHtml(version)}\n` +
+      (screen ? `<b>Экран:</b> ${escHtml(screen)}\n` : '') +
+      `\n<b>Сообщение:</b>\n${escHtml(message.trim())}`;
+
+    const result = await sendBroadcast([ownerId], text);
+    res.json({ ok: true, delivered: result.sent > 0 });
+  } catch (err) { next(err); }
+});
+
 // ── Inbox уведомлений (доступен и из Telegram Mini App, и из мобилки) ────
 
 // GET /api/webapp/notifications

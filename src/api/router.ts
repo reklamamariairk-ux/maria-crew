@@ -24,6 +24,7 @@ import v1DevicesRoutes from './routes/v1Devices';
 import v1AccountRoutes from './routes/v1Account';
 import v1NotificationsRoutes from './routes/v1Notifications';
 import backupRoutes from './routes/backup';
+import v1FeedbackRoutes from './routes/v1Feedback';
 
 const router = Router();
 
@@ -35,6 +36,7 @@ router.use('/v1/auth', v1AuthRoutes);
 router.use('/v1/devices', v1DevicesRoutes);
 router.use('/v1/account', v1AccountRoutes);
 router.use('/v1/notifications', v1NotificationsRoutes);
+router.use('/v1/feedback', v1FeedbackRoutes);
 
 // Mini App — использует Telegram initData, не admin-токен; ограничение: 60 запросов/мин с IP
 router.use('/webapp', rateLimit(60, 60_000), webappRoutes);

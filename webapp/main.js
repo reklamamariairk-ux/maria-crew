@@ -790,6 +790,56 @@ function formatInboxTime(iso) {
   return fmt(d);
 }
 
+// ── Фидбэк / багрепорт ────────────────────────────────────────────────────────
+window.openFeedback = function () {
+  document.getElementById('feedback-text').value = '';
+  document.getElementById('feedback-error').textContent = '';
+  document.getElementById('feedback-overlay').style.display = 'flex';
+  setTimeout(() => document.getElementById('feedback-text').focus(), 100);
+};
+
+window.closeFeedback = function () {
+  document.getElementById('feedback-overlay').style.display = 'none';
+};
+
+window.sendFeedback = async function () {
+  const text = document.getElementById('feedback-text').value.trim();
+  const errEl = document.getElementById('feedback-error');
+  if (!text) { errEl.textContent = 'Напиши что-нибудь'; return; }
+  if (text.length < 10) { errEl.textContent = 'Опиши подробнее (минимум 10 символов)'; return; }
+  errEl.textContent = '';
+  const btn = document.getElementById('feedback-send-btn');
+  btn.disabled = true; btn.textContent = 'Отправляем...';
+  try {
+    // Контекст: какая платформа, какая вкладка, версия приложения
+    const platform = (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())
+      ? 'capacitor-' + (window.Capacitor.getPlatform?.() ?? 'unknown')
+      : (initData ? 'telegram-mini-app' : 'web');
+    const context = {
+      platform,
+      version: '20260513a',
+      screen: currentTab || 'unknown',
+    };
+    // /api/webapp/feedback принимает оба auth (initData и Bearer)
+    const res = await fetch(API + '/feedback', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': mobileToken && !initData ? ('Bearer ' + mobileToken) : ('tma ' + initData),
+      },
+      body: JSON.stringify({ message: text, context }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { errEl.textContent = data.error || 'Не удалось отправить'; return; }
+    closeFeedback();
+    showToast(data.delivered ? '✅ Спасибо, руководитель получил' : '✅ Спасибо! (доставка в очереди)');
+  } catch (e) {
+    errEl.textContent = e.message || 'Нет связи с сервером';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Отправить';
+  }
+};
+
 // ── Профиль (редактирование, только в standalone) ────────────────────────────
 window.openProfileEdit = function () {
   if (!employee) return;
