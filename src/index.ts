@@ -30,8 +30,11 @@ console.log('=== STARTUP ===');
 console.log('NODE_ENV:', process.env.NODE_ENV);
 console.log('PORT:', port);
 console.log('SERVICE_URL:', serviceUrl);
-console.log('BOT_TOKEN:', token.slice(0, 10) + '...');
-console.log('ADMIN_SECRET:', process.env.ADMIN_SECRET ? '(из env)' : `(авто) ${effectiveAdminSecret}`);
+console.log('BOT_TOKEN:', token ? '(set)' : '(empty)');
+console.log('ADMIN_SECRET:', process.env.ADMIN_SECRET ? '(из env)' : '(автогенерирован, перезапись сбросит)');
+console.log('GMAIL_USER:', process.env.GMAIL_USER ? '(set)' : '(empty)');
+console.log('GMAIL_APP_PASSWORD:', process.env.GMAIL_APP_PASSWORD ? '(set)' : '(empty)');
+console.log('FIREBASE_SERVICE_ACCOUNT_JSON:', process.env.FIREBASE_SERVICE_ACCOUNT_JSON ? '(set)' : '(empty)');
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -310,6 +313,26 @@ async function main() {
     console.error('[db] Неожиданный выход из фонового цикла:', err);
   });
 }
+
+// Graceful shutdown — Render и Docker шлют SIGTERM при перезапуске/деплое.
+// Без обработки активные SQL и Telegram-запросы прерываются на середине.
+let shuttingDown = false;
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[shutdown] ${signal} received, gracefully closing...`);
+  try {
+    const { pool } = await import('./db/pool');
+    await pool.end();
+    console.log('[shutdown] DB pool closed');
+  } catch (err) {
+    console.error('[shutdown] pool.end failed:', err instanceof Error ? err.message : err);
+  }
+  // 5 секунд на in-flight requests, дальше принудительно
+  setTimeout(() => process.exit(0), 5000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 // Только фатальные ошибки (например, порт занят) роняют процесс
 main().catch(err => {

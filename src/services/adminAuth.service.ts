@@ -100,7 +100,7 @@ export async function ensureBootstrapSuperadmin(): Promise<void> {
          is_active = true`,
       [hash]
     );
-    console.log('[admin] Bootstrap superadmin: username=admin, password=ADMIN_SECRET');
+    console.log('[admin] Bootstrap superadmin создан. Логин: admin. Пароль: значение из env ADMIN_SECRET.');
   } catch (err) {
     console.error('[admin] ensureBootstrapSuperadmin failed:', err instanceof Error ? err.message : err);
   }

@@ -878,6 +878,10 @@ window.saveProfileEdit = async function () {
 // Logout / удаление аккаунта — только для standalone (mobile/web вне Telegram)
 window.doMobileLogout = function () {
   if (!confirm('Выйти из приложения?')) return;
+  // Очищаем таймеры обновления — иначе они продолжают тикать после reload
+  // и при возврате на login screen могут продёргивать /me с протухшим токеном
+  if (window._inboxRefreshTimer) { clearInterval(window._inboxRefreshTimer); window._inboxRefreshTimer = null; }
+  if (window._meRefreshTimer) { clearInterval(window._meRefreshTimer); window._meRefreshTimer = null; }
   saveMobileToken(null);
   clearAllCachedViews();
   location.reload();
