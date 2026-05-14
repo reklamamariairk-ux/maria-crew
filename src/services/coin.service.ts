@@ -1,8 +1,9 @@
 import { pool } from '../db/pool';
 import type { CoinReason, CoinTransaction } from '../types';
 
-// Суммы начисления/списания по причинам (Maria Crew v3.0)
-export const COIN_AMOUNTS: Record<Exclude<CoinReason, 'spend' | 'manual'>, number> = {
+// Суммы начисления/списания по причинам (Maria Crew v3.0).
+// 'manual', 'spend', 'drinks' — сумма передаётся вызовом, фиксированной нет.
+export const COIN_AMOUNTS: Record<Exclude<CoinReason, 'spend' | 'manual' | 'drinks'>, number> = {
   // Начисления
   checklist_day:       1,
   review:              3,
@@ -14,6 +15,7 @@ export const COIN_AMOUNTS: Record<Exclude<CoinReason, 'spend' | 'manual'>, numbe
   knowledge_applied:   3,
   plan_100:            2,
   plan_105:            5,
+  plan_dishes:         5,
   quiz:                1,
   checkin:             1,
   // Списания (отрицательные)
@@ -60,6 +62,9 @@ export async function earn(params: {
       ? params.amount
       : COIN_AMOUNTS[reason as keyof typeof COIN_AMOUNTS];
 
+  if (amount === undefined) {
+    throw new Error(`Для причины '${reason}' нужно передать сумму явно`);
+  }
   if (amount === 0) throw new Error('Сумма не может быть равна нулю');
 
   // Для отрицательных операций: баланс не уходит ниже 0

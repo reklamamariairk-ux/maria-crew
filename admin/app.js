@@ -67,6 +67,8 @@ const COIN_LABELS = {
   knowledge_applied:   'Применение знаний',
   plan_100:            'Выполнение плана 100%',
   plan_105:            'Перевыполнение плана >105%',
+  plan_dishes:         'Выполнение плана по блюдам',
+  drinks:              'За напитки',
   quiz:                'Квиз',
   checkin:             'Вход в приложение',
   // Списания
@@ -747,6 +749,7 @@ const COIN_REASON_AMOUNTS = {
   knowledge_applied:    3,
   plan_100:             2,
   plan_105:             5,
+  plan_dishes:          5,
   bad_review:          -5,
   dirty_store:         -5,
   training_resistance: -3,
@@ -765,9 +768,13 @@ function onCoinReasonChange() {
     return;
   }
 
-  if (reason === 'manual') {
+  // 'drinks' тоже manual-amount: сумму выбирает админ под конкретный случай
+  if (reason === 'manual' || reason === 'drinks') {
     amountInput.disabled = false;
-    amountInput.title = '';
+    if (reason === 'drinks' && (!amountInput.value || amountInput.value === '0')) {
+      amountInput.value = '1';
+    }
+    amountInput.title = reason === 'drinks' ? 'Укажи сумму для начисления за напитки' : '';
   } else {
     const fixed = COIN_REASON_AMOUNTS[reason];
     if (fixed !== undefined) amountInput.value = String(fixed);
@@ -797,12 +804,13 @@ async function awardCoins() {
     const challengeNote = `Челлендж #${ch.ch.id}: ${ch.ch.name}` + (note ? ` — ${note}` : '');
     payload = { employeeId, reason: 'manual', amount: finalAmount, note: challengeNote };
   } else {
-    if (rawReason === 'manual' && (isNaN(amount) || amount === 0)) {
+    const isManualAmount = rawReason === 'manual' || rawReason === 'drinks';
+    if (isManualAmount && (isNaN(amount) || amount === 0)) {
       toast('Выбери количество'); return;
     }
     payload = { employeeId, reason: rawReason, note: note || undefined };
-    if (rawReason === 'manual') payload.amount = amount;
-    finalAmount = rawReason === 'manual' ? amount : COIN_REASON_AMOUNTS[rawReason];
+    if (isManualAmount) payload.amount = amount;
+    finalAmount = isManualAmount ? amount : COIN_REASON_AMOUNTS[rawReason];
   }
 
   try {
@@ -1074,8 +1082,11 @@ function onBulkReasonChange(selectEl) {
   }
   amountInput.readOnly = false;
   amountInput.title = '';
-  const isManual = reason === 'manual';
+  const isManual = reason === 'manual' || reason === 'drinks';
   amountInput.style.display = isManual ? 'inline-block' : 'none';
+  if (reason === 'drinks' && (!amountInput.value || amountInput.value === '0')) {
+    amountInput.value = '1';
+  }
 }
 
 const DEDUCTION_REASONS = new Set(['bad_review', 'dirty_store', 'training_resistance']);
@@ -1100,7 +1111,7 @@ async function bulkAwardCoins() {
     label = `Челлендж: ${ch.ch.name} (+${ch.ch.coinReward})`;
     isDeduction = false;
   } else {
-    const isManual = rawReason === 'manual';
+    const isManual = rawReason === 'manual' || rawReason === 'drinks';
     const amount = isManual ? parseInt(document.getElementById('bulk-coin-amount').value) : undefined;
     if (isManual && (isNaN(amount) || amount === 0)) { toast('Укажи сумму (можно отрицательную)'); return; }
     payload = { employeeIds: ids, reason: rawReason, amount };

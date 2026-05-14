@@ -132,6 +132,7 @@ router.get('/export', async (req: Request, res: Response, next: NextFunction): P
       substitution: 'Подмена коллеги', mentoring: 'Наставничество', idea: 'Идея',
       training_meeting: 'Собрание', knowledge_applied: 'Применение знаний',
       plan_100: 'Выполнение плана 100%', plan_105: 'Перевыполнение плана >105%',
+      plan_dishes: 'Выполнение плана по блюдам', drinks: 'За напитки',
       bad_review: 'Отрицательный отзыв', dirty_store: 'Нарушение чистоты',
       training_resistance: 'Сопротивление обучению', spend: 'Обмен в Store',
       manual: 'Вручную', quiz: 'Квиз', checkin: 'Ежедневный вход',
