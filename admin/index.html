@@ -279,6 +279,52 @@
         <div id="coin-quick-challenges-chips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
       </div>
 
+      <div class="card card-pad" style="margin-bottom:16px;background:linear-gradient(180deg,var(--blue-50,#eef4ff),var(--surface));border-color:var(--blue-200,#cfdcfa)">
+        <p class="section-title"><i data-lucide="users" style="width:14px;height:14px"></i> Массовое начисление</p>
+        <div class="form-row">
+          <label>Кому
+            <select id="coin-bulk-scope" style="width:200px" onchange="onCoinBulkScopeChange()">
+              <option value="all">Всем активным сотрудникам</option>
+              <option value="store">Только по точке</option>
+            </select>
+          </label>
+          <label id="coin-bulk-store-wrap" class="hidden">Точка
+            <select id="coin-bulk-store" style="width:200px">
+              <option value="">— выбери точку —</option>
+            </select>
+          </label>
+          <label>Причина
+            <select id="coin-bulk-reason" style="width:240px" onchange="onCoinBulkReasonChange()">
+              <option value="manual" selected>Вручную (своя сумма)</option>
+              <optgroup label="Начисления">
+                <option value="checklist_day">Чек-лист 100% за день (+1)</option>
+                <option value="review">Именной отзыв гостя (+3)</option>
+                <option value="substitution">Подмена коллеги (+5)</option>
+                <option value="knowledge_applied">Применение знаний (+3)</option>
+                <option value="training_meeting">Участие в собрании (+5)</option>
+                <option value="idea">Идея внедрена (+5)</option>
+                <option value="mentoring">Наставничество (+10)</option>
+                <option value="plan_100">Выполнение плана 100% (+2)</option>
+                <option value="plan_105">Перевыполнение плана >105% (+5)</option>
+                <option value="plan_dishes">План по блюдам (+5)</option>
+                <option value="drinks">За напитки (вручную)</option>
+              </optgroup>
+            </select>
+          </label>
+          <label>Количество
+            <input type="number" id="coin-bulk-amount" min="1" max="1000" step="1" value="1" style="width:100px">
+          </label>
+          <label>Примечание
+            <input type="text" id="coin-bulk-note" placeholder="например: премия за квартал" style="width:240px">
+          </label>
+          <button class="btn btn-primary" onclick="awardCoinsBulk()"><i data-lucide="users"></i> Начислить группе</button>
+        </div>
+        <p class="text-muted" style="margin-top:6px">
+          <i data-lucide="info" style="width:12px;height:12px"></i>
+          Только начисления (списать массово нельзя). Каждый сотрудник получит уведомление в Telegram.
+        </p>
+      </div>
+
       <div class="card card-pad" style="margin-bottom:16px">
         <p class="section-title">Начислить или списать</p>
         <div class="form-row">

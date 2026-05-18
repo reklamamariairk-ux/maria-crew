@@ -377,6 +377,20 @@ function populateStoreSelectors() {
       + state.stores.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
   }
 
+  // Селектор точки для массового начисления монет
+  const bulkStore = document.getElementById('coin-bulk-store');
+  if (bulkStore) {
+    bulkStore.innerHTML = '<option value="">— выбери точку —</option>'
+      + state.stores.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  }
+
+  // Селектор точки для экспорта монет
+  const coinsExportStore = document.getElementById('coins-export-store');
+  if (coinsExportStore) {
+    coinsExportStore.innerHTML = '<option value="">— все точки —</option>'
+      + state.stores.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  }
+
   // Мобильный селектор точки в хедере
   const mobileStoreSel = document.getElementById('mobile-store-select');
   if (mobileStoreSel) {
@@ -781,6 +795,87 @@ function onCoinReasonChange() {
     amountInput.disabled = true;
     amountInput.title = `Сумма для «${COIN_LABELS[reason] ?? reason}» — фиксированная (${fixed > 0 ? '+' : ''}${fixed})`;
   }
+}
+
+function onCoinBulkScopeChange() {
+  const scope = document.getElementById('coin-bulk-scope').value;
+  document.getElementById('coin-bulk-store-wrap').classList.toggle('hidden', scope !== 'store');
+}
+
+function onCoinBulkReasonChange() {
+  const reason = document.getElementById('coin-bulk-reason').value;
+  const amountInput = document.getElementById('coin-bulk-amount');
+  if (reason === 'manual' || reason === 'drinks') {
+    amountInput.disabled = false;
+    if (!amountInput.value || parseInt(amountInput.value, 10) <= 0) amountInput.value = '1';
+    amountInput.title = reason === 'drinks' ? 'Сумма за напитки' : 'Произвольная сумма';
+  } else {
+    const fixed = COIN_REASON_AMOUNTS[reason];
+    if (fixed !== undefined) amountInput.value = String(Math.max(1, fixed));
+    amountInput.disabled = true;
+    amountInput.title = `Сумма для «${COIN_LABELS[reason] ?? reason}» — фиксированная (+${fixed})`;
+  }
+}
+
+async function awardCoinsBulk() {
+  const scope = document.getElementById('coin-bulk-scope').value;
+  const storeIdRaw = document.getElementById('coin-bulk-store').value;
+  const reason = document.getElementById('coin-bulk-reason').value;
+  const amount = parseInt(document.getElementById('coin-bulk-amount').value, 10);
+  const note = document.getElementById('coin-bulk-note').value.trim();
+
+  if (scope === 'store' && !storeIdRaw) { toast('Выберите точку'); return; }
+
+  const isManualAmount = reason === 'manual' || reason === 'drinks';
+  if (isManualAmount && (!Number.isFinite(amount) || amount <= 0)) {
+    toast('Укажите положительное количество'); return;
+  }
+  const perEmployee = isManualAmount ? amount : COIN_REASON_AMOUNTS[reason];
+  if (perEmployee <= 0) { toast('Массово только начисления (плюсовые)'); return; }
+
+  // Собираем список активных сотрудников через существующий /employees?storeId=
+  let employeeIds = [];
+  try {
+    const params = scope === 'store' ? `?storeId=${storeIdRaw}` : '';
+    const employees = await api('GET', `/employees${params}`) || [];
+    employeeIds = employees.filter(e => e.isActive !== false).map(e => e.id);
+  } catch (e) {
+    toastError(e); return;
+  }
+
+  if (employeeIds.length === 0) {
+    toast('Нет активных сотрудников по выбранному фильтру'); return;
+  }
+
+  let scopeLabel;
+  if (scope === 'store') {
+    const store = state.stores.find(s => String(s.id) === String(storeIdRaw));
+    scopeLabel = `точке «${store?.name ?? storeIdRaw}»`;
+  } else {
+    scopeLabel = 'всем активным сотрудникам';
+  }
+
+  const ok = await confirmDialog({
+    title: 'Массовое начисление',
+    message: `Начислить +${perEmployee} монет ${scopeLabel}?\nЗатронет ${employeeIds.length} сотрудников. Итого: ${perEmployee * employeeIds.length} монет.`,
+    warning: 'Каждый получит уведомление в Telegram. Откатить можно только вручную по одному.',
+    confirmText: `Начислить (${employeeIds.length})`,
+  });
+  if (!ok) return;
+
+  // Existing endpoint: POST /api/employees/bulk-coins
+  const payload = { employeeIds, reason, note: note || undefined };
+  if (isManualAmount) payload.amount = amount;
+
+  try {
+    const result = await api('POST', '/employees/bulk-coins', payload);
+    const total = perEmployee * (result.succeeded ?? 0);
+    toast(`✅ Начислено ${result.succeeded}/${result.processed} сотрудникам по +${perEmployee} (всего ${total})`);
+    document.getElementById('coin-bulk-note').value = '';
+    document.getElementById('coin-bulk-reason').value = 'manual';
+    document.getElementById('coin-bulk-amount').value = '1';
+    onCoinBulkReasonChange();
+  } catch (e) { toastError(e); }
 }
 
 async function awardCoins() {
