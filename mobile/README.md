@@ -100,7 +100,7 @@ PushNotifications.addListener('registration', token => {
 ```ts
 // в capacitor.config.ts раскомментировать:
 server: {
-  url: 'https://maria-crew.onrender.com/webapp',
+  url: 'https://crew.145-223-121-47.sslip.io/webapp',
   cleartext: false,
 }
 ```

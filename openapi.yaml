@@ -9,8 +9,8 @@ info:
     Тот же набор endpoint'ов поддерживает и Telegram Mini App (через initData).
 
 servers:
-  - url: https://maria-crew.onrender.com/api
-    description: Production
+  - url: https://crew.145-223-121-47.sslip.io/api
+    description: Production (Hostinger VPS)
 
 components:
   securitySchemes:

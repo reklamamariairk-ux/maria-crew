@@ -85,7 +85,7 @@ export function initScheduler(bot: Bot<BotContext>): void {
   const serviceUrl = (
     process.env.WEBHOOK_URL ??
     process.env.RENDER_EXTERNAL_URL ??
-    'https://maria-crew.onrender.com'
+    'https://crew.145-223-121-47.sslip.io'
   ).replace(/\/$/, '');
 
   // ── 4. Render keep-alive — пинг каждые 13 минут ──────────────────────────

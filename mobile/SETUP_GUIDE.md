@@ -304,7 +304,7 @@ Codemagic умеет автоматически загружать в TestFlight
 - [x] Android-проект создан (`npx cap add android` выполнен)
 - [x] Иконка + сплеш сгенерированы (новый дизайн — стилизованная М)
 - [x] `@capacitor/push-notifications` плагин подключён
-- [x] Privacy Policy опубликована: **https://maria-crew.onrender.com/privacy**
+- [x] Privacy Policy опубликована: **https://crew.145-223-121-47.sslip.io/privacy**
 - [x] Логин в мобильном приложении (email + телефон) реализован
 
 **Осталось:**
@@ -319,7 +319,7 @@ Codemagic умеет автоматически загружать в TestFlight
 - [ ] (опц.) iOS-сборка через Codemagic
 
 **Privacy Policy URL для маркетов:**
-- App Store Connect → App Information → Privacy Policy URL → `https://maria-crew.onrender.com/privacy`
+- App Store Connect → App Information → Privacy Policy URL → `https://crew.145-223-121-47.sslip.io/privacy`
 - Play Console → Main store listing → Privacy Policy → тот же URL
 
 ---

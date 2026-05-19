@@ -23,7 +23,7 @@ async function maybeAskPhone(ctx: BotContext, employeeId: number): Promise<void>
 const WEBAPP_URL = (
   process.env.WEBHOOK_URL ??
   process.env.RENDER_EXTERNAL_URL ??
-  'https://maria-crew.onrender.com'
+  'https://crew.145-223-121-47.sslip.io'
 ).replace(/\/$/, '') + '/webapp';
 
 export function mainMenuKeyboard(): InlineKeyboard {

@@ -28,13 +28,13 @@ const config: CapacitorConfig = {
   webDir: '../webapp',
 
   server: {
-    // Production: бэк живёт на Render, фронт-ассеты бандлятся в приложении.
+    // Production: бэк живёт на Hostinger VPS, фронт-ассеты бандлятся в приложении.
     // Когда нужно тестировать живой UI — раскомментировать `url` ниже:
-    // url: 'https://maria-crew.onrender.com/webapp',
+    // url: 'https://crew.145-223-121-47.sslip.io/webapp',
     androidScheme: 'https',
     cleartext: false,
     // Whitelist для cross-origin fetch — иначе WebView может блочить запросы
-    allowNavigation: ['maria-crew.onrender.com', '*.onrender.com'],
+    allowNavigation: ['crew.145-223-121-47.sslip.io', '*.sslip.io'],
   },
 
   plugins: {

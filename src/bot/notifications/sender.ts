@@ -353,7 +353,7 @@ export async function notifyManagersOfNewEmployee(
       `Сотрудник: <b>${esc(r.employeeName)}</b>\n` +
       `Точка: ${esc(r.storeName ?? '—')}\n\n` +
       `Если этот человек тебе незнаком — деактивируй его в админке: ` +
-      `https://maria-crew.onrender.com/admin (вкладка Сотрудники).`;
+      `https://crew.145-223-121-47.sslip.io/admin (вкладка Сотрудники).`;
 
     // Менеджерам точки
     for (const tgId of r.managerTelegramIds ?? []) {

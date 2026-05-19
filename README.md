@@ -59,7 +59,7 @@ npm install
 BOT_TOKEN=12345:abcdef...                  # из @BotFather
 DATABASE_URL=postgresql://user:pass@host/db?sslmode=require
 ADMIN_SECRET=changeme                      # пароль bootstrap-суперадмина
-WEBHOOK_URL=https://maria-crew.onrender.com # публичный URL для Telegram webhook
+WEBHOOK_URL=https://crew.145-223-121-47.sslip.io # публичный URL для Telegram webhook
 PORT=3000
 
 # Cloudinary (для загрузки фото героев в админке) — опционально

@@ -21,7 +21,7 @@ const port = parseInt(process.env.PORT ?? '3000', 10);
 const serviceUrl = (
   process.env.WEBHOOK_URL ??
   process.env.RENDER_EXTERNAL_URL ??
-  'https://maria-crew.onrender.com'
+  'https://crew.145-223-121-47.sslip.io'
 ).replace(/\/$/, '');
 
 const webhookSecret = token.split(':')[1]?.slice(0, 16) ?? 'secret';

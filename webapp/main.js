@@ -3,7 +3,7 @@
 // поэтому относительные URL `/api/...` уходят в никуда. Определяем нативную
 // среду и подставляем абсолютный хост сервера.
 const SERVER_BASE = (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())
-  ? 'https://maria-crew.onrender.com'
+  ? 'https://crew.145-223-121-47.sslip.io'
   : '';
 const API = SERVER_BASE + '/api/webapp';
 const API_V1 = SERVER_BASE + '/api/v1';
