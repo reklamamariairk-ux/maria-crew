@@ -771,6 +771,18 @@
           <label style="grid-column:1/-1">Описание
             <input type="text" id="new-prize-desc" placeholder="..." class="input">
           </label>
+          <label title="Код товара в 1С (Номенклатура). При одобрении заявки будет создан документ выдачи этого товара на телефон сотрудника.">
+            Товар 1С — код
+            <input type="text" id="new-prize-ext-id" placeholder="код Номенклатуры" class="input">
+          </label>
+          <label title="Название товара — показывается в админке. Опционально.">
+            Товар 1С — название
+            <input type="text" id="new-prize-ext-name" placeholder="напр. «Эклер»" class="input">
+          </label>
+          <label title="Количество единиц товара выдаваемых за один приз. По умолчанию 1.">
+            Количество
+            <input type="number" id="new-prize-ext-qty" min="1" value="1" class="input">
+          </label>
         </div>
         <div style="display:flex;gap:8px;margin-top:12px">
           <button class="btn btn-primary" onclick="addPrize()"><i data-lucide="check"></i> Создать</button>
@@ -794,11 +806,12 @@
             <th style="width:100px">Карт.</th>
             <th style="width:100px">Монет</th>
             <th style="width:80px" class="col-hide-md">Сорт.</th>
+            <th style="width:180px" class="col-hide-md" title="Привязка к товару 1С. Когда указан — заявка после approve автоматически создаёт документ выдачи в 1С.">Товар 1С</th>
             <th style="width:130px">Статус</th>
             <th style="width:140px">Действие</th>
           </tr></thead>
           <tbody id="prizes-tbody">
-            <tr><td colspan="8" class="empty">Загрузка...</td></tr>
+            <tr><td colspan="9" class="empty">Загрузка...</td></tr>
           </tbody>
         </table>
       </div>

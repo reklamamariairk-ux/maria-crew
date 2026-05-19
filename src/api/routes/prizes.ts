@@ -15,7 +15,10 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
     const { rows } = await pool.query(
       `SELECT id, name, description, prize_type AS "prizeType",
               cards_required AS "cardsRequired", coins_required AS "coinsRequired",
-              is_active AS "isActive", sort_order AS "sortOrder"
+              is_active AS "isActive", sort_order AS "sortOrder",
+              external_product_id   AS "externalProductId",
+              external_product_name AS "externalProductName",
+              external_qty          AS "externalQty"
        FROM prizes
        ORDER BY sort_order, id`
     );
@@ -28,9 +31,13 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
   try {
     const {
       name, description, prizeType, cardsRequired, coinsRequired, sortOrder,
+      externalProductId, externalProductName, externalQty,
     } = req.body as {
       name: string; description?: string; prizeType: string;
       cardsRequired?: number; coinsRequired?: number; sortOrder?: number;
+      externalProductId?: string | null;
+      externalProductName?: string | null;
+      externalQty?: number;
     };
     if (!name || !name.trim()) { res.status(400).json({ error: 'name обязателен' }); return; }
     if (!PRIZE_TYPES.includes(prizeType)) {
@@ -43,14 +50,25 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
       res.status(400).json({ error: 'Укажи стоимость в карточках или монетах (или обе)' });
       return;
     }
+    const qty = Number.isFinite(externalQty) && externalQty! > 0 ? externalQty : 1;
 
     const { rows } = await pool.query(
-      `INSERT INTO prizes (name, description, prize_type, cards_required, coins_required, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO prizes (name, description, prize_type, cards_required, coins_required, sort_order,
+                           external_product_id, external_product_name, external_qty)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id, name, description, prize_type AS "prizeType",
                  cards_required AS "cardsRequired", coins_required AS "coinsRequired",
-                 is_active AS "isActive", sort_order AS "sortOrder"`,
-      [name.trim(), description?.trim() || null, prizeType, cards ?? 0, coins ?? 0, sortOrder ?? 999]
+                 is_active AS "isActive", sort_order AS "sortOrder",
+                 external_product_id   AS "externalProductId",
+                 external_product_name AS "externalProductName",
+                 external_qty          AS "externalQty"`,
+      [
+        name.trim(), description?.trim() || null, prizeType,
+        cards ?? 0, coins ?? 0, sortOrder ?? 999,
+        externalProductId?.trim() || null,
+        externalProductName?.trim() || null,
+        qty ?? 1,
+      ]
     );
     res.status(201).json(rows[0]);
     logAudit('prize_create', { prizeId: rows[0].id, name: rows[0].name }).catch(() => {});
@@ -64,6 +82,9 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
       name?: string; description?: string | null; prizeType?: string;
       cardsRequired?: number; coinsRequired?: number;
       isActive?: boolean; sortOrder?: number;
+      externalProductId?: string | null;
+      externalProductName?: string | null;
+      externalQty?: number;
     };
     const sets: string[] = [];
     const vals: (string | number | boolean | null)[] = [];
@@ -81,6 +102,22 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     if (body.coinsRequired !== undefined) { vals.push(body.coinsRequired); sets.push(`coins_required = $${vals.length}`); }
     if (body.isActive !== undefined) { vals.push(body.isActive); sets.push(`is_active = $${vals.length}`); }
     if (body.sortOrder !== undefined) { vals.push(body.sortOrder); sets.push(`sort_order = $${vals.length}`); }
+    if (body.externalProductId !== undefined) {
+      // Пустая строка трактуется как «снять привязку».
+      const v = body.externalProductId === null || body.externalProductId === '' ? null : body.externalProductId.trim();
+      vals.push(v); sets.push(`external_product_id = $${vals.length}`);
+    }
+    if (body.externalProductName !== undefined) {
+      const v = body.externalProductName === null || body.externalProductName === '' ? null : body.externalProductName.trim();
+      vals.push(v); sets.push(`external_product_name = $${vals.length}`);
+    }
+    if (body.externalQty !== undefined) {
+      const q = Number(body.externalQty);
+      if (!Number.isFinite(q) || q < 1) {
+        res.status(400).json({ error: 'externalQty должен быть >= 1' }); return;
+      }
+      vals.push(q); sets.push(`external_qty = $${vals.length}`);
+    }
 
     if (!sets.length) { res.status(400).json({ error: 'Нечего обновлять' }); return; }
 
@@ -90,7 +127,10 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
        WHERE id = $${vals.length}
        RETURNING id, name, description, prize_type AS "prizeType",
                  cards_required AS "cardsRequired", coins_required AS "coinsRequired",
-                 is_active AS "isActive", sort_order AS "sortOrder"`,
+                 is_active AS "isActive", sort_order AS "sortOrder",
+                 external_product_id   AS "externalProductId",
+                 external_product_name AS "externalProductName",
+                 external_qty          AS "externalQty"`,
       vals
     );
     if (!rows[0]) { res.status(404).json({ error: 'Приз не найден' }); return; }

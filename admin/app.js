@@ -944,23 +944,85 @@ async function loadExchanges() {
     tbody.innerHTML = emptyRow(8, 'shopping-bag', 'Нет заявок');
     renderIcons(); return;
   }
-  tbody.innerHTML = data.map(ex => `<tr>
-    <td><strong>${esc(ex.employeeName)}</strong></td>
-    <td class="col-hide-sm" style="color:var(--text-2);font-size:13px">${esc(ex.storeName)}</td>
-    <td>${esc(ex.prizeName)}</td>
-    <td class="col-hide-sm">${ex.cardsSpent}</td>
-    <td class="col-hide-xs">${ex.coinsSpent}</td>
-    <td class="col-hide-xs" style="color:var(--muted);font-size:12px">${formatDate(ex.createdAt)}</td>
-    <td><span class="badge badge-${ex.status}">${statusLabel(ex.status)}</span></td>
-    <td>
-      ${ex.status === 'pending' ? `
-        <div class="row-actions">
-          <button class="btn btn-success btn-sm" onclick="updateExchange(${ex.id},'fulfilled')"><i data-lucide="check"></i> Выдать</button>
-          <button class="btn btn-danger btn-sm" onclick="updateExchange(${ex.id},'rejected')"><i data-lucide="x"></i> Отклонить</button>
-        </div>` : '<span class="text-muted">—</span>'}
-    </td>
-  </tr>`).join('');
+  tbody.innerHTML = data.map(ex => {
+    const hasLink = !!ex.prizeExternalProductId;
+    // 1С-significant: ✓ если документ создан, ⚠ retry если failed.
+    let oneCBadge = '';
+    if (ex.externalDocStatus === 'created' || ex.externalDocStatus === 'mock_created') {
+      const isMock = ex.externalDocStatus === 'mock_created';
+      const tip = `1С документ: ${esc(ex.externalDocId || '')}${isMock ? ' (mock — реальный endpoint ещё не подключён)' : ''}`;
+      oneCBadge = `<div style="margin-top:4px;color:var(--green,#22c55e);font-size:11px" title="${tip}">${isMock ? '🧪' : '✓'} 1С: ${esc((ex.externalDocId || '').slice(0, 18))}${(ex.externalDocId || '').length > 18 ? '…' : ''}</div>`;
+    } else if (ex.externalDocStatus === 'failed') {
+      const tip = `Ошибка 1С: ${esc(ex.externalDocError || 'unknown')}`;
+      oneCBadge = `<div style="margin-top:4px;color:var(--danger,#ef4444);font-size:11px" title="${tip}">⚠ 1С не выдал</div>`;
+    } else if (ex.status === 'approved' && hasLink) {
+      oneCBadge = `<div style="margin-top:4px;color:var(--muted);font-size:11px">⏳ ожидает 1С</div>`;
+    }
+    // Кнопки. При status=approved + failed добавляем «Повторить отправку в 1С».
+    let actions = '';
+    if (ex.status === 'pending') {
+      actions = `<div class="row-actions">
+        <button class="btn btn-success btn-sm" onclick="approveExchange(${ex.id}, ${hasLink ? 'true' : 'false'})"><i data-lucide="check"></i> ${hasLink ? 'Одобрить (→ 1С)' : 'Выдать'}</button>
+        <button class="btn btn-danger btn-sm" onclick="updateExchange(${ex.id},'rejected')"><i data-lucide="x"></i> Отклонить</button>
+      </div>`;
+    } else if (ex.status === 'approved' && ex.externalDocStatus === 'failed') {
+      actions = `<div class="row-actions">
+        <button class="btn btn-primary btn-sm" onclick="retryExchange1c(${ex.id}, this)"><i data-lucide="refresh-cw"></i> Повторить 1С</button>
+        <button class="btn btn-ghost btn-sm" onclick="updateExchange(${ex.id},'fulfilled')" title="Отметить выданным вручную (без записи в 1С)"><i data-lucide="check"></i> Выдано вручную</button>
+      </div>`;
+    } else if (ex.status === 'approved' && !ex.externalDocStatus) {
+      // Approved но без 1С привязки (старая логика) — кнопка для finalize
+      actions = `<div class="row-actions">
+        <button class="btn btn-success btn-sm" onclick="updateExchange(${ex.id},'fulfilled')"><i data-lucide="check"></i> Подтвердить выдачу</button>
+      </div>`;
+    } else {
+      actions = '<span class="text-muted">—</span>';
+    }
+    return `<tr>
+      <td><strong>${esc(ex.employeeName)}</strong></td>
+      <td class="col-hide-sm" style="color:var(--text-2);font-size:13px">${esc(ex.storeName)}</td>
+      <td>
+        ${esc(ex.prizeName)}
+        ${hasLink ? `<div style="color:var(--muted);font-size:11px;margin-top:2px" title="Привязан товар 1С">🛒 ${esc(ex.prizeExternalProductName || ex.prizeExternalProductId)}</div>` : ''}
+      </td>
+      <td class="col-hide-sm">${ex.cardsSpent}</td>
+      <td class="col-hide-xs">${ex.coinsSpent}</td>
+      <td class="col-hide-xs" style="color:var(--muted);font-size:12px">${formatDate(ex.createdAt)}</td>
+      <td>
+        <span class="badge badge-${ex.status}">${statusLabel(ex.status)}</span>
+        ${oneCBadge}
+      </td>
+      <td>${actions}</td>
+    </tr>`;
+  }).join('');
   renderIcons();
+}
+
+// При нажатии «Одобрить» (с 1С) — отправляем status=approved, серверная логика
+// сама попытается создать документ в 1С и (если успех) переведёт в fulfilled.
+// Для призов без привязки используем прежний путь fulfilled напрямую.
+async function approveExchange(id, hasOneCLink) {
+  if (hasOneCLink) {
+    await _doUpdateExchange(id, 'approved', null);
+  } else {
+    await _doUpdateExchange(id, 'fulfilled', null);
+  }
+}
+
+async function retryExchange1c(id, btn) {
+  btn.disabled = true; btn.textContent = '⏳';
+  try {
+    const r = await api('POST', `/exchanges/${id}/retry-1c`, {});
+    if (r.externalDocStatus === 'created' || r.externalDocStatus === 'mock_created') {
+      toast('✅ Документ создан в 1С');
+    } else {
+      toast('⚠ 1С снова отказал: ' + (r.externalDocError || 'unknown'));
+    }
+    loadExchanges();
+  } catch (e) {
+    toastError(e);
+    btn.disabled = false; btn.textContent = '↻';
+  }
 }
 
 let _pendingRejectId = null;
@@ -2003,12 +2065,12 @@ function renderPrizes() {
     (PRIZE_TYPE_LABELS[p.prizeType] || '').toLowerCase().includes(search)
   );
   if (prizesCache.length === 0) {
-    tbody.innerHTML = emptyRow(8, 'gift', 'Призов нет — добавьте первый');
+    tbody.innerHTML = emptyRow(9, 'gift', 'Призов нет — добавьте первый');
     renderIcons();
     return;
   }
   if (list.length === 0) {
-    tbody.innerHTML = emptyRow(8, 'search-x', 'Ничего не найдено');
+    tbody.innerHTML = emptyRow(9, 'search-x', 'Ничего не найдено');
     renderIcons();
     return;
   }
@@ -2025,6 +2087,13 @@ function renderPrizes() {
     <td><input type="number" class="prize-cards-in" min="0" value="${p.cardsRequired}" style="width:80px;text-align:right"></td>
     <td><input type="number" class="prize-coins-in" min="0" value="${p.coinsRequired}" style="width:80px;text-align:right"></td>
     <td class="col-hide-md"><input type="number" class="prize-order-in" value="${p.sortOrder}" style="width:70px;text-align:right"></td>
+    <td class="col-hide-md">
+      <div style="display:flex;gap:3px;align-items:center">
+        <input type="text" class="prize-ext-id-in" value="${esc(p.externalProductId || '')}" placeholder="код 1С" style="flex:1;font-size:11px" title="Код товара в Номенклатуре 1С">
+        <input type="number" class="prize-ext-qty-in" min="1" value="${p.externalQty || 1}" style="width:36px;text-align:right;font-size:11px" title="Количество">
+      </div>
+      <input type="text" class="prize-ext-name-in" value="${esc(p.externalProductName || '')}" placeholder="название (опц.)" style="width:100%;font-size:11px;margin-top:2px">
+    </td>
     <td>
       <select class="prize-active-in" style="width:100%">
         <option value="true"${p.isActive ? ' selected' : ''}>Активен</option>
@@ -2050,14 +2119,26 @@ async function addPrize() {
   const coinsRequired = parseInt(document.getElementById('new-prize-coins').value) || 0;
   const sortOrder   = parseInt(document.getElementById('new-prize-order').value) || 100;
   const description = document.getElementById('new-prize-desc').value.trim();
+  const externalProductId   = document.getElementById('new-prize-ext-id').value.trim();
+  const externalProductName = document.getElementById('new-prize-ext-name').value.trim();
+  const externalQty         = parseInt(document.getElementById('new-prize-ext-qty').value) || 1;
   if (!name) { toast('Введите название'); return; }
   if (cardsRequired === 0 && coinsRequired === 0) { toast('Укажи стоимость в карточках или монетах'); return; }
   try {
-    await api('POST', '/prizes', { name, prizeType, cardsRequired, coinsRequired, sortOrder, description: description || undefined });
+    await api('POST', '/prizes', {
+      name, prizeType, cardsRequired, coinsRequired, sortOrder,
+      description: description || undefined,
+      externalProductId: externalProductId || null,
+      externalProductName: externalProductName || null,
+      externalQty,
+    });
     toast('✅ Приз добавлен');
     document.getElementById('add-prize-form').classList.add('hidden');
-    ['new-prize-name','new-prize-cards','new-prize-coins','new-prize-desc'].forEach(id =>
-      document.getElementById(id).value = id === 'new-prize-cards' || id === 'new-prize-coins' ? '0' : '');
+    ['new-prize-name','new-prize-cards','new-prize-coins','new-prize-desc',
+     'new-prize-ext-id','new-prize-ext-name'].forEach(id => {
+      document.getElementById(id).value = id === 'new-prize-cards' || id === 'new-prize-coins' ? '0' : '';
+    });
+    document.getElementById('new-prize-ext-qty').value = '1';
     loadPrizes();
   } catch (e) { toastError(e); }
 }
@@ -2071,6 +2152,9 @@ async function savePrize(id, btn) {
     coinsRequired: parseInt(row.querySelector('.prize-coins-in').value) || 0,
     sortOrder: parseInt(row.querySelector('.prize-order-in').value) || 100,
     isActive: row.querySelector('.prize-active-in').value === 'true',
+    externalProductId:   (row.querySelector('.prize-ext-id-in')?.value || '').trim() || null,
+    externalProductName: (row.querySelector('.prize-ext-name-in')?.value || '').trim() || null,
+    externalQty:         parseInt(row.querySelector('.prize-ext-qty-in')?.value) || 1,
   };
   if (!body.name) { toast('Название не пустое'); return; }
   btn.disabled = true; btn.textContent = '⏳';

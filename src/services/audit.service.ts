@@ -17,6 +17,7 @@ export type AuditAction =
   | 'rating_top_set'
   | 'exchange_fulfill'
   | 'exchange_reject'
+  | 'exchange_1c_retry_failed'
   | 'store_create'
   | 'store_update'
   | 'prize_create'

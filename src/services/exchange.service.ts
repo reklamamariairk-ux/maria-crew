@@ -1,5 +1,14 @@
 import { pool } from '../db/pool';
 import type { Prize, StoreExchange } from '../types';
+import { createDeliveryDocument } from './oneCDelivery.service';
+
+/** Расширенная информация о статусе доставки (для админки). */
+export interface ExchangeWithDelivery extends StoreExchange {
+  externalDocId?: string | null;
+  externalDocStatus?: 'pending' | 'created' | 'failed' | 'mock_created' | null;
+  externalDocError?: string | null;
+  externalDocAt?: Date | null;
+}
 
 /** Все активные призы каталога */
 export async function getPrizes(): Promise<Prize[]> {
@@ -111,13 +120,25 @@ export async function requestExchange(
   }
 }
 
-/** Подтверждает/отклоняет заявку (для руководителя) */
+/** Подтверждает/отклоняет заявку (для руководителя).
+ *
+ *  Если статус = approved и у приза есть external_product_id, дополнительно
+ *  пытается создать документ выдачи в 1С УПП через oneCDelivery.service.
+ *  Делается уже ПОСЛЕ commit транзакции approve, чтобы:
+ *   - не держать row-lock на время сетевого вызова (до 45с с ретраями)
+ *   - approve был зафиксирован, даже если 1С недоступен (можно retry'нуть позже)
+ *
+ *  При успехе 1С — статус автоматически переходит approved → fulfilled
+ *  (отдельным UPDATE), пишется external_doc_id.
+ *  При неудаче — статус остаётся approved, external_doc_status='failed',
+ *  ошибка в external_doc_error. Админ видит красный значок и кнопку «Повторить».
+ */
 export async function processExchange(
   exchangeId: number,
   status: 'approved' | 'rejected' | 'fulfilled',
   processedBy: number | null,
   notes?: string
-): Promise<StoreExchange> {
+): Promise<ExchangeWithDelivery> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -135,7 +156,7 @@ export async function processExchange(
       throw new Error(`Заявка уже обработана (статус: ${current[0].status === 'fulfilled' ? 'выдана' : 'отклонена'})`);
     }
 
-    const { rows } = await client.query<StoreExchange>(
+    const { rows } = await client.query<ExchangeWithDelivery>(
       `UPDATE store_exchanges
        SET status = $1, processed_by = $2, notes = COALESCE($3, notes), processed_at = NOW()
        WHERE id = $4
@@ -143,7 +164,11 @@ export async function processExchange(
                  cards_spent AS "cardsSpent", coins_spent AS "coinsSpent",
                  card_ids AS "cardIds", status, notes,
                  processed_by AS "processedBy", created_at AS "createdAt",
-                 processed_at AS "processedAt"`,
+                 processed_at AS "processedAt",
+                 external_doc_id AS "externalDocId",
+                 external_doc_status AS "externalDocStatus",
+                 external_doc_error AS "externalDocError",
+                 external_doc_at AS "externalDocAt"`,
       [status, processedBy, notes ?? null, exchangeId]
     );
     if (!rows[0]) throw new Error('Заявка не найдена');
@@ -167,6 +192,12 @@ export async function processExchange(
     }
 
     await client.query('COMMIT');
+
+    // Push в 1С — только при approve и только если у приза задан товар.
+    // Делается после COMMIT, чтобы не держать lock на время сетевого вызова.
+    if (status === 'approved') {
+      return await tryPushDelivery(exchangeId, rows[0]);
+    }
     return rows[0];
   } catch (err) {
     await client.query('ROLLBACK');
@@ -175,6 +206,109 @@ export async function processExchange(
     client.release();
   }
 }
+
+/** Пытается создать документ выдачи в 1С для уже-approved заявки.
+ *  Используется внутри processExchange после approve и из retry-эндпоинта.
+ *  Обновляет store_exchanges (external_doc_*) и при успехе переводит в fulfilled. */
+export async function tryPushDelivery(
+  exchangeId: number,
+  currentExchange?: ExchangeWithDelivery
+): Promise<ExchangeWithDelivery> {
+  // Загружаем prize.external_product_id, employee.phone — если хотя бы одного нет,
+  // выдача в 1С невозможна, оставляем заявку approved (выдача вручную в магазине).
+  const { rows: meta } = await pool.query<{
+    employeeId: number;
+    phone: string | null;
+    externalProductId: string | null;
+    externalQty: number;
+    prizeName: string;
+    currentStatus: string;
+  }>(
+    `SELECT se.employee_id   AS "employeeId",
+            e.phone          AS "phone",
+            p.external_product_id   AS "externalProductId",
+            p.external_qty          AS "externalQty",
+            p.name           AS "prizeName",
+            se.status        AS "currentStatus"
+     FROM store_exchanges se
+     JOIN employees e ON e.id = se.employee_id
+     JOIN prizes p ON p.id = se.prize_id
+     WHERE se.id = $1`,
+    [exchangeId]
+  );
+  if (!meta[0]) throw new Error('Заявка не найдена при попытке push в 1С');
+  const m = meta[0];
+
+  // Нет привязки товара — выдача в 1С не нужна. Возвращаем текущее состояние.
+  if (!m.externalProductId) {
+    return currentExchange ?? (await getExchangeById(exchangeId));
+  }
+  // Нет телефона у сотрудника — без него 1С не найдёт карту. Помечаем как failed
+  // с понятной причиной, админ исправит phone в карточке сотрудника и нажмёт retry.
+  if (!m.phone) {
+    await pool.query(
+      `UPDATE store_exchanges
+         SET external_doc_status = 'failed',
+             external_doc_error  = $2,
+             external_doc_at     = NOW()
+       WHERE id = $1`,
+      [exchangeId, 'У сотрудника не указан телефон — добавьте phone в карточке и нажмите «Повторить»']
+    );
+    return await getExchangeById(exchangeId);
+  }
+
+  // Зовём 1С (или mock). 15-секундный таймаут, до 3 ретраев на 5xx.
+  const result = await createDeliveryDocument({
+    phone: m.phone,
+    productId: m.externalProductId,
+    qty: m.externalQty ?? 1,
+    externalRef: exchangeId,
+    note: `${m.prizeName} (заявка #${exchangeId})`,
+  });
+
+  if (result.ok && result.documentId) {
+    // Успех — фиксируем документ и переводим заявку в fulfilled.
+    await pool.query(
+      `UPDATE store_exchanges
+         SET status              = 'fulfilled',
+             external_doc_id     = $2,
+             external_doc_status = $3,
+             external_doc_error  = NULL,
+             external_doc_at     = NOW()
+       WHERE id = $1`,
+      [exchangeId, result.documentId, result.status]
+    );
+  } else {
+    await pool.query(
+      `UPDATE store_exchanges
+         SET external_doc_status = 'failed',
+             external_doc_error  = $2,
+             external_doc_at     = NOW()
+       WHERE id = $1`,
+      [exchangeId, result.error ?? 'неизвестная ошибка']
+    );
+  }
+  return await getExchangeById(exchangeId);
+}
+
+async function getExchangeById(exchangeId: number): Promise<ExchangeWithDelivery> {
+  const { rows } = await pool.query<ExchangeWithDelivery>(
+    `SELECT id, employee_id AS "employeeId", prize_id AS "prizeId",
+            cards_spent AS "cardsSpent", coins_spent AS "coinsSpent",
+            card_ids AS "cardIds", status, notes,
+            processed_by AS "processedBy", created_at AS "createdAt",
+            processed_at AS "processedAt",
+            external_doc_id AS "externalDocId",
+            external_doc_status AS "externalDocStatus",
+            external_doc_error AS "externalDocError",
+            external_doc_at AS "externalDocAt"
+     FROM store_exchanges WHERE id = $1`,
+    [exchangeId]
+  );
+  if (!rows[0]) throw new Error('Заявка не найдена');
+  return rows[0];
+}
+
 
 /** История обменов сотрудника */
 export async function getExchangeHistory(
