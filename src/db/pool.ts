@@ -20,10 +20,12 @@ function camelizeResult(result: any): any {
 
 const rawPool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // Neon всегда требует SSL; rejectUnauthorized:false — для совместимости с self-signed прокси
-  ssl: { rejectUnauthorized: false },
+  // SSL включаем только если URL не задаёт sslmode=disable (локальный Postgres внутри
+  // docker-сети). Для managed Postgres (Neon и т.п.) rejectUnauthorized:false снимает
+  // проверку самоподписанных сертификатов прокси.
+  ssl: /sslmode=disable/.test(process.env.DATABASE_URL ?? '') ? false : { rejectUnauthorized: false },
   connectionTimeoutMillis: 120_000,
-  idleTimeoutMillis: 90_000,  // longer than 1-min keep-alive cron so connections survive
+  idleTimeoutMillis: 90_000,
   max: 5,
   keepAlive: true,
   keepAliveInitialDelayMillis: 10000,

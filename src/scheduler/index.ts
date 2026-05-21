@@ -1,9 +1,6 @@
 import cron from 'node-cron';
-import https from 'https';
-import http from 'http';
 import type { Bot } from 'grammy';
 import type { BotContext } from '../bot/context';
-import { pool } from '../db/pool';
 import { remindMetrics } from './jobs/remindMetrics';
 import { remindDailyCoins } from './jobs/remindDailyCoins';
 import { weeklyDigest } from './jobs/weeklyDigest';
@@ -82,42 +79,11 @@ export function initScheduler(bot: Bot<BotContext>): void {
   cron.schedule('0 10 * * *', safeRun('digestPendingExchanges', () => digestPendingExchanges(sendMessage)),
     { timezone: 'Asia/Irkutsk' });
 
-  const serviceUrl = (
-    process.env.WEBHOOK_URL ??
-    process.env.RENDER_EXTERNAL_URL ??
-    'https://crew.145-223-121-47.sslip.io'
-  ).replace(/\/$/, '');
-
-  // ── 4. Render keep-alive — пинг каждые 13 минут ──────────────────────────
-  // Render free tier засыпает через 15 мин без трафика
-  cron.schedule('*/13 * * * *', () => {
-    try {
-      const url = `${serviceUrl}/api/health`;
-      const client = url.startsWith('https') ? https : http;
-      client.get(url, (res) => {
-        if (res.statusCode !== 200) console.warn('[keep-alive] health вернул', res.statusCode);
-      }).on('error', (err) => {
-        console.warn('[keep-alive] ping ошибка:', err.message);
-      });
-    } catch (err) {
-      console.error('[keep-alive] неожиданная ошибка:', err);
-    }
-  });
-
-  // ── 5. Neon keep-alive — запрос к БД каждую минуту ─────────────────────
-  // Neon free tier засыпает через 60-300с без запросов. Пинг каждую минуту
-  // гарантирует, что compute всегда активна и пул уже имеет живое соединение.
-  cron.schedule('* * * * *', async () => {
-    try {
-      await pool.query('SELECT 1');
-    } catch {
-      // Neon просыпается — не логируем, чтобы не засорять логи
-    }
-  });
+  // Keep-alive крон'ы (Neon SELECT 1 каждую минуту, Render HTTP-пинг каждые 13 мин)
+  // удалены 2026-05-21 после переезда БД на свой Postgres на VPS — локальный pg
+  // не засыпает, docker compose рестартит сервис, ходить никуда не нужно.
 
   console.log('[scheduler] Задачи зарегистрированы:');
-  console.log('  • Каждую минуту         — Neon keep-alive');
-  console.log('  • Каждые 13 мин         — Render keep-alive');
   console.log('  • Пн–Сб 09:00           — напоминание квиза в канал');
   console.log('  • 1-е число месяца 10:00 — напоминание про метрики');
   console.log('  • Пн–Сб 20:00           — напоминание про монеты');
