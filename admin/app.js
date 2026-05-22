@@ -2109,6 +2109,68 @@ async function refreshCatalog() {
   }
 }
 
+const MAX_PRIZE_ITEMS = 5;
+
+// Рендерит список items {productId, name, qty} в контейнер. Каждая строка —
+// inputs кода/qty/имени + кнопка удалить. Внизу кнопка «+ Добавить товар».
+function renderItemsList(wrap, items) {
+  wrap.innerHTML = '';
+  wrap.classList.add('ext-items-list');
+  const arr = (items && items.length) ? items.slice(0, MAX_PRIZE_ITEMS) : [{ productId: '', name: '', qty: 1 }];
+  arr.forEach((it) => wrap.appendChild(makePrizeItemRow(it)));
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'ext-add-btn';
+  addBtn.textContent = '+ Добавить товар';
+  addBtn.title = `Добавить ещё одну позицию (максимум ${MAX_PRIZE_ITEMS})`;
+  addBtn.onclick = () => {
+    const count = wrap.querySelectorAll('.ext-item').length;
+    if (count >= MAX_PRIZE_ITEMS) { toast(`Максимум ${MAX_PRIZE_ITEMS} товаров на приз`); return; }
+    const row = makePrizeItemRow({ productId: '', name: '', qty: 1 });
+    wrap.insertBefore(row, addBtn);
+    row.querySelector('.ext-code')?.focus();
+  };
+  wrap.appendChild(addBtn);
+}
+
+function makePrizeItemRow(item) {
+  const row = document.createElement('div');
+  row.className = 'ext-item';
+  row.innerHTML = `
+    <div class="ext-item-row">
+      <input type="text" class="ext-code" value="${esc(item.productId || '')}" placeholder="код 1С" style="flex:1;font-size:11px">
+      <input type="number" class="ext-qty" min="1" value="${item.qty || 1}" style="width:42px;font-size:11px;text-align:right" title="Количество">
+      <button type="button" class="ext-remove" title="Удалить позицию">×</button>
+    </div>
+    <input type="text" class="ext-name" value="${esc(item.name || '')}" placeholder="название (опц.)" style="width:100%;font-size:11px;margin-top:3px">
+  `;
+  const codeEl = row.querySelector('.ext-code');
+  const nameEl = row.querySelector('.ext-name');
+  attachCatalogAutocomplete(codeEl, nameEl);
+  row.querySelector('.ext-remove').onclick = () => {
+    // Не даём удалить последнюю позицию — в add-form всегда должна быть хотя
+    // бы одна (пустая считается «без привязки» при сохранении).
+    const wrap = row.parentElement;
+    if (wrap && wrap.querySelectorAll('.ext-item').length <= 1) {
+      codeEl.value = '';
+      nameEl.value = '';
+      row.querySelector('.ext-qty').value = 1;
+      return;
+    }
+    row.remove();
+  };
+  return row;
+}
+
+function collectPrizeItems(wrap) {
+  if (!wrap) return [];
+  return Array.from(wrap.querySelectorAll('.ext-item')).map(row => ({
+    productId: (row.querySelector('.ext-code')?.value || '').trim(),
+    name: (row.querySelector('.ext-name')?.value || '').trim() || null,
+    qty: parseInt(row.querySelector('.ext-qty')?.value, 10) || 1,
+  })).filter(it => it.productId);
+}
+
 // Привязывает autocomplete к паре input'ов «код 1С» и «название».
 // При выборе элемента — оба поля заполняются автоматически. dispatchEvent
 // нужен чтобы inline-редактор приза среагировал на изменение (если есть слушатели).
@@ -2256,11 +2318,7 @@ function renderPrizes() {
     <td><input type="number" class="prize-coins-in" min="0" value="${p.coinsRequired}" style="width:80px;text-align:right"></td>
     <td class="col-hide-md"><input type="number" class="prize-order-in" value="${p.sortOrder}" style="width:70px;text-align:right"></td>
     <td class="col-hide-md">
-      <div style="display:flex;gap:3px;align-items:center">
-        <input type="text" class="prize-ext-id-in" value="${esc(p.externalProductId || '')}" placeholder="код 1С" style="flex:1;font-size:11px" title="Код товара в Номенклатуре 1С">
-        <input type="number" class="prize-ext-qty-in" min="1" value="${p.externalQty || 1}" style="width:36px;text-align:right;font-size:11px" title="Количество">
-      </div>
-      <input type="text" class="prize-ext-name-in" value="${esc(p.externalProductName || '')}" placeholder="название (опц.)" style="width:100%;font-size:11px;margin-top:2px">
+      <div class="prize-items-list" data-prize-id="${p.id}"></div>
     </td>
     <td>
       <select class="prize-active-in" style="width:100%">
@@ -2276,11 +2334,19 @@ function renderPrizes() {
     </td>
   </tr>`).join('');
   renderIcons();
-  // Подвешиваем autocomplete на каждую строку
-  tbody.querySelectorAll('tr[data-prize-id]').forEach(row => {
-    const codeIn = row.querySelector('.prize-ext-id-in');
-    const nameIn = row.querySelector('.prize-ext-name-in');
-    attachCatalogAutocomplete(codeIn, nameIn);
+  // Рендерим список items в каждую строку (берём из prizesCache по id)
+  tbody.querySelectorAll('.prize-items-list[data-prize-id]').forEach(wrap => {
+    const id = parseInt(wrap.dataset.prizeId, 10);
+    const prize = prizesCache.find(p => p.id === id);
+    const items = (prize && Array.isArray(prize.externalItems)) ? prize.externalItems : [];
+    // Если items пуст но external_product_id есть (миграция не накатилась
+    // или backfill пропустил) — fallback на старые поля как single-item.
+    const initial = items.length > 0
+      ? items
+      : (prize && prize.externalProductId
+          ? [{ productId: prize.externalProductId, name: prize.externalProductName, qty: prize.externalQty || 1 }]
+          : []);
+    renderItemsList(wrap, initial);
   });
 }
 
@@ -2288,11 +2354,11 @@ function showAddPrize() {
   const form = document.getElementById('add-prize-form');
   form.classList.toggle('hidden');
   if (!form.classList.contains('hidden')) {
-    // Подвешиваем autocomplete на поля формы (один раз — внутри проверка)
-    attachCatalogAutocomplete(
-      document.getElementById('new-prize-ext-id'),
-      document.getElementById('new-prize-ext-name')
-    );
+    // Рендерим один пустой item с подключённым autocomplete
+    const wrap = document.getElementById('new-prize-items-list');
+    if (wrap && !wrap.querySelector('.ext-item')) {
+      renderItemsList(wrap, []);
+    }
   }
 }
 
@@ -2303,26 +2369,23 @@ async function addPrize() {
   const coinsRequired = parseInt(document.getElementById('new-prize-coins').value) || 0;
   const sortOrder   = parseInt(document.getElementById('new-prize-order').value) || 100;
   const description = document.getElementById('new-prize-desc').value.trim();
-  const externalProductId   = document.getElementById('new-prize-ext-id').value.trim();
-  const externalProductName = document.getElementById('new-prize-ext-name').value.trim();
-  const externalQty         = parseInt(document.getElementById('new-prize-ext-qty').value) || 1;
+  const externalItems = collectPrizeItems(document.getElementById('new-prize-items-list'));
   if (!name) { toast('Введите название'); return; }
   if (cardsRequired === 0 && coinsRequired === 0) { toast('Укажи стоимость в карточках или монетах'); return; }
   try {
     await api('POST', '/prizes', {
       name, prizeType, cardsRequired, coinsRequired, sortOrder,
       description: description || undefined,
-      externalProductId: externalProductId || null,
-      externalProductName: externalProductName || null,
-      externalQty,
+      externalItems,
     });
     toast('✅ Приз добавлен');
     document.getElementById('add-prize-form').classList.add('hidden');
-    ['new-prize-name','new-prize-cards','new-prize-coins','new-prize-desc',
-     'new-prize-ext-id','new-prize-ext-name'].forEach(id => {
+    ['new-prize-name','new-prize-cards','new-prize-coins','new-prize-desc'].forEach(id => {
       document.getElementById(id).value = id === 'new-prize-cards' || id === 'new-prize-coins' ? '0' : '';
     });
-    document.getElementById('new-prize-ext-qty').value = '1';
+    // Сбрасываем items-форму
+    const wrap = document.getElementById('new-prize-items-list');
+    if (wrap) renderItemsList(wrap, []);
     loadPrizes();
   } catch (e) { toastError(e); }
 }
@@ -2336,9 +2399,7 @@ async function savePrize(id, btn) {
     coinsRequired: parseInt(row.querySelector('.prize-coins-in').value) || 0,
     sortOrder: parseInt(row.querySelector('.prize-order-in').value) || 100,
     isActive: row.querySelector('.prize-active-in').value === 'true',
-    externalProductId:   (row.querySelector('.prize-ext-id-in')?.value || '').trim() || null,
-    externalProductName: (row.querySelector('.prize-ext-name-in')?.value || '').trim() || null,
-    externalQty:         parseInt(row.querySelector('.prize-ext-qty-in')?.value) || 1,
+    externalItems: collectPrizeItems(row.querySelector('.prize-items-list')),
   };
   if (!body.name) { toast('Название не пустое'); return; }
   btn.disabled = true; btn.textContent = '⏳';

@@ -23,6 +23,15 @@
     .ac-item .name { font-weight: 500; }
     .ac-item .meta { color: var(--muted, #888); font-size: 11px; margin-top: 2px; }
     .ac-empty { padding: 10px; color: var(--muted, #888); text-align: center; font-size: 12px; }
+    /* Список items (товары 1С) для одного приза */
+    .ext-items-list { display: flex; flex-direction: column; gap: 4px; }
+    .ext-item { border: 1px solid var(--border, #e5e5e5); border-radius: 4px; padding: 4px; background: var(--bg-soft, #fafafa); }
+    .ext-item-row { display: flex; gap: 3px; align-items: center; }
+    .ext-add-btn { background: transparent; border: 1px dashed var(--border, #c5c5c5); border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; width: 100%; color: var(--muted, #666); }
+    .ext-add-btn:hover { background: var(--bg, #f0f0f0); color: var(--text, #333); }
+    .ext-add-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .ext-remove { background: transparent; border: none; color: #c00; cursor: pointer; padding: 0 4px; font-size: 16px; line-height: 1; }
+    .ext-remove:hover { color: #f00; }
   </style>
 </head>
 <body>
@@ -788,18 +797,10 @@
           <label style="grid-column:1/-1">Описание
             <input type="text" id="new-prize-desc" placeholder="..." class="input">
           </label>
-          <label title="Код товара в 1С (Номенклатура). При одобрении заявки будет создан документ выдачи этого товара на телефон сотрудника.">
-            Товар 1С — код
-            <input type="text" id="new-prize-ext-id" placeholder="код Номенклатуры" class="input">
-          </label>
-          <label title="Название товара — показывается в админке. Опционально.">
-            Товар 1С — название
-            <input type="text" id="new-prize-ext-name" placeholder="напр. «Эклер»" class="input">
-          </label>
-          <label title="Количество единиц товара выдаваемых за один приз. По умолчанию 1.">
-            Количество
-            <input type="number" id="new-prize-ext-qty" min="1" value="1" class="input">
-          </label>
+          <div style="grid-column:1/-1">
+            <p style="margin:0 0 6px;font-size:12px;color:var(--muted)" title="При одобрении заявки maria-crew автоматически вызовет 1С на каждый указанный товар, создав документ выдачи на телефон сотрудника. Если товаров нет — заявка обрабатывается вручную (как раньше).">Товары 1С для авто-выдачи (можно несколько — например «Торт + Пирог»)</p>
+            <div id="new-prize-items-list"></div>
+          </div>
         </div>
         <div style="display:flex;gap:8px;margin-top:12px">
           <button class="btn btn-primary" onclick="addPrize()"><i data-lucide="check"></i> Создать</button>
@@ -832,7 +833,7 @@
             <th style="width:100px">Карт.</th>
             <th style="width:100px">Монет</th>
             <th style="width:80px" class="col-hide-md">Сорт.</th>
-            <th style="width:180px" class="col-hide-md" title="Привязка к товару 1С. Когда указан — заявка после approve автоматически создаёт документ выдачи в 1С.">Товар 1С</th>
+            <th style="width:220px" class="col-hide-md" title="Товары 1С для авто-выдачи (можно несколько — приз «Торт + Пирог»). При одобрении заявки система создаст по одному документу выдачи в 1С на каждый товар.">Товары 1С</th>
             <th style="width:130px">Статус</th>
             <th style="width:140px">Действие</th>
           </tr></thead>

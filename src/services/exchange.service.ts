@@ -214,20 +214,18 @@ export async function tryPushDelivery(
   exchangeId: number,
   currentExchange?: ExchangeWithDelivery
 ): Promise<ExchangeWithDelivery> {
-  // Загружаем prize.external_product_id, employee.phone — если хотя бы одного нет,
-  // выдача в 1С невозможна, оставляем заявку approved (выдача вручную в магазине).
+  // Загружаем prize.external_items, employee.phone — если items пуст или
+  // phone не задан, выдача в 1С невозможна.
   const { rows: meta } = await pool.query<{
     employeeId: number;
     phone: string | null;
-    externalProductId: string | null;
-    externalQty: number;
+    externalItems: Array<{ productId: string; name: string | null; qty: number }>;
     prizeName: string;
     currentStatus: string;
   }>(
     `SELECT se.employee_id   AS "employeeId",
             e.phone          AS "phone",
-            p.external_product_id   AS "externalProductId",
-            p.external_qty          AS "externalQty",
+            COALESCE(p.external_items, '[]'::jsonb) AS "externalItems",
             p.name           AS "prizeName",
             se.status        AS "currentStatus"
      FROM store_exchanges se
@@ -238,9 +236,10 @@ export async function tryPushDelivery(
   );
   if (!meta[0]) throw new Error('Заявка не найдена при попытке push в 1С');
   const m = meta[0];
+  const items = Array.isArray(m.externalItems) ? m.externalItems : [];
 
-  // Нет привязки товара — выдача в 1С не нужна. Возвращаем текущее состояние.
-  if (!m.externalProductId) {
+  // Нет привязки товаров — выдача в 1С не нужна. Возвращаем текущее состояние.
+  if (items.length === 0) {
     return currentExchange ?? (await getExchangeById(exchangeId));
   }
   // Нет телефона у сотрудника — без него 1С не найдёт карту. Помечаем как failed
@@ -257,17 +256,49 @@ export async function tryPushDelivery(
     return await getExchangeById(exchangeId);
   }
 
-  // Зовём 1С (или mock). 15-секундный таймаут, до 3 ретраев на 5xx.
-  const result = await createDeliveryDocument({
-    phone: m.phone,
-    productId: m.externalProductId,
-    qty: m.externalQty ?? 1,
-    externalRef: exchangeId,
-    note: `${m.prizeName} (заявка #${exchangeId})`,
-  });
+  // Зовём 1С (или mock) по одному вызову на каждый item. externalRef:
+  // для single-item совместимо со старым форматом (просто exchangeId),
+  // для multi-item — "<exchangeId>:<idx>" чтобы 1С различал документы.
+  type ItemResult = {
+    idx: number;
+    productId: string;
+    ok: boolean;
+    status: string;
+    documentId?: string;
+    error?: string;
+  };
+  const results: ItemResult[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const externalRef = items.length === 1 ? exchangeId : `${exchangeId}:${i}`;
+    const r = await createDeliveryDocument({
+      phone: m.phone,
+      productId: it.productId,
+      qty: it.qty ?? 1,
+      externalRef,
+      note: items.length === 1
+        ? `${m.prizeName} (заявка #${exchangeId})`
+        : `${m.prizeName} — позиция ${i + 1}/${items.length}: ${it.name ?? it.productId} (заявка #${exchangeId})`,
+    });
+    results.push({
+      idx: i,
+      productId: it.productId,
+      ok: !!(r.ok && r.documentId),
+      status: r.status,
+      documentId: r.documentId,
+      error: r.error,
+    });
+  }
 
-  if (result.ok && result.documentId) {
-    // Успех — фиксируем документ и переводим заявку в fulfilled.
+  // Агрегируем результат: все ok → fulfilled+created, иначе failed с описанием.
+  const allOk = results.every(r => r.ok);
+  const docPayload = items.length === 1
+    ? results[0].documentId ?? null
+    : JSON.stringify(results.map(r => ({ idx: r.idx, productId: r.productId, docId: r.documentId, status: r.status, error: r.error })));
+  const statusValue = allOk ? results[0].status : 'failed';
+  const errorValue = allOk ? null : results.filter(r => !r.ok).map(r => `[${r.productId}] ${r.error ?? 'ошибка'}`).join('; ');
+
+  if (allOk) {
     await pool.query(
       `UPDATE store_exchanges
          SET status              = 'fulfilled',
@@ -276,16 +307,17 @@ export async function tryPushDelivery(
              external_doc_error  = NULL,
              external_doc_at     = NOW()
        WHERE id = $1`,
-      [exchangeId, result.documentId, result.status]
+      [exchangeId, docPayload, statusValue]
     );
   } else {
     await pool.query(
       `UPDATE store_exchanges
-         SET external_doc_status = 'failed',
-             external_doc_error  = $2,
+         SET external_doc_id     = $2,
+             external_doc_status = 'failed',
+             external_doc_error  = $3,
              external_doc_at     = NOW()
        WHERE id = $1`,
-      [exchangeId, result.error ?? 'неизвестная ошибка']
+      [exchangeId, docPayload, errorValue]
     );
   }
   return await getExchangeById(exchangeId);
