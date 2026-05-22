@@ -2054,6 +2054,174 @@ async function loadPrizes() {
   tbody.innerHTML = skeletonRows(8, 5);
   prizesCache = await api('GET', '/prizes') || [];
   renderPrizes();
+  loadCatalogStatus();
+}
+
+// ── 1С каталог: статус-бар + ручной refresh + autocomplete ─────────────────
+
+async function loadCatalogStatus() {
+  try {
+    const s = await api('GET', '/catalog/status');
+    const countEl = document.getElementById('catalog-row-count');
+    const lastEl = document.getElementById('catalog-last-refresh');
+    const errEl  = document.getElementById('catalog-error-badge');
+    const errTxt = document.getElementById('catalog-error-text');
+    if (!countEl) return;
+    countEl.textContent = `${(s.rowCount || 0).toLocaleString('ru-RU')} товаров`;
+    if (s.lastRefreshAt) {
+      const d = new Date(s.lastRefreshAt);
+      lastEl.textContent = d.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
+    } else {
+      lastEl.textContent = 'никогда';
+    }
+    if (s.lastRefreshError) {
+      errEl.classList.remove('hidden');
+      errTxt.textContent = s.lastRefreshError.slice(0, 80);
+    } else {
+      errEl.classList.add('hidden');
+    }
+    if (!s.proxyConfigured) {
+      lastEl.textContent += ' (прокси не настроен)';
+    }
+  } catch (e) { /* не критично — оставим «…» */ }
+}
+
+async function refreshCatalog() {
+  const btn = document.getElementById('catalog-refresh-btn');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.innerHTML = '<i data-lucide="loader"></i> Загружаю...';
+  renderIcons();
+  try {
+    const r = await api('POST', '/catalog/refresh');
+    if (r.ok) {
+      toast(`✅ Каталог обновлён: ${(r.total || 0).toLocaleString('ru-RU')} товаров`);
+    } else {
+      toast('⚠ ' + (r.reason || 'не удалось обновить'));
+    }
+  } catch (e) {
+    toastError(e);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="refresh-cw"></i> Обновить из 1С';
+    renderIcons();
+    loadCatalogStatus();
+  }
+}
+
+// Привязывает autocomplete к паре input'ов «код 1С» и «название».
+// При выборе элемента — оба поля заполняются автоматически. dispatchEvent
+// нужен чтобы inline-редактор приза среагировал на изменение (если есть слушатели).
+function attachCatalogAutocomplete(codeInput, nameInput) {
+  if (!codeInput || codeInput.dataset.acAttached === '1') return;
+  codeInput.dataset.acAttached = '1';
+
+  // Оборачиваем input в .ac-wrap чтобы absolute-dropdown позиционировался относительно input'а.
+  const wrap = document.createElement('div');
+  wrap.className = 'ac-wrap';
+  wrap.style.cssText = codeInput.style.cssText || '';
+  codeInput.parentNode.insertBefore(wrap, codeInput);
+  // Сохраняем оригинальный flex/width input'а.
+  const origFlex = codeInput.style.flex;
+  wrap.appendChild(codeInput);
+  if (origFlex) wrap.style.flex = origFlex;
+  codeInput.style.width = '100%';
+
+  const dropdown = document.createElement('div');
+  dropdown.className = 'ac-dropdown hidden';
+  wrap.appendChild(dropdown);
+
+  let timer = null;
+  let activeIdx = -1;
+  let items = [];
+
+  const search = async (q) => {
+    if (!q || q.length < 2) { hide(); return; }
+    try {
+      const r = await api('GET', `/catalog/search?q=${encodeURIComponent(q)}&limit=15`);
+      items = (r && r.items) || [];
+      activeIdx = -1;
+      if (!items.length) {
+        dropdown.innerHTML = '<div class="ac-empty">Ничего не найдено. Возможно, нужно обновить каталог.</div>';
+        dropdown.classList.remove('hidden');
+        return;
+      }
+      dropdown.innerHTML = items.map((it, i) => `
+        <div class="ac-item" data-idx="${i}">
+          <div><span class="code">${esc(it.code.trim())}</span></div>
+          <div class="name">${esc(it.name || '')}</div>
+          <div class="meta">${esc(it.groupName || '')}${it.unit ? ' · ' + esc(it.unit) : ''}</div>
+        </div>
+      `).join('');
+      dropdown.classList.remove('hidden');
+    } catch (e) { /* silent — пользователь сможет ввести руками */ }
+  };
+
+  const choose = (idx) => {
+    const it = items[idx];
+    if (!it) return;
+    codeInput.value = it.code.trim();
+    if (nameInput) nameInput.value = it.name || '';
+    // Триггерим change чтобы любой external listener увидел изменение
+    codeInput.dispatchEvent(new Event('change', { bubbles: true }));
+    if (nameInput) nameInput.dispatchEvent(new Event('change', { bubbles: true }));
+    hide();
+  };
+
+  const hide = () => {
+    dropdown.classList.add('hidden');
+    activeIdx = -1;
+  };
+
+  codeInput.addEventListener('input', () => {
+    clearTimeout(timer);
+    const q = codeInput.value.trim();
+    timer = setTimeout(() => search(q), 250);
+  });
+
+  codeInput.addEventListener('focus', () => {
+    const q = codeInput.value.trim();
+    if (q.length >= 2) search(q);
+  });
+
+  codeInput.addEventListener('keydown', (e) => {
+    if (dropdown.classList.contains('hidden')) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIdx = Math.min(activeIdx + 1, items.length - 1);
+      updateActive();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIdx = Math.max(activeIdx - 1, 0);
+      updateActive();
+    } else if (e.key === 'Enter' && activeIdx >= 0) {
+      e.preventDefault();
+      choose(activeIdx);
+    } else if (e.key === 'Escape') {
+      hide();
+    }
+  });
+
+  function updateActive() {
+    dropdown.querySelectorAll('.ac-item').forEach((el, i) => {
+      el.classList.toggle('active', i === activeIdx);
+      if (i === activeIdx) el.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
+  dropdown.addEventListener('mousedown', (e) => {
+    // mousedown срабатывает ДО blur, чтобы клик успел отработать
+    const item = e.target.closest('.ac-item');
+    if (item) {
+      e.preventDefault();
+      choose(parseInt(item.dataset.idx, 10));
+    }
+  });
+
+  codeInput.addEventListener('blur', () => {
+    // Откладываем чтобы успел отработать mousedown по dropdown
+    setTimeout(hide, 150);
+  });
 }
 
 function renderPrizes() {
@@ -2108,9 +2276,25 @@ function renderPrizes() {
     </td>
   </tr>`).join('');
   renderIcons();
+  // Подвешиваем autocomplete на каждую строку
+  tbody.querySelectorAll('tr[data-prize-id]').forEach(row => {
+    const codeIn = row.querySelector('.prize-ext-id-in');
+    const nameIn = row.querySelector('.prize-ext-name-in');
+    attachCatalogAutocomplete(codeIn, nameIn);
+  });
 }
 
-function showAddPrize() { document.getElementById('add-prize-form').classList.toggle('hidden'); }
+function showAddPrize() {
+  const form = document.getElementById('add-prize-form');
+  form.classList.toggle('hidden');
+  if (!form.classList.contains('hidden')) {
+    // Подвешиваем autocomplete на поля формы (один раз — внутри проверка)
+    attachCatalogAutocomplete(
+      document.getElementById('new-prize-ext-id'),
+      document.getElementById('new-prize-ext-name')
+    );
+  }
+}
 
 async function addPrize() {
   const name        = document.getElementById('new-prize-name').value.trim();

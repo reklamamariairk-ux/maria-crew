@@ -11,6 +11,7 @@ import { auditRetention } from './jobs/auditRetention';
 import { digestPendingExchanges } from './jobs/digestPendingExchanges';
 import { markCronRun } from '../diagnostics';
 import { alertOwner } from '../bot/notifications/sender';
+import { refreshCatalog, isProxyConfigured } from '../services/oneCCatalog.service';
 
 /** Обёртка над cron-задачей: ловит ошибки, обновляет статус, шлёт алерт владельцу */
 function safeRun(name: string, fn: () => Promise<void>, alertOnError = false): () => Promise<void> {
@@ -79,6 +80,21 @@ export function initScheduler(bot: Bot<BotContext>): void {
   cron.schedule('0 10 * * *', safeRun('digestPendingExchanges', () => digestPendingExchanges(sendMessage)),
     { timezone: 'Asia/Irkutsk' });
 
+  // ── 3f. Ежедневный refresh кэша Номенклатуры 1С (04:00 Иркутск) ─────────
+  // Идёт после auditRetention (03:30), до начала рабочего дня.
+  // Без UPP_CATALOG_PROXY_URL — refresh пропускается, лог только.
+  cron.schedule('0 4 * * *', safeRun('refreshOneCCatalog', async () => {
+    if (!isProxyConfigured()) {
+      console.log('[scheduler] refreshOneCCatalog: UPP_CATALOG_PROXY_URL не задан, пропускаю');
+      return;
+    }
+    const r = await refreshCatalog();
+    if (!r.ok) {
+      throw new Error(`refreshCatalog: ${r.reason}`);
+    }
+    console.log(`[scheduler] refreshOneCCatalog: загружено ${r.total} товаров`);
+  }), { timezone: 'Asia/Irkutsk' });
+
   // Keep-alive крон'ы (Neon SELECT 1 каждую минуту, Render HTTP-пинг каждые 13 мин)
   // удалены 2026-05-21 после переезда БД на свой Postgres на VPS — локальный pg
   // не засыпает, docker compose рестартит сервис, ходить никуда не нужно.
@@ -92,4 +108,5 @@ export function initScheduler(bot: Bot<BotContext>): void {
   console.log('  • 1-е число месяца 03:00 — авто-обработка прошедшего месяца');
   console.log('  • Каждый день 03:30     — чистка журнала >6 мес');
   console.log('  • Каждый день 10:00     — дайджест непогашенных заявок');
+  console.log('  • Каждый день 04:00     — refresh кэша Номенклатуры 1С');
 }
