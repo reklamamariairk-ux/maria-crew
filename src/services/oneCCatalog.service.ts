@@ -172,6 +172,8 @@ export async function searchCatalog(query: string, limit = 20): Promise<CatalogI
 
   // Поиск по точному коду, потом по префиксу, потом по подстроке в имени.
   // Сортируем результаты так, чтобы лучшие матчи были сверху.
+  // Фильтр: исключаем сырьё/полуфабрикаты/оборудование — для призов
+  // нужны только готовые товары (Продукция / Комплект).
   const { rows } = await pool.query(
     `SELECT
         code,
@@ -188,7 +190,15 @@ export async function searchCatalog(query: string, limit = 20): Promise<CatalogI
           ELSE 3
         END AS rank
      FROM one_c_nomenclature_cache
-     WHERE code ILIKE '%' || $1 || '%' OR name ILIKE '%' || $1 || '%'
+     WHERE (code ILIKE '%' || $1 || '%' OR name ILIKE '%' || $1 || '%')
+       AND (kind IS NULL OR (
+         kind NOT ILIKE 'Сырье%' AND
+         kind NOT ILIKE 'Полуфабрикат%' AND
+         kind NOT ILIKE 'Оборудование%' AND
+         kind NOT ILIKE 'Материал%' AND
+         kind NOT ILIKE 'МБП%' AND
+         kind NOT ILIKE 'Инвентарь%'
+       ))
      ORDER BY rank, name
      LIMIT $2`,
     [q, lim]
