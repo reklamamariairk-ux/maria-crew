@@ -12,6 +12,7 @@ import { digestPendingExchanges } from './jobs/digestPendingExchanges';
 import { markCronRun } from '../diagnostics';
 import { alertOwner } from '../bot/notifications/sender';
 import { refreshCatalog, isProxyConfigured } from '../services/oneCCatalog.service';
+import { remindUnansweredRequests } from '../services/request.service';
 
 /** Обёртка над cron-задачей: ловит ошибки, обновляет статус, шлёт алерт владельцу */
 function safeRun(name: string, fn: () => Promise<void>, alertOnError = false): () => Promise<void> {
@@ -95,6 +96,16 @@ export function initScheduler(bot: Bot<BotContext>): void {
     console.log(`[scheduler] refreshOneCCatalog: загружено ${r.total} товаров`);
   }), { timezone: 'Asia/Irkutsk' });
 
+  // ── 3g. Напоминание о неотвеченных запросах (каждые 30 мин) ─────────────
+  // Внутри запроса фильтр: прошло ≥ 2 часов И напоминания ещё не было.
+  // Шлём один раз, дальше за пинками следит руководитель в админке.
+  cron.schedule('*/30 * * * *', safeRun('remindUnansweredRequests', async () => {
+    const r = await remindUnansweredRequests();
+    if (r.sent > 0 || r.skipped > 0) {
+      console.log(`[scheduler] remindUnansweredRequests: sent=${r.sent} skipped=${r.skipped}`);
+    }
+  }), { timezone: 'Asia/Irkutsk' });
+
   // Keep-alive крон'ы (Neon SELECT 1 каждую минуту, Render HTTP-пинг каждые 13 мин)
   // удалены 2026-05-21 после переезда БД на свой Postgres на VPS — локальный pg
   // не засыпает, docker compose рестартит сервис, ходить никуда не нужно.
@@ -109,4 +120,5 @@ export function initScheduler(bot: Bot<BotContext>): void {
   console.log('  • Каждый день 03:30     — чистка журнала >6 мес');
   console.log('  • Каждый день 10:00     — дайджест непогашенных заявок');
   console.log('  • Каждый день 04:00     — refresh кэша Номенклатуры 1С');
+  console.log('  • Каждые 30 минут       — напоминание о неотвеченных запросах (>2ч)');
 }

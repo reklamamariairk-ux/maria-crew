@@ -310,6 +310,73 @@ export async function getRequest(id: number): Promise<{
   return { request, responses };
 }
 
+/** Cron-job: шлёт напоминание сотрудникам которые получили запрос ≥ 2 часов
+ *  назад и ещё не ответили. Шлёт один раз — `reminder_sent_at` помечается
+ *  чтобы не спамить. Возвращает сколько напоминаний отправлено. */
+export async function remindUnansweredRequests(): Promise<{ sent: number; skipped: number }> {
+  if (!_bot) throw new Error('request.service: bot не инициализирован');
+
+  // Ищем notifications где:
+  //  - прошло >= 2 часа с момента отправки
+  //  - напоминания ещё не было
+  //  - сам запрос ещё открыт (не closed)
+  //  - этот сотрудник ещё не отвечал на этот запрос
+  const { rows: outstanding } = await pool.query<{
+    notificationId: number;
+    requestId: number;
+    employeeId: number;
+    telegramChatId: string;
+    employeeName: string;
+    requestText: string;
+  }>(
+    `SELECT n.id                      AS "notificationId",
+            n.request_id              AS "requestId",
+            n.employee_id             AS "employeeId",
+            n.telegram_chat_id::text  AS "telegramChatId",
+            e.name                    AS "employeeName",
+            r.request_text            AS "requestText"
+     FROM request_notifications n
+     JOIN employee_requests r ON r.id = n.request_id
+     JOIN employees e         ON e.id = n.employee_id
+     WHERE n.reminder_sent_at IS NULL
+       AND n.sent_at < now() - interval '2 hours'
+       AND r.status <> 'closed'
+       AND NOT EXISTS (
+         SELECT 1 FROM request_responses rr
+         WHERE rr.request_id = n.request_id AND rr.employee_id = n.employee_id
+       )
+     ORDER BY n.sent_at
+     LIMIT 50`
+  );
+
+  let sent = 0, skipped = 0;
+  for (const o of outstanding) {
+    const escText = o.requestText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const dm =
+      `⏰ <b>Напоминание</b>\n\n` +
+      `Руководитель ждёт твой ответ на запрос:\n\n` +
+      `${escText}\n\n` +
+      `<i>Пришли фото или текст в ответ.</i>`;
+    try {
+      await _bot.api.sendMessage(o.telegramChatId, dm, { parse_mode: 'HTML' });
+      await pool.query(
+        `UPDATE request_notifications SET reminder_sent_at = now() WHERE id = $1`,
+        [o.notificationId]
+      );
+      sent++;
+    } catch (err) {
+      // Пользователь заблокировал бота / прочее — помечаем чтобы не повторять.
+      await pool.query(
+        `UPDATE request_notifications SET reminder_sent_at = now() WHERE id = $1`,
+        [o.notificationId]
+      );
+      console.warn(`[remind] не отправлено employee ${o.employeeId} (req ${o.requestId}):`, (err as Error).message);
+      skipped++;
+    }
+  }
+  return { sent, skipped };
+}
+
 export async function closeRequest(id: number): Promise<boolean> {
   const { rowCount } = await pool.query(
     `UPDATE employee_requests
