@@ -1217,25 +1217,26 @@
         <button class="btn btn-primary" onclick="showNewRequest()"><i data-lucide="plus"></i> Новый запрос</button>
       </div>
 
-      <div id="new-request-form" class="hidden card card-pad" style="margin-bottom:16px;max-width:640px">
+      <div id="new-request-form" class="hidden card card-pad" style="margin-bottom:16px;max-width:680px">
         <p class="section-title">Создать запрос</p>
         <div class="form-col">
-          <label>Кому
-            <select id="new-req-target" onchange="onNewReqTargetChange()" class="input" style="width:240px">
-              <option value="employee">Конкретный сотрудник</option>
-              <option value="store">Все сотрудники точки</option>
+          <label>Фильтр по точке
+            <select id="new-req-store-filter" onchange="renderReqEmployees()" class="input" style="width:300px">
+              <option value="">Все точки</option>
             </select>
           </label>
-          <label id="new-req-emp-label">Сотрудник
-            <select id="new-req-employee" class="input" style="width:300px">
-              <option value="">— выбери —</option>
-            </select>
-          </label>
-          <label id="new-req-store-label" class="hidden">Точка
-            <select id="new-req-store" class="input" style="width:300px">
-              <option value="">— выбери —</option>
-            </select>
-          </label>
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+              <span style="font-size:13px;color:var(--muted)">Получатели: <b id="new-req-selected-count">0</b></span>
+              <div style="display:flex;gap:6px">
+                <button type="button" class="btn btn-ghost btn-sm" onclick="reqSelectAll(true)">Все</button>
+                <button type="button" class="btn btn-ghost btn-sm" onclick="reqSelectAll(false)">Никого</button>
+              </div>
+            </div>
+            <div id="new-req-employees" style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:6px;background:var(--bg)">
+              <p class="text-muted" style="font-size:13px;text-align:center;margin:14px 0">Загрузка…</p>
+            </div>
+          </div>
           <label>Текст запроса
             <textarea id="new-req-text" class="input" rows="3" maxlength="3000" placeholder="Например: пришли фото витрины со стороны входа"></textarea>
           </label>

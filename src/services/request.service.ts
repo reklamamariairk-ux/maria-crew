@@ -26,7 +26,11 @@ export function initRequestService(bot: Bot<BotContext>): void {
 
 export interface CreateRequestInput {
   requestedBy: number;
+  /** Канонический способ — список ID сотрудников-получателей. */
+  targetEmployeeIds?: number[];
+  /** Back-compat: одиночный получатель. */
   targetEmployeeId?: number;
+  /** Back-compat: вся точка (все активные сотрудники на момент создания). */
   targetStoreId?: number;
   requestText: string;
 }
@@ -44,6 +48,10 @@ export interface RequestSummary {
   updatedAt: string;
   responseCount: number;
   notificationsSent: number;
+  /** Количество получателей (из request_targets) — для отображения «N сотрудников». */
+  targetCount: number;
+  /** Имена первых 3 получателей — для краткого превью в списке. */
+  targetNames: string[];
 }
 
 export interface RequestResponseRow {
@@ -61,56 +69,96 @@ export interface RequestResponseRow {
 export async function createRequest(input: CreateRequestInput): Promise<number> {
   const text = (input.requestText ?? '').trim();
   if (!text) throw new Error('requestText обязателен');
-  if (!input.targetEmployeeId && !input.targetStoreId) {
-    throw new Error('Нужен либо targetEmployeeId, либо targetStoreId');
+
+  // Резолвим финальный список получателей.
+  let employeeIds: number[] = [];
+  if (input.targetEmployeeIds && input.targetEmployeeIds.length > 0) {
+    employeeIds = [...new Set(input.targetEmployeeIds)]; // dedup
+  } else if (input.targetEmployeeId) {
+    employeeIds = [input.targetEmployeeId];
+  } else if (input.targetStoreId) {
+    const { rows } = await pool.query<{ id: number }>(
+      `SELECT id FROM employees WHERE store_id = $1 AND is_active = true`,
+      [input.targetStoreId]
+    );
+    employeeIds = rows.map(r => r.id);
   }
-  const { rows } = await pool.query<{ id: number }>(
-    `INSERT INTO employee_requests
-       (requested_by, target_employee_id, target_store_id, request_text)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id`,
-    [input.requestedBy, input.targetEmployeeId ?? null, input.targetStoreId ?? null, text]
-  );
-  return rows[0].id;
+  if (employeeIds.length === 0) {
+    throw new Error('Нужны targetEmployeeIds (или targetEmployeeId/targetStoreId)');
+  }
+
+  // Display hints — для удобства списка в админке:
+  // - если 1 получатель → пишем target_employee_id (показывается как имя)
+  // - если несколько и все из одной точки И это все активные точки →
+  //   пишем target_store_id (показывается как имя точки)
+  // - иначе оба NULL (отрисуется «N сотрудников»)
+  let displayEmployeeId: number | null = null;
+  let displayStoreId: number | null = null;
+  if (employeeIds.length === 1) {
+    displayEmployeeId = employeeIds[0];
+  } else if (input.targetStoreId) {
+    displayStoreId = input.targetStoreId;
+  } else {
+    const { rows } = await pool.query<{ storeId: number | null; allCount: string; selCount: string }>(
+      `SELECT store_id::int AS "storeId",
+              COUNT(*) FILTER (WHERE is_active = true) AS "allCount",
+              COUNT(*) FILTER (WHERE id = ANY($1::int[])) AS "selCount"
+       FROM employees
+       WHERE store_id IS NOT NULL
+       GROUP BY store_id
+       HAVING COUNT(*) FILTER (WHERE id = ANY($1::int[])) > 0`,
+      [employeeIds]
+    );
+    if (rows.length === 1 && rows[0].storeId !== null
+        && parseInt(rows[0].allCount, 10) === parseInt(rows[0].selCount, 10)
+        && parseInt(rows[0].selCount, 10) === employeeIds.length) {
+      displayStoreId = rows[0].storeId;
+    }
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query<{ id: number }>(
+      `INSERT INTO employee_requests
+         (requested_by, target_employee_id, target_store_id, request_text)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id`,
+      [input.requestedBy, displayEmployeeId, displayStoreId, text]
+    );
+    const id = rows[0].id;
+    await client.query(
+      `INSERT INTO request_targets (request_id, employee_id)
+       SELECT $1, unnest($2::int[])
+       ON CONFLICT DO NOTHING`,
+      [id, employeeIds]
+    );
+    await client.query('COMMIT');
+    return id;
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
 }
 
-/** Получает список сотрудников-получателей для запроса. */
+/** Получает список сотрудников-получателей для запроса из request_targets. */
 async function getTargetEmployees(requestId: number): Promise<Array<{
   id: number;
   name: string;
   telegramId: string | null;
 }>> {
   const { rows } = await pool.query<{
-    targetEmployeeId: number | null;
-    targetStoreId: number | null;
-  }>(
-    `SELECT target_employee_id AS "targetEmployeeId", target_store_id AS "targetStoreId"
-     FROM employee_requests WHERE id = $1`,
-    [requestId]
-  );
-  if (!rows[0]) throw new Error('Запрос не найден');
-  const { targetEmployeeId, targetStoreId } = rows[0];
-
-  if (targetEmployeeId) {
-    const { rows: emp } = await pool.query<{
-      id: number; name: string; telegramId: string | null;
-    }>(
-      `SELECT id, name, telegram_id AS "telegramId"
-       FROM employees WHERE id = $1 AND is_active = true`,
-      [targetEmployeeId]
-    );
-    return emp;
-  }
-  // По точке — все активные сотрудники с привязанным Telegram.
-  const { rows: emps } = await pool.query<{
     id: number; name: string; telegramId: string | null;
   }>(
-    `SELECT id, name, telegram_id AS "telegramId"
-     FROM employees
-     WHERE store_id = $1 AND is_active = true AND telegram_id IS NOT NULL`,
-    [targetStoreId]
+    `SELECT e.id, e.name, e.telegram_id AS "telegramId"
+     FROM request_targets rt
+     JOIN employees e ON e.id = rt.employee_id
+     WHERE rt.request_id = $1 AND e.is_active = true`,
+    [requestId]
   );
-  return emps;
+  return rows;
 }
 
 /** Рассылает запрос в Telegram. Каждое сообщение фиксирует в request_notifications. */
@@ -315,7 +363,7 @@ async function notifyOwnerOfResponse(
 
 export async function listRequests(filter?: { status?: string }): Promise<RequestSummary[]> {
   const params: (string | null)[] = [filter?.status ?? null];
-  const { rows } = await pool.query<RequestSummary>(
+  const { rows } = await pool.query<RequestSummary & { targetNames: string[] | null }>(
     `SELECT r.id,
             r.requested_by      AS "requestedBy",
             r.target_employee_id AS "targetEmployeeId",
@@ -327,7 +375,14 @@ export async function listRequests(filter?: { status?: string }): Promise<Reques
             r.created_at        AS "createdAt",
             r.updated_at        AS "updatedAt",
             (SELECT COUNT(*)::int FROM request_responses WHERE request_id = r.id) AS "responseCount",
-            (SELECT COUNT(*)::int FROM request_notifications WHERE request_id = r.id) AS "notificationsSent"
+            (SELECT COUNT(*)::int FROM request_notifications WHERE request_id = r.id) AS "notificationsSent",
+            (SELECT COUNT(*)::int FROM request_targets WHERE request_id = r.id) AS "targetCount",
+            (SELECT array_agg(e.name ORDER BY e.name)
+             FROM (
+               SELECT e.name FROM request_targets rt
+               JOIN employees e ON e.id = rt.employee_id
+               WHERE rt.request_id = r.id ORDER BY e.name LIMIT 3
+             ) e) AS "targetNames"
      FROM employee_requests r
      LEFT JOIN employees te ON te.id = r.target_employee_id
      LEFT JOIN stores s     ON s.id  = r.target_store_id
@@ -336,7 +391,7 @@ export async function listRequests(filter?: { status?: string }): Promise<Reques
      LIMIT 200`,
     params
   );
-  return rows;
+  return rows.map(r => ({ ...r, targetNames: r.targetNames ?? [] }));
 }
 
 export async function getRequest(id: number): Promise<{

@@ -33,6 +33,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction): Prom
 router.post('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const body = req.body as {
+      targetEmployeeIds?: number[];
       targetEmployeeId?: number;
       targetStoreId?: number;
       requestText: string;
@@ -40,16 +41,15 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
     if (!body.requestText || !body.requestText.trim()) {
       res.status(400).json({ error: 'requestText обязателен' }); return;
     }
-    if (!body.targetEmployeeId && !body.targetStoreId) {
-      res.status(400).json({ error: 'Укажите targetEmployeeId или targetStoreId' }); return;
-    }
-    if (body.targetEmployeeId && body.targetStoreId) {
-      res.status(400).json({ error: 'Указывайте либо сотрудника, либо точку, не оба' }); return;
+    const hasIds = Array.isArray(body.targetEmployeeIds) && body.targetEmployeeIds.length > 0;
+    if (!hasIds && !body.targetEmployeeId && !body.targetStoreId) {
+      res.status(400).json({ error: 'Укажите targetEmployeeIds, targetEmployeeId или targetStoreId' }); return;
     }
 
     const requestedBy = req.adminUserId ?? 0;
     const id = await createRequest({
       requestedBy,
+      targetEmployeeIds: body.targetEmployeeIds,
       targetEmployeeId: body.targetEmployeeId,
       targetStoreId: body.targetStoreId,
       requestText: body.requestText.trim(),

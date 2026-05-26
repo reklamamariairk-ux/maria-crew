@@ -3321,9 +3321,18 @@ async function loadRequests() {
     return;
   }
   tbody.innerHTML = list.map(r => {
-    const target = r.targetEmployeeName
-      ? `👤 ${esc(r.targetEmployeeName)}`
-      : (r.targetStoreName ? `🏪 ${esc(r.targetStoreName)}` : '—');
+    let target;
+    if (r.targetEmployeeName) {
+      target = `👤 ${esc(r.targetEmployeeName)}`;
+    } else if (r.targetStoreName) {
+      target = `🏪 ${esc(r.targetStoreName)} <span style="color:var(--muted);font-size:11px">(${r.targetCount})</span>`;
+    } else if (r.targetCount > 0) {
+      const names = (r.targetNames || []).slice(0, 2).map(esc).join(', ');
+      const more = r.targetCount > 2 ? ` +${r.targetCount - 2}` : '';
+      target = `👥 ${names}${more}`;
+    } else {
+      target = '—';
+    }
     const created = new Date(r.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
     return `<tr style="cursor:pointer" onclick="openRequestModal(${r.id})">
       <td style="color:var(--muted);font-size:12px">${r.id}</td>
@@ -3340,44 +3349,84 @@ async function loadRequests() {
   renderIcons();
 }
 
+let reqEmployeesCache = [];
+
 async function showNewRequest() {
   const form = document.getElementById('new-request-form');
   form.classList.toggle('hidden');
   if (form.classList.contains('hidden')) return;
-  // Заполняем выпадалки точек и сотрудников
-  const storesSel = document.getElementById('new-req-store');
-  storesSel.innerHTML = '<option value="">— выбери —</option>'
+  // Точки в фильтр
+  const filterSel = document.getElementById('new-req-store-filter');
+  filterSel.innerHTML = '<option value="">Все точки</option>'
     + (state.stores || []).map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
-  const empsSel = document.getElementById('new-req-employee');
-  if (empsSel.options.length <= 1) {
+  // Сотрудники (один раз, потом фильтр по точке локально)
+  if (reqEmployeesCache.length === 0) {
     const emps = await api('GET', '/employees') || [];
-    empsSel.innerHTML = '<option value="">— выбери —</option>'
-      + emps.filter(e => e.isActive).map(e =>
-          `<option value="${e.id}">${esc(e.name)}${e.storeName ? ` — ${esc(e.storeName)}` : ''}</option>`
-        ).join('');
+    reqEmployeesCache = emps.filter(e => e.isActive);
   }
+  renderReqEmployees();
 }
 
-function onNewReqTargetChange() {
-  const t = document.getElementById('new-req-target').value;
-  document.getElementById('new-req-emp-label').classList.toggle('hidden', t !== 'employee');
-  document.getElementById('new-req-store-label').classList.toggle('hidden', t !== 'store');
+function renderReqEmployees() {
+  const filter = document.getElementById('new-req-store-filter').value;
+  const storeId = filter ? parseInt(filter, 10) : null;
+  const wrap = document.getElementById('new-req-employees');
+  const list = storeId ? reqEmployeesCache.filter(e => e.storeId === storeId) : reqEmployeesCache;
+  if (list.length === 0) {
+    wrap.innerHTML = '<p class="text-muted" style="font-size:13px;text-align:center;margin:14px 0">Нет активных сотрудников</p>';
+    updateReqSelectedCount();
+    return;
+  }
+  // Сохраняем уже выбранных — чтобы фильтр не сбрасывал
+  const selectedBefore = new Set(
+    Array.from(wrap.querySelectorAll('input[type=checkbox]:checked')).map(cb => parseInt(cb.value, 10))
+  );
+  wrap.innerHTML = list.map(e => {
+    const checked = selectedBefore.has(e.id) ? 'checked' : '';
+    const storeLabel = e.storeName ? ` <span style="color:var(--muted);font-size:11px">— ${esc(e.storeName)}</span>` : '';
+    return `<label style="display:flex;align-items:center;gap:8px;padding:4px 6px;cursor:pointer;border-radius:4px" onmouseover="this.style.background='var(--surface-2,#f0f0f0)'" onmouseout="this.style.background=''">
+      <input type="checkbox" value="${e.id}" ${checked} onchange="updateReqSelectedCount()">
+      <span>${esc(e.name)}${storeLabel}</span>
+    </label>`;
+  }).join('');
+  updateReqSelectedCount();
+}
+
+function reqSelectAll(checked) {
+  document.querySelectorAll('#new-req-employees input[type=checkbox]').forEach(cb => cb.checked = checked);
+  updateReqSelectedCount();
+}
+
+function updateReqSelectedCount() {
+  const cnt = document.querySelectorAll('#new-req-employees input[type=checkbox]:checked').length;
+  document.getElementById('new-req-selected-count').textContent = cnt;
 }
 
 async function submitRequest() {
-  const target = document.getElementById('new-req-target').value;
   const text = document.getElementById('new-req-text').value.trim();
   if (!text) { toast('Введи текст запроса'); return; }
+  const ids = Array.from(document.querySelectorAll('#new-req-employees input[type=checkbox]:checked'))
+    .map(cb => parseInt(cb.value, 10))
+    .filter(Number.isFinite);
+  if (ids.length === 0) { toast('Отметь хотя бы одного сотрудника'); return; }
+
+  // Если выбран фильтр точки И отмечены ВСЕ из этой точки — передадим storeId
+  // (бэк назначит target_store_id для красивого отображения «🏪 точка»).
+  const filterStoreId = parseInt(document.getElementById('new-req-store-filter').value, 10) || null;
   const body = { requestText: text };
-  if (target === 'employee') {
-    const id = parseInt(document.getElementById('new-req-employee').value, 10);
-    if (!id) { toast('Выбери сотрудника'); return; }
-    body.targetEmployeeId = id;
+  if (filterStoreId) {
+    const allOfStore = reqEmployeesCache.filter(e => e.storeId === filterStoreId);
+    if (allOfStore.length === ids.length && allOfStore.every(e => ids.includes(e.id))) {
+      body.targetStoreId = filterStoreId;
+    } else {
+      body.targetEmployeeIds = ids;
+    }
+  } else if (ids.length === 1) {
+    body.targetEmployeeId = ids[0];
   } else {
-    const id = parseInt(document.getElementById('new-req-store').value, 10);
-    if (!id) { toast('Выбери точку'); return; }
-    body.targetStoreId = id;
+    body.targetEmployeeIds = ids;
   }
+
   try {
     const res = await api('POST', '/requests', body);
     toast(`✅ Запрос отправлен. Доставлено: ${res.sent}, пропущено: ${res.skipped}`);
@@ -3406,7 +3455,10 @@ async function openRequestModal(id) {
   try {
     const data = await api('GET', `/requests/${id}`);
     const r = data.request;
-    const target = r.targetEmployeeName ? `👤 ${esc(r.targetEmployeeName)}` : `🏪 ${esc(r.targetStoreName)}`;
+    let target;
+    if (r.targetEmployeeName) target = `👤 ${esc(r.targetEmployeeName)}`;
+    else if (r.targetStoreName) target = `🏪 ${esc(r.targetStoreName)} (${r.targetCount})`;
+    else target = `👥 ${(r.targetNames || []).slice(0, 5).map(esc).join(', ')}${r.targetCount > 5 ? ` +${r.targetCount - 5}` : ''}`;
     let html = `
       <div style="margin-bottom:14px">
         <div style="color:var(--muted);font-size:12px;margin-bottom:4px">Кому: ${target} · ${REQUEST_STATUS_LABELS[r.status] || r.status}</div>
