@@ -148,15 +148,17 @@ export function createBot(token: string): Bot<BotContext> {
   // Внутри request.service ищем привязку по chat_id+reply_to_message_id.
   bot.on('message', async (ctx, next) => {
     const reply = ctx.message.reply_to_message;
-    if (!reply) { return next(); }
-    if (!ctx.employee) { return next(); }
-    if (!ctx.chat?.id) { return next(); }
+    console.log(`[req-reply] message from=${ctx.from?.id} chat=${ctx.chat?.id} employee=${ctx.employee?.id ?? 'NULL'} reply_to=${reply?.message_id ?? 'none'} has_photo=${!!ctx.message.photo} has_text=${!!ctx.message.text} has_caption=${!!ctx.message.caption}`);
+    if (!reply) { console.log('[req-reply] skip: нет reply_to'); return next(); }
+    if (!ctx.employee) { console.log('[req-reply] skip: employee пустой'); return next(); }
+    if (!ctx.chat?.id) { console.log('[req-reply] skip: chat_id пустой'); return next(); }
 
     // Берём самое большое фото (последнее в массиве PhotoSize).
     const photo = ctx.message.photo;
     const photoFileId = photo && photo.length > 0 ? photo[photo.length - 1].file_id : null;
     const text = ctx.message.text ?? ctx.message.caption ?? null;
-    if (!photoFileId && !text) { return next(); }
+    console.log(`[req-reply] photoFileId=${photoFileId ? photoFileId.slice(0,20)+'...' : 'null'} text=${text?.slice(0,50)}`);
+    if (!photoFileId && !text) { console.log('[req-reply] skip: ни фото ни текста'); return next(); }
 
     try {
       const res = await handleEmployeeReply({
