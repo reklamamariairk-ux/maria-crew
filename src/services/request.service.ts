@@ -156,30 +156,60 @@ export async function dispatchRequest(
   return { sent, skipped };
 }
 
-/** Обработка входящего ответа сотрудника. Вернёт request_id если ответ привязан. */
+/** Обработка входящего ответа сотрудника. Вернёт request_id если ответ привязан.
+ *  Стратегия поиска запроса:
+ *    1. Если у сообщения есть reply_to_message — пробуем точный матч по
+ *       (chat_id, message_id) в request_notifications.
+ *    2. Если reply нет или не нашлось — fallback: берём самый свежий
+ *       не-закрытый запрос для этого сотрудника. Reply в TG не интуитивно
+ *       на мобильных, поэтому такой UX-fallback убирает один шаг для юзера. */
 export async function handleEmployeeReply(opts: {
   chatId: number;
-  replyToMessageId: number;
+  replyToMessageId: number | null;
   employeeId: number;
   text?: string | null;
   photoFileId?: string | null;
   messageId: number;
 }): Promise<{ requestId: number } | null> {
-  // Ищем запрос по reply_to message_id.
-  const { rows: notif } = await pool.query<{
-    requestId: number; expectedEmployeeId: number;
-  }>(
-    `SELECT request_id AS "requestId", employee_id AS "expectedEmployeeId"
-     FROM request_notifications
-     WHERE telegram_chat_id = $1 AND telegram_message_id = $2`,
-    [opts.chatId, opts.replyToMessageId]
-  );
-  if (!notif[0]) return null; // Reply не на наш запрос — игнорируем.
+  let requestId: number | null = null;
 
-  // Защита: ответил тот же employee, кому слали (а не случайный другой человек).
-  if (notif[0].expectedEmployeeId !== opts.employeeId) return null;
+  // Шаг 1: точный матч по reply_to_message_id (если reply есть).
+  if (opts.replyToMessageId) {
+    const { rows: notif } = await pool.query<{
+      requestId: number; expectedEmployeeId: number;
+    }>(
+      `SELECT request_id AS "requestId", employee_id AS "expectedEmployeeId"
+       FROM request_notifications
+       WHERE telegram_chat_id = $1 AND telegram_message_id = $2`,
+      [opts.chatId, opts.replyToMessageId]
+    );
+    if (notif[0] && notif[0].expectedEmployeeId === opts.employeeId) {
+      requestId = notif[0].requestId;
+    }
+  }
 
-  const requestId = notif[0].requestId;
+  // Шаг 2: fallback — последний не-closed запрос для этого сотрудника.
+  // Сюда же попадают случаи когда reply на бот-сообщение НЕ принадлежащее
+  // запросу (например на /start или /coins) — тогда вернёт null если у
+  // юзера нет активных запросов.
+  if (!requestId) {
+    const { rows: fallback } = await pool.query<{ requestId: number }>(
+      `SELECT n.request_id AS "requestId"
+       FROM request_notifications n
+       JOIN employee_requests r ON r.id = n.request_id
+       WHERE n.employee_id = $1
+         AND n.telegram_chat_id = $2
+         AND r.status <> 'closed'
+       ORDER BY n.sent_at DESC
+       LIMIT 1`,
+      [opts.employeeId, opts.chatId]
+    );
+    if (fallback[0]) {
+      requestId = fallback[0].requestId;
+    }
+  }
+
+  if (!requestId) return null; // Не наш use-case — random message от сотрудника.
 
   // Если фото — заливаем в Cloudinary.
   let photoUrl: string | null = null;

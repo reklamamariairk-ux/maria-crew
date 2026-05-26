@@ -143,27 +143,26 @@ export function createBot(token: string): Bot<BotContext> {
     }
   });
 
-  // ── Ответ сотрудника на запрос менеджера (reply на сообщение бота) ──────────
-  // Срабатывает только когда есть reply_to_message и сотрудник в БД.
-  // Внутри request.service ищем привязку по chat_id+reply_to_message_id.
+  // ── Ответ сотрудника на запрос менеджера ────────────────────────────────────
+  // Стратегия: если у сотрудника есть открытые запросы — любое его сообщение
+  // с фото или текстом привязывается к самому свежему такому запросу. Reply
+  // на конкретное сообщение бота переопределяет fallback (точный матч).
   bot.on('message', async (ctx, next) => {
-    const reply = ctx.message.reply_to_message;
-    console.log(`[req-reply] message from=${ctx.from?.id} chat=${ctx.chat?.id} employee=${ctx.employee?.id ?? 'NULL'} reply_to=${reply?.message_id ?? 'none'} has_photo=${!!ctx.message.photo} has_text=${!!ctx.message.text} has_caption=${!!ctx.message.caption}`);
-    if (!reply) { console.log('[req-reply] skip: нет reply_to'); return next(); }
-    if (!ctx.employee) { console.log('[req-reply] skip: employee пустой'); return next(); }
-    if (!ctx.chat?.id) { console.log('[req-reply] skip: chat_id пустой'); return next(); }
+    if (!ctx.employee) { return next(); }
+    if (!ctx.chat?.id) { return next(); }
 
-    // Берём самое большое фото (последнее в массиве PhotoSize).
+    const reply = ctx.message.reply_to_message;
     const photo = ctx.message.photo;
     const photoFileId = photo && photo.length > 0 ? photo[photo.length - 1].file_id : null;
     const text = ctx.message.text ?? ctx.message.caption ?? null;
-    console.log(`[req-reply] photoFileId=${photoFileId ? photoFileId.slice(0,20)+'...' : 'null'} text=${text?.slice(0,50)}`);
-    if (!photoFileId && !text) { console.log('[req-reply] skip: ни фото ни текста'); return next(); }
+    // Команды (/start, /coins, etc.) уже обработаны выше; сюда не дойдут.
+    // Если сообщение без полезной нагрузки — пропускаем.
+    if (!photoFileId && !text) { return next(); }
 
     try {
       const res = await handleEmployeeReply({
         chatId: ctx.chat.id,
-        replyToMessageId: reply.message_id,
+        replyToMessageId: reply?.message_id ?? null,
         employeeId: ctx.employee.id,
         text,
         photoFileId,
