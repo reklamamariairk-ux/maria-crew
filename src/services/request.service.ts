@@ -13,7 +13,8 @@
 import type { Bot } from 'grammy';
 import type { BotContext } from '../bot/context';
 import { pool } from '../db/pool';
-import { uploadImageFromUrl, isCloudinaryConfigured } from './cloudinary.service';
+import { uploadFileFromUrl, isCloudinaryConfigured } from './cloudinary.service';
+import type { CloudinaryResource } from './cloudinary.service';
 
 const BOT_TOKEN = (process.env.BOT_TOKEN ?? '').trim();
 
@@ -50,8 +51,10 @@ export interface RequestResponseRow {
   employeeId: number;
   employeeName: string;
   textContent: string | null;
-  photoUrl: string | null;
-  photoThumbnailUrl: string | null;
+  fileUrl: string | null;
+  fileThumbnailUrl: string | null;
+  fileType: 'photo' | 'video' | 'document' | null;
+  fileName: string | null;
   createdAt: string;
 }
 
@@ -163,12 +166,18 @@ export async function dispatchRequest(
  *    2. Если reply нет или не нашлось — fallback: берём самый свежий
  *       не-закрытый запрос для этого сотрудника. Reply в TG не интуитивно
  *       на мобильных, поэтому такой UX-fallback убирает один шаг для юзера. */
+export type AttachmentKind = 'photo' | 'video' | 'document';
+
 export async function handleEmployeeReply(opts: {
   chatId: number;
   replyToMessageId: number | null;
   employeeId: number;
   text?: string | null;
-  photoFileId?: string | null;
+  /** file_id из Telegram. fileKind определяет cloudinary endpoint и file_type в БД. */
+  fileId?: string | null;
+  fileKind?: AttachmentKind | null;
+  /** Только для document — оригинальное имя файла из TG (если есть). */
+  fileName?: string | null;
   messageId: number;
 }): Promise<{ requestId: number } | null> {
   let requestId: number | null = null;
@@ -211,37 +220,46 @@ export async function handleEmployeeReply(opts: {
 
   if (!requestId) return null; // Не наш use-case — random message от сотрудника.
 
-  // Если фото — заливаем в Cloudinary.
-  let photoUrl: string | null = null;
-  let photoThumb: string | null = null;
-  if (opts.photoFileId) {
+  // Если есть файл — заливаем в Cloudinary.
+  let fileUrl: string | null = null;
+  let fileThumb: string | null = null;
+  let fileType: AttachmentKind | null = null;
+  if (opts.fileId && opts.fileKind) {
     if (!BOT_TOKEN) throw new Error('BOT_TOKEN не задан');
     if (!isCloudinaryConfigured()) {
-      throw new Error('Cloudinary не настроен — фото не сохранить');
+      throw new Error('Cloudinary не настроен — файл не сохранить');
     }
-    // Получаем file_path через bot API
     const fileInfoRes = await fetch(
-      `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${encodeURIComponent(opts.photoFileId)}`
+      `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${encodeURIComponent(opts.fileId)}`
     );
     const fileInfo = await fileInfoRes.json() as { ok: boolean; result?: { file_path?: string } };
     if (!fileInfo.ok || !fileInfo.result?.file_path) {
       throw new Error('getFile вернул ошибку');
     }
     const tgFileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileInfo.result.file_path}`;
-    const uploaded = await uploadImageFromUrl(tgFileUrl);
-    photoUrl = uploaded.url;
-    photoThumb = uploaded.thumbnailUrl;
+    const resource: CloudinaryResource =
+      opts.fileKind === 'photo' ? 'image' :
+      opts.fileKind === 'video' ? 'video' : 'raw';
+    const uploaded = await uploadFileFromUrl(tgFileUrl, resource);
+    fileUrl = uploaded.url;
+    fileThumb = uploaded.thumbnailUrl;
+    fileType = opts.fileKind;
   }
 
   const textContent = (opts.text ?? '').trim() || null;
-  if (!textContent && !photoUrl) return null; // Пустой reply — ничего не сохраняем.
+  if (!textContent && !fileUrl) return null; // Пустой reply — ничего не сохраняем.
 
   await pool.query(
     `INSERT INTO request_responses
-       (request_id, employee_id, text_content, photo_url, photo_thumbnail_url, telegram_message_id)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [requestId, opts.employeeId, textContent, photoUrl, photoThumb, opts.messageId]
+       (request_id, employee_id, text_content, file_url, file_thumbnail_url, file_type, file_name, telegram_message_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [requestId, opts.employeeId, textContent, fileUrl, fileThumb, fileType, opts.fileName ?? null, opts.messageId]
   );
+
+  // Уведомляем владельца в TG что ответ пришёл (асинхронно, чтобы не блокировать).
+  notifyOwnerOfResponse(requestId, opts.employeeId, textContent, fileType).catch(err => {
+    console.warn('[request reply] не уведомили владельца:', err);
+  });
 
   // Обновляем статус: для single-employee запроса auto-close → answered.
   // Для store-запроса (multi-target) оставляем open, чтобы пришли ответы от
@@ -258,6 +276,41 @@ export async function handleEmployeeReply(opts: {
   );
 
   return { requestId };
+}
+
+/** Шлёт DM владельцу (OWNER_TELEGRAM_ID) о новом ответе на запрос. */
+async function notifyOwnerOfResponse(
+  requestId: number,
+  employeeId: number,
+  text: string | null,
+  fileType: AttachmentKind | null
+): Promise<void> {
+  const ownerId = (process.env.OWNER_TELEGRAM_ID ?? '').trim();
+  if (!ownerId || !_bot) return;
+  const { rows } = await pool.query<{ employeeName: string; requestText: string }>(
+    `SELECT e.name AS "employeeName", r.request_text AS "requestText"
+     FROM employee_requests r
+     JOIN employees e ON e.id = $2
+     WHERE r.id = $1`,
+    [requestId, employeeId]
+  );
+  if (!rows[0]) return;
+  const fileLabel =
+    fileType === 'photo' ? '📷 фото' :
+    fileType === 'video' ? '🎬 видео' :
+    fileType === 'document' ? '📎 файл' : '';
+  const preview =
+    text ? `«${text.slice(0, 100)}${text.length > 100 ? '…' : ''}»` :
+    fileLabel ? fileLabel : '(пусто)';
+  const escName = rows[0].employeeName.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const escReqText = rows[0].requestText.slice(0, 80).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const html =
+    `📨 <b>Ответ на запрос #${requestId}</b>\n\n` +
+    `От: <b>${escName}</b>\n` +
+    `Запрос: <i>${escReqText}${rows[0].requestText.length > 80 ? '…' : ''}</i>\n` +
+    `Ответ: ${preview}\n\n` +
+    `Открыть в админке: https://crew.145-223-121-47.sslip.io/`;
+  await _bot.api.sendMessage(ownerId, html, { parse_mode: 'HTML' }).catch(() => {});
 }
 
 export async function listRequests(filter?: { status?: string }): Promise<RequestSummary[]> {
@@ -298,8 +351,10 @@ export async function getRequest(id: number): Promise<{
             rr.employee_id          AS "employeeId",
             e.name                  AS "employeeName",
             rr.text_content         AS "textContent",
-            rr.photo_url            AS "photoUrl",
-            rr.photo_thumbnail_url  AS "photoThumbnailUrl",
+            rr.file_url             AS "fileUrl",
+            rr.file_thumbnail_url   AS "fileThumbnailUrl",
+            rr.file_type            AS "fileType",
+            rr.file_name            AS "fileName",
             rr.created_at           AS "createdAt"
      FROM request_responses rr
      JOIN employees e ON e.id = rr.employee_id

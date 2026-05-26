@@ -3420,15 +3420,28 @@ async function openRequestModal(id) {
       html += '<div style="display:flex;flex-direction:column;gap:10px">';
       for (const resp of data.responses) {
         const time = new Date(resp.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
+        let fileBlock = '';
+        if (resp.fileUrl) {
+          if (resp.fileType === 'photo') {
+            fileBlock = `<a href="${resp.fileUrl}" target="_blank" rel="noopener"><img src="${resp.fileThumbnailUrl || resp.fileUrl}" style="max-width:300px;max-height:300px;border-radius:6px;display:block" alt="фото"></a>`;
+          } else if (resp.fileType === 'video') {
+            fileBlock = `<video src="${resp.fileUrl}" controls preload="metadata" style="max-width:400px;max-height:300px;border-radius:6px;display:block;background:#000" poster="${resp.fileThumbnailUrl || ''}"></video>`;
+          } else if (resp.fileType === 'document') {
+            const fname = resp.fileName || 'файл';
+            fileBlock = `<a href="${resp.fileUrl}" target="_blank" rel="noopener" download="${esc(fname)}" style="display:inline-flex;gap:6px;align-items:center;padding:6px 10px;border:1px solid var(--border);border-radius:6px;text-decoration:none;color:inherit;background:var(--surface)"><i data-lucide="file"></i> ${esc(fname)}</a>`;
+          }
+        }
         html += `<div style="border:1px solid var(--border);border-radius:6px;padding:10px;background:var(--bg)">
           <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:6px">
             <span><b>${esc(resp.employeeName)}</b></span><span>${time}</span>
           </div>
-          ${resp.textContent ? `<div style="white-space:pre-wrap;margin-bottom:${resp.photoUrl ? '8px' : '0'}">${esc(resp.textContent)}</div>` : ''}
-          ${resp.photoUrl ? `<a href="${resp.photoUrl}" target="_blank" rel="noopener"><img src="${resp.photoThumbnailUrl || resp.photoUrl}" style="max-width:300px;max-height:300px;border-radius:6px;display:block" alt="фото"></a>` : ''}
+          ${resp.textContent ? `<div style="white-space:pre-wrap;margin-bottom:${fileBlock ? '8px' : '0'}">${esc(resp.textContent)}</div>` : ''}
+          ${fileBlock}
         </div>`;
       }
       html += '</div>';
+      // Перерендерить lucide-иконки в новой модалке
+      setTimeout(() => renderIcons(), 0);
     }
     body.innerHTML = html;
   } catch (e) {

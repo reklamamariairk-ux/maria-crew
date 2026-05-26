@@ -153,11 +153,29 @@ export function createBot(token: string): Bot<BotContext> {
 
     const reply = ctx.message.reply_to_message;
     const photo = ctx.message.photo;
-    const photoFileId = photo && photo.length > 0 ? photo[photo.length - 1].file_id : null;
+    const video = ctx.message.video;
+    const doc = ctx.message.document;
     const text = ctx.message.text ?? ctx.message.caption ?? null;
+
+    let fileId: string | null = null;
+    let fileKind: 'photo' | 'video' | 'document' | null = null;
+    let fileName: string | null = null;
+    if (photo && photo.length > 0) {
+      fileId = photo[photo.length - 1].file_id; // самое большое разрешение
+      fileKind = 'photo';
+    } else if (video) {
+      fileId = video.file_id;
+      fileKind = 'video';
+      fileName = video.file_name ?? null;
+    } else if (doc) {
+      fileId = doc.file_id;
+      fileKind = 'document';
+      fileName = doc.file_name ?? null;
+    }
+
     // Команды (/start, /coins, etc.) уже обработаны выше; сюда не дойдут.
     // Если сообщение без полезной нагрузки — пропускаем.
-    if (!photoFileId && !text) { return next(); }
+    if (!fileId && !text) { return next(); }
 
     try {
       const res = await handleEmployeeReply({
@@ -165,7 +183,9 @@ export function createBot(token: string): Bot<BotContext> {
         replyToMessageId: reply?.message_id ?? null,
         employeeId: ctx.employee.id,
         text,
-        photoFileId,
+        fileId,
+        fileKind,
+        fileName,
         messageId: ctx.message.message_id,
       });
       if (res) {
