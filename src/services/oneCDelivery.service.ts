@@ -40,6 +40,7 @@ export function isOneCConfigured(): boolean {
 
 /** Конвертирует телефон в формат 1С: 11 цифр с ведущей 8 (89XXXXXXXXX).
  *  Принимает любой ввод (+79..., 79..., 89..., с пробелами/скобками/дефисами).
+ *  Валидирует что это российский мобильный (после префикса первая цифра = 9).
  *  Возвращает 11-значную строку либо null если телефон не валиден. */
 export function normalizePhoneFor1C(input: string | null | undefined): string | null {
   if (!input) return null;
@@ -54,6 +55,9 @@ export function normalizePhoneFor1C(input: string | null | undefined): string | 
     return null; // невалидный размер
   }
   if (rest.length !== 10) return null;
+  // Российский мобильный — всегда начинается с 9. Городские/иностранные
+  // в 1С Маши не зарегистрированы как дисконтные карты, отбрасываем.
+  if (rest[0] !== '9') return null;
   return '8' + rest;
 }
 
