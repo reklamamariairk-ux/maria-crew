@@ -6,6 +6,10 @@
 // flow до того, как Hellstaff закроет правки BSL (см. session_log 2026-05-15
 // и memo sales-dashboard). Когда endpoint в УПП появится — добавить переменную
 // в env и логика автоматически переключится.
+//
+// Формат телефона: 1С хранит дисконтные карты в формате 8XXXXXXXXXX
+// (89...) с ведущей 8, а у нас в employees.phone_normalized всегда
+// формат 79XXXXXXXXXX (с 7). Конвертируем в normalizePhoneFor1C().
 
 export interface DeliveryRequest {
   phone: string;
@@ -34,6 +38,25 @@ export function isOneCConfigured(): boolean {
   return ONE_C_URL.length > 0;
 }
 
+/** Конвертирует телефон в формат 1С: 11 цифр с ведущей 8 (89XXXXXXXXX).
+ *  Принимает любой ввод (+79..., 79..., 89..., с пробелами/скобками/дефисами).
+ *  Возвращает 11-значную строку либо null если телефон не валиден. */
+export function normalizePhoneFor1C(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const digits = String(input).replace(/\D/g, '');
+  // Снимаем международный префикс если есть: 7900... → 900..., 8900... → 900...
+  let rest: string;
+  if (digits.length === 11 && (digits[0] === '7' || digits[0] === '8')) {
+    rest = digits.slice(1);
+  } else if (digits.length === 10) {
+    rest = digits;
+  } else {
+    return null; // невалидный размер
+  }
+  if (rest.length !== 10) return null;
+  return '8' + rest;
+}
+
 export async function createDeliveryDocument(req: DeliveryRequest): Promise<DeliveryResult> {
   if (!ONE_C_URL) {
     // Mock: эндпоинт в УПП ещё не зарегистрирован. Симулируем успех,
@@ -45,8 +68,19 @@ export async function createDeliveryDocument(req: DeliveryRequest): Promise<Deli
     };
   }
 
+  // Конвертируем телефон в формат 1С (89XXXXXXXXX). Если телефон невалиден —
+  // не идём в 1С, сразу возвращаем failed с понятной ошибкой.
+  const phone1C = normalizePhoneFor1C(req.phone);
+  if (!phone1C) {
+    return {
+      ok: false,
+      status: 'failed',
+      error: `некорректный формат телефона: ${req.phone}`,
+    };
+  }
+
   const body = {
-    phone: req.phone,
+    phone: phone1C,
     productId: req.productId,
     qty: req.qty,
     externalRef: String(req.externalRef),
