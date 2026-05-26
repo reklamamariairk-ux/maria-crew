@@ -482,6 +482,7 @@ function refreshCurrentTab() {
   if (state.currentTab === 'settings')    loadMvpConfig();
   if (state.currentTab === 'adminUsers')  loadAdminUsers();
   if (state.currentTab === 'notify')      loadNotifyForm();
+  if (state.currentTab === 'requests')    loadRequests();
 }
 
 // ── Period ────────────────────────────────────────────────────────────────────
@@ -3297,6 +3298,146 @@ async function loadEngagement() {
   const updated = new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
   el.innerHTML = `<div class="eng-chart">${bars}</div>
     <p class="text-muted" style="font-size:11px;margin-top:6px;text-align:right">Обновлено в ${updated}</p>`;
+}
+
+// ── Запросы сотрудникам ───────────────────────────────────────────────────────
+
+const REQUEST_STATUS_LABELS = {
+  open:     '<span style="color:#1976d2">● Открыт</span>',
+  answered: '<span style="color:#388e3c">● Отвечен</span>',
+  closed:   '<span style="color:var(--muted)">● Закрыт</span>',
+};
+
+async function loadRequests() {
+  const tbody = document.getElementById('requests-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = skeletonRows(6, 5);
+  const status = document.getElementById('req-status-filter')?.value || '';
+  const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+  const list = await api('GET', '/requests' + qs) || [];
+  if (list.length === 0) {
+    tbody.innerHTML = emptyRow(7, 'inbox', 'Запросов нет');
+    renderIcons();
+    return;
+  }
+  tbody.innerHTML = list.map(r => {
+    const target = r.targetEmployeeName
+      ? `👤 ${esc(r.targetEmployeeName)}`
+      : (r.targetStoreName ? `🏪 ${esc(r.targetStoreName)}` : '—');
+    const created = new Date(r.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
+    return `<tr style="cursor:pointer" onclick="openRequestModal(${r.id})">
+      <td style="color:var(--muted);font-size:12px">${r.id}</td>
+      <td>${target}</td>
+      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.requestText)}</td>
+      <td class="col-hide-sm">${r.responseCount} / ${r.notificationsSent}</td>
+      <td>${REQUEST_STATUS_LABELS[r.status] || r.status}</td>
+      <td class="col-hide-md" style="color:var(--muted);font-size:12px">${created}</td>
+      <td onclick="event.stopPropagation()">
+        ${r.status !== 'closed' ? `<button class="btn btn-ghost btn-sm" onclick="closeReq(${r.id})" title="Закрыть"><i data-lucide="x"></i></button>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+  renderIcons();
+}
+
+async function showNewRequest() {
+  const form = document.getElementById('new-request-form');
+  form.classList.toggle('hidden');
+  if (form.classList.contains('hidden')) return;
+  // Заполняем выпадалки точек и сотрудников
+  const storesSel = document.getElementById('new-req-store');
+  storesSel.innerHTML = '<option value="">— выбери —</option>'
+    + (state.stores || []).map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  const empsSel = document.getElementById('new-req-employee');
+  if (empsSel.options.length <= 1) {
+    const emps = await api('GET', '/employees') || [];
+    empsSel.innerHTML = '<option value="">— выбери —</option>'
+      + emps.filter(e => e.isActive).map(e =>
+          `<option value="${e.id}">${esc(e.name)}${e.storeName ? ` — ${esc(e.storeName)}` : ''}</option>`
+        ).join('');
+  }
+}
+
+function onNewReqTargetChange() {
+  const t = document.getElementById('new-req-target').value;
+  document.getElementById('new-req-emp-label').classList.toggle('hidden', t !== 'employee');
+  document.getElementById('new-req-store-label').classList.toggle('hidden', t !== 'store');
+}
+
+async function submitRequest() {
+  const target = document.getElementById('new-req-target').value;
+  const text = document.getElementById('new-req-text').value.trim();
+  if (!text) { toast('Введи текст запроса'); return; }
+  const body = { requestText: text };
+  if (target === 'employee') {
+    const id = parseInt(document.getElementById('new-req-employee').value, 10);
+    if (!id) { toast('Выбери сотрудника'); return; }
+    body.targetEmployeeId = id;
+  } else {
+    const id = parseInt(document.getElementById('new-req-store').value, 10);
+    if (!id) { toast('Выбери точку'); return; }
+    body.targetStoreId = id;
+  }
+  try {
+    const res = await api('POST', '/requests', body);
+    toast(`✅ Запрос отправлен. Доставлено: ${res.sent}, пропущено: ${res.skipped}`);
+    document.getElementById('new-request-form').classList.add('hidden');
+    document.getElementById('new-req-text').value = '';
+    loadRequests();
+  } catch (e) { toastError(e); }
+}
+
+async function closeReq(id) {
+  const ok = await confirmDialog('Закрыть запрос?', 'Сотрудники больше не смогут на него отвечать.');
+  if (!ok) return;
+  try {
+    await api('POST', `/requests/${id}/close`);
+    toast('✅ Запрос закрыт');
+    loadRequests();
+  } catch (e) { toastError(e); }
+}
+
+async function openRequestModal(id) {
+  const modal = document.getElementById('modal-request');
+  const body = document.getElementById('modal-req-body');
+  modal.classList.remove('hidden');
+  body.innerHTML = '<p class="text-muted">Загрузка...</p>';
+  document.getElementById('modal-req-title').textContent = `Запрос #${id}`;
+  try {
+    const data = await api('GET', `/requests/${id}`);
+    const r = data.request;
+    const target = r.targetEmployeeName ? `👤 ${esc(r.targetEmployeeName)}` : `🏪 ${esc(r.targetStoreName)}`;
+    let html = `
+      <div style="margin-bottom:14px">
+        <div style="color:var(--muted);font-size:12px;margin-bottom:4px">Кому: ${target} · ${REQUEST_STATUS_LABELS[r.status] || r.status}</div>
+        <div style="white-space:pre-wrap;background:var(--bg);padding:10px;border-radius:6px;border:1px solid var(--border)">${esc(r.requestText)}</div>
+      </div>
+      <h3 style="margin:14px 0 8px;font-size:14px">Ответы (${data.responses.length})</h3>
+    `;
+    if (data.responses.length === 0) {
+      html += `<p class="text-muted">Пока никто не ответил.</p>`;
+    } else {
+      html += '<div style="display:flex;flex-direction:column;gap:10px">';
+      for (const resp of data.responses) {
+        const time = new Date(resp.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
+        html += `<div style="border:1px solid var(--border);border-radius:6px;padding:10px;background:var(--bg)">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:6px">
+            <span><b>${esc(resp.employeeName)}</b></span><span>${time}</span>
+          </div>
+          ${resp.textContent ? `<div style="white-space:pre-wrap;margin-bottom:${resp.photoUrl ? '8px' : '0'}">${esc(resp.textContent)}</div>` : ''}
+          ${resp.photoUrl ? `<a href="${resp.photoUrl}" target="_blank" rel="noopener"><img src="${resp.photoThumbnailUrl || resp.photoUrl}" style="max-width:300px;max-height:300px;border-radius:6px;display:block" alt="фото"></a>` : ''}
+        </div>`;
+      }
+      html += '</div>';
+    }
+    body.innerHTML = html;
+  } catch (e) {
+    body.innerHTML = `<p style="color:var(--red)">Ошибка: ${esc(e.message)}</p>`;
+  }
+}
+
+function closeRequestModal() {
+  document.getElementById('modal-request').classList.add('hidden');
 }
 
 // ── Рассылка ──────────────────────────────────────────────────────────────────

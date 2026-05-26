@@ -16,6 +16,7 @@ import cardRoutes from './routes/cards';
 import heroRoutes from './routes/heroes';
 import prizeRoutes from './routes/prizes';
 import catalogRoutes from './routes/catalog';
+import requestsRoutes from './routes/requests';
 import auditRoutes from './routes/audit';
 import configRoutes from './routes/config';
 import dashboardRoutes from './routes/dashboard';
@@ -83,6 +84,7 @@ router.use('/cards',       denyForCoinAdmin, cardRoutes);
 router.use('/heroes',      denyForCoinAdmin, heroRoutes);
 router.use('/prizes',      denyForCoinAdmin, prizeRoutes);
 router.use('/catalog',     denyForCoinAdmin, catalogRoutes);
+router.use('/requests',    denyForCoinAdmin, requestsRoutes);
 router.use('/audit',       denyForCoinAdmin, auditRoutes);
 router.use('/notify',      denyForCoinAdmin, notifyRoutes);
 

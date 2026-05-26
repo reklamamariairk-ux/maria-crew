@@ -12,6 +12,7 @@ import { handleStore, handleStoreCallback } from './commands/store';
 import { handleCrew } from './commands/crew';
 import { handleMe } from './commands/me';
 import { markBotError, markUpdate } from '../diagnostics';
+import { handleEmployeeReply } from '../services/request.service';
 
 export function createBot(token: string): Bot<BotContext> {
   const bot = new Bot<BotContext>(token);
@@ -139,6 +140,42 @@ export function createBot(token: string): Bot<BotContext> {
     } catch (err) {
       console.error('[contact] save error:', err);
       await ctx.reply('Не удалось сохранить номер, попробуй позже.');
+    }
+  });
+
+  // ── Ответ сотрудника на запрос менеджера (reply на сообщение бота) ──────────
+  // Срабатывает только когда есть reply_to_message и сотрудник в БД.
+  // Внутри request.service ищем привязку по chat_id+reply_to_message_id.
+  bot.on('message', async (ctx, next) => {
+    const reply = ctx.message.reply_to_message;
+    if (!reply) { return next(); }
+    if (!ctx.employee) { return next(); }
+    if (!ctx.chat?.id) { return next(); }
+
+    // Берём самое большое фото (последнее в массиве PhotoSize).
+    const photo = ctx.message.photo;
+    const photoFileId = photo && photo.length > 0 ? photo[photo.length - 1].file_id : null;
+    const text = ctx.message.text ?? ctx.message.caption ?? null;
+    if (!photoFileId && !text) { return next(); }
+
+    try {
+      const res = await handleEmployeeReply({
+        chatId: ctx.chat.id,
+        replyToMessageId: reply.message_id,
+        employeeId: ctx.employee.id,
+        text,
+        photoFileId,
+        messageId: ctx.message.message_id,
+      });
+      if (res) {
+        await ctx.reply('✅ Ответ принят, спасибо!');
+      } else {
+        // Не наш запрос — пропускаем дальше (вдруг это другой handler нужен).
+        return next();
+      }
+    } catch (err) {
+      console.error('[request reply] обработка не удалась:', err);
+      await ctx.reply('⚠️ Не удалось сохранить ответ. Попробуй ещё раз или напиши руководителю.');
     }
   });
 

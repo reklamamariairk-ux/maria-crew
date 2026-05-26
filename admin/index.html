@@ -124,6 +124,9 @@
       <button class="nav-item" data-tab="notify" onclick="switchTab('notify')">
         <i data-lucide="send"></i> Рассылка
       </button>
+      <button class="nav-item" data-tab="requests" onclick="switchTab('requests')">
+        <i data-lucide="message-square"></i> Запросы
+      </button>
       <button class="nav-item role-superadmin-only" data-tab="settings" onclick="switchTab('settings')">
         <i data-lucide="settings"></i> Настройки
       </button>
@@ -1204,7 +1207,89 @@
       </div>
     </div>
 
+    <!-- ── Запросы ─────────────────────────────────────────────────── -->
+    <div id="tab-requests" class="tab-content hidden">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Запросы</h1>
+          <p class="page-subtitle">Попросить сотрудника или точку прислать фото/ответ через бота</p>
+        </div>
+        <button class="btn btn-primary" onclick="showNewRequest()"><i data-lucide="plus"></i> Новый запрос</button>
+      </div>
+
+      <div id="new-request-form" class="hidden card card-pad" style="margin-bottom:16px;max-width:640px">
+        <p class="section-title">Создать запрос</p>
+        <div class="form-col">
+          <label>Кому
+            <select id="new-req-target" onchange="onNewReqTargetChange()" class="input" style="width:240px">
+              <option value="employee">Конкретный сотрудник</option>
+              <option value="store">Все сотрудники точки</option>
+            </select>
+          </label>
+          <label id="new-req-emp-label">Сотрудник
+            <select id="new-req-employee" class="input" style="width:300px">
+              <option value="">— выбери —</option>
+            </select>
+          </label>
+          <label id="new-req-store-label" class="hidden">Точка
+            <select id="new-req-store" class="input" style="width:300px">
+              <option value="">— выбери —</option>
+            </select>
+          </label>
+          <label>Текст запроса
+            <textarea id="new-req-text" class="input" rows="3" maxlength="3000" placeholder="Например: пришли фото витрины со стороны входа"></textarea>
+          </label>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="submitRequest()"><i data-lucide="send"></i> Отправить</button>
+            <button class="btn btn-ghost" onclick="document.getElementById('new-request-form').classList.add('hidden')">Отмена</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="search-input">
+          <i data-lucide="filter"></i>
+          <select id="req-status-filter" onchange="loadRequests()" class="input" style="width:200px">
+            <option value="">Все статусы</option>
+            <option value="open">Открытые</option>
+            <option value="answered">Отвечены</option>
+            <option value="closed">Закрытые</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:50px">#</th>
+            <th>Кому</th>
+            <th>Текст</th>
+            <th style="width:90px" class="col-hide-sm">Ответов</th>
+            <th style="width:110px">Статус</th>
+            <th style="width:140px" class="col-hide-md">Создан</th>
+            <th style="width:90px"></th>
+          </tr></thead>
+          <tbody id="requests-tbody">
+            <tr><td colspan="7" class="empty">Загрузка...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </main>
+</div>
+
+<!-- ── Модалка: просмотр запроса + ответы ────────────────────────────── -->
+<div id="modal-request" class="modal-overlay hidden" onclick="if(event.target===this)closeRequestModal()">
+  <div class="modal-box" style="max-width:720px;width:95%">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-req-title">Запрос</h2>
+      <button class="modal-close" onclick="closeRequestModal()"><i data-lucide="x"></i></button>
+    </div>
+    <div id="modal-req-body" style="overflow-y:auto;max-height:70vh;padding:16px">
+      <p class="text-muted">Загрузка...</p>
+    </div>
+  </div>
 </div>
 
 <!-- ── Модалка: Карточка сотрудника ─────────────────────────────────────── -->

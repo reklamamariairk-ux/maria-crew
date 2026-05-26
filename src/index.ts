@@ -7,6 +7,7 @@ import { createBot } from './bot/bot';
 import { createServer } from './server';
 import { initNotifications } from './bot/notifications/sender';
 import { initScheduler } from './scheduler/index';
+import { initRequestService } from './services/request.service';
 import { effectiveAdminSecret } from './api/middleware/adminAuth';
 import { ensureBootstrapSuperadmin } from './services/adminAuth.service';
 import { markDbReady, markDbError } from './diagnostics';
@@ -271,6 +272,7 @@ async function main() {
 
   // 2. Уведомления и планировщик не требуют БД
   initNotifications(bot);
+  initRequestService(bot);
   initScheduler(bot);
 
   // 3. Webhook устанавливаем ДО ожидания БД — чтобы бот принимал сообщения

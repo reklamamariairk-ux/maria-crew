@@ -19,6 +19,8 @@ export type AuditAction =
   | 'exchange_reject'
   | 'exchange_1c_retry_failed'
   | 'catalog_refresh'
+  | 'request_create'
+  | 'request_close'
   | 'store_create'
   | 'store_update'
   | 'prize_create'
