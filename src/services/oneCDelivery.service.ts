@@ -32,6 +32,10 @@ export interface DeliveryResult {
 
 const ONE_C_URL = (process.env.ONE_C_DELIVERY_URL ?? '').trim();
 const ONE_C_AUTH = (process.env.ONE_C_DELIVERY_AUTH ?? '').trim();
+// Альтернатива Basic auth: X-API-Key. Используется когда URL указывает на
+// прокси sales-dashboard (Hostinger вне whitelist 1С → ходим через Timeweb).
+// Если задан — используется вместо Basic.
+const ONE_C_API_KEY = (process.env.ONE_C_DELIVERY_KEY ?? '').trim();
 const ONE_C_TIMEOUT_MS = 15_000;
 
 export function isOneCConfigured(): boolean {
@@ -96,14 +100,15 @@ export async function createDeliveryDocument(req: DeliveryRequest): Promise<Deli
     try {
       const ctrl = new AbortController();
       const tmr = setTimeout(() => ctrl.abort(), ONE_C_TIMEOUT_MS);
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (ONE_C_API_KEY) {
+        headers['X-API-Key'] = ONE_C_API_KEY;
+      } else if (ONE_C_AUTH) {
+        headers['Authorization'] = `Basic ${Buffer.from(ONE_C_AUTH).toString('base64')}`;
+      }
       const res = await fetch(ONE_C_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(ONE_C_AUTH
-            ? { Authorization: `Basic ${Buffer.from(ONE_C_AUTH).toString('base64')}` }
-            : {}),
-        },
+        headers,
         body: JSON.stringify(body),
         signal: ctrl.signal,
       });
@@ -122,15 +127,18 @@ export async function createDeliveryDocument(req: DeliveryRequest): Promise<Deli
       }
 
       const json = (await res.json()) as {
-        ok?: boolean;
+        ok?: boolean | string;
         documentId?: string;
         error?: string;
+        code?: string;
       };
-      if (json.ok === false || !json.documentId) {
+      // 1С Hellstaff'а отдаёт ok как строку "true"/"false" — нормализуем.
+      const isOk = json.ok === true || json.ok === 'true';
+      if (!isOk || !json.documentId) {
         return {
           ok: false,
           status: 'failed',
-          error: json.error ?? 'ответ 1С без documentId',
+          error: json.error ?? json.code ?? 'ответ 1С без documentId',
         };
       }
       return { ok: true, status: 'created', documentId: json.documentId };
