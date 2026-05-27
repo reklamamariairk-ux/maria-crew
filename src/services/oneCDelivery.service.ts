@@ -42,27 +42,35 @@ export function isOneCConfigured(): boolean {
   return ONE_C_URL.length > 0;
 }
 
-/** Конвертирует телефон в формат 1С: 11 цифр с ведущей 8 (89XXXXXXXXX).
+/** Конвертирует телефон в формат 1С УПП Маши.
  *  Принимает любой ввод (+79..., 79..., 89..., с пробелами/скобками/дефисами).
  *  Валидирует что это российский мобильный (после префикса первая цифра = 9).
- *  Возвращает 11-значную строку либо null если телефон не валиден. */
+ *
+ *  Формат вывода — `+7 XXX XXX-XX-XX` (стандартный российский display-формат
+ *  с пробелами и дефисами). Hellstaff в 1С делает strict-match по строке,
+ *  у GR в карте записано именно так: `+7 999 420-61-01`. Большинство
+ *  карт у Маши заведены руками в этом же стиле.
+ *
+ *  Если у конкретного сотрудника телефон в 1С в другом формате — не найдёт,
+ *  тогда либо менять формат в 1С под наш, либо ждать когда Hellstaff
+ *  добавит нормализацию (поиск по последним 10 цифрам).
+ *
+ *  Возвращает форматированную строку либо null если телефон не валиден. */
 export function normalizePhoneFor1C(input: string | null | undefined): string | null {
   if (!input) return null;
   const digits = String(input).replace(/\D/g, '');
-  // Снимаем международный префикс если есть: 7900... → 900..., 8900... → 900...
   let rest: string;
   if (digits.length === 11 && (digits[0] === '7' || digits[0] === '8')) {
     rest = digits.slice(1);
   } else if (digits.length === 10) {
     rest = digits;
   } else {
-    return null; // невалидный размер
+    return null;
   }
   if (rest.length !== 10) return null;
-  // Российский мобильный — всегда начинается с 9. Городские/иностранные
-  // в 1С Маши не зарегистрированы как дисконтные карты, отбрасываем.
   if (rest[0] !== '9') return null;
-  return '8' + rest;
+  // Формат «+7 XXX XXX-XX-XX»
+  return `+7 ${rest.slice(0, 3)} ${rest.slice(3, 6)}-${rest.slice(6, 8)}-${rest.slice(8, 10)}`;
 }
 
 export async function createDeliveryDocument(req: DeliveryRequest): Promise<DeliveryResult> {
