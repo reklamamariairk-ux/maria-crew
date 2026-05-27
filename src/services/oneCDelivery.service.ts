@@ -42,21 +42,17 @@ export function isOneCConfigured(): boolean {
   return ONE_C_URL.length > 0;
 }
 
-/** Конвертирует телефон в формат 1С УПП Маши.
+/** Конвертирует телефон в формат 1С: 11 цифр с ведущей 8 (89XXXXXXXXX).
  *  Принимает любой ввод (+79..., 79..., 89..., с пробелами/скобками/дефисами).
  *  Валидирует что это российский мобильный (после префикса первая цифра = 9).
  *
- *  Формат вывода — `+7 (XXX) XXX-XX-XX` (с круглыми скобками вокруг кода).
- *  Это РОВНО тот формат что записан в `ИнформационныеКарты.Телефон` у Маши
- *  (проверено по скрину карты GR `BK 093548`).
+ *  ВАЖНО (2026-05-27): Hellstaff не умеет находить карту ни в одном
+ *  формате — БАГ в его BSL (ждём BSL-сниппет от него). С форматом 89XXX
+ *  он делает FALLBACK на «Розничный покупатель» — документ создаётся,
+ *  товар списывается, но НЕ привязан к карте сотрудника. Это плохо
+ *  для аудита, но позволяет автовыдаче работать.
  *
- *  ВАЖНО (2026-05-27): прямой probe этого формата через прокси давал
- *  phone_not_found — Hellstaff не находит даже точную копию строки. Возможно
- *  ищет в другом справочнике или в Анкета участника бонусной программы.
- *  Пробуем через полный flow maria-crew (вдруг что-то отличается) и ждём
- *  ответ Hellstaff'а с BSL-сниппетом поиска.
- *
- *  Возвращает форматированную строку либо null если телефон не валиден. */
+ *  Возвращает 11-значную строку либо null если телефон не валиден. */
 export function normalizePhoneFor1C(input: string | null | undefined): string | null {
   if (!input) return null;
   const digits = String(input).replace(/\D/g, '');
@@ -70,8 +66,7 @@ export function normalizePhoneFor1C(input: string | null | undefined): string | 
   }
   if (rest.length !== 10) return null;
   if (rest[0] !== '9') return null;
-  // Формат «+7 (XXX) XXX-XX-XX» — как в карте 1С УПП Маши
-  return `+7 (${rest.slice(0, 3)}) ${rest.slice(3, 6)}-${rest.slice(6, 8)}-${rest.slice(8, 10)}`;
+  return '8' + rest;
 }
 
 export async function createDeliveryDocument(req: DeliveryRequest): Promise<DeliveryResult> {
