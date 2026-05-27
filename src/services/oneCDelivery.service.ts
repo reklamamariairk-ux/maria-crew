@@ -42,20 +42,18 @@ export function isOneCConfigured(): boolean {
   return ONE_C_URL.length > 0;
 }
 
-/** Конвертирует телефон в формат 1С УПП Маши.
+/** Конвертирует телефон в формат 1С: 11 цифр с ведущей 8 (89XXXXXXXXX).
  *  Принимает любой ввод (+79..., 79..., 89..., с пробелами/скобками/дефисами).
  *  Валидирует что это российский мобильный (после префикса первая цифра = 9).
  *
- *  Формат вывода — `+7 XXX XXX-XX-XX` (стандартный российский display-формат
- *  с пробелами и дефисами). Hellstaff в 1С делает strict-match по строке,
- *  у GR в карте записано именно так: `+7 999 420-61-01`. Большинство
- *  карт у Маши заведены руками в этом же стиле.
+ *  ВАЖНО (2026-05-27): Hellstaff фактически не умеет находить карту ни в
+ *  одном формате — БАГ в его BSL-поиске. С этим форматом (89XXX) он
+ *  делает FALLBACK на «Розничный покупатель» — документ создаётся, товар
+ *  списывается, но НЕ привязан к карте сотрудника (теряется в учёте).
+ *  Это плохо для аудита, но позволяет автовыдаче работать пока ждём
+ *  фикс Hellstaff'а (письмо отправлено 27.05).
  *
- *  Если у конкретного сотрудника телефон в 1С в другом формате — не найдёт,
- *  тогда либо менять формат в 1С под наш, либо ждать когда Hellstaff
- *  добавит нормализацию (поиск по последним 10 цифрам).
- *
- *  Возвращает форматированную строку либо null если телефон не валиден. */
+ *  Возвращает 11-значную строку либо null если телефон не валиден. */
 export function normalizePhoneFor1C(input: string | null | undefined): string | null {
   if (!input) return null;
   const digits = String(input).replace(/\D/g, '');
@@ -69,8 +67,7 @@ export function normalizePhoneFor1C(input: string | null | undefined): string | 
   }
   if (rest.length !== 10) return null;
   if (rest[0] !== '9') return null;
-  // Формат «+7 XXX XXX-XX-XX»
-  return `+7 ${rest.slice(0, 3)} ${rest.slice(3, 6)}-${rest.slice(6, 8)}-${rest.slice(8, 10)}`;
+  return '8' + rest;
 }
 
 export async function createDeliveryDocument(req: DeliveryRequest): Promise<DeliveryResult> {
