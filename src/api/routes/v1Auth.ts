@@ -71,9 +71,11 @@ router.post(
 // POST /api/v1/auth/login-by-phone — упрощённый логин без PIN.
 // ВНИМАНИЕ: меньше безопасности, использовать только для внутренних
 // сотрудников Маши. Любой кто знает телефон сможет войти.
+// Rate-limit 100/час с IP — несколько сотрудников могут логиниться
+// с одного офисного Wi-Fi.
 router.post(
   '/login-by-phone',
-  rateLimit(20, 60 * 60 * 1000),
+  rateLimit(100, 60 * 60 * 1000),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { phone } = req.body as { phone?: string };
