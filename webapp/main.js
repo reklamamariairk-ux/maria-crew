@@ -2778,10 +2778,10 @@ async function doExchange(prizeId, btn) {
     const name  = prize ? prize.name : 'приз';
     const cost  = prize ? priceLabel(prize) : '';
     const msg   = `Обменять на «${name}»?\n\n${cost ? `Стоимость: ${cost}\n\n` : ''}Заявка уйдёт руководителю на подтверждение.`;
-    const confirmed = await new Promise(resolve => {
-      if (tg && tg.showConfirm) tg.showConfirm(msg, resolve);
-      else resolve(window.confirm(msg));
-    });
+    // window.confirm работает во всех клиентах (TG/Capacitor/браузер).
+    // tg.showConfirm падает с WebAppMethodUnsupported в старых TG-клиентах
+    // и в Capacitor-WebView.
+    const confirmed = window.confirm(msg);
     if (!confirmed) { cancelled = true; return; }
 
     // Индикатор «отправляем» — заменяем текст той кнопки, по которой кликнули
