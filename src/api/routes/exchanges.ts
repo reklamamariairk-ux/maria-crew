@@ -89,8 +89,12 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     );
     res.json(exchange);
 
-    // Получаем prize.name + employee.id для уведомления (после ответа клиенту)
-    if (status === 'fulfilled' || status === 'rejected') {
+    // Уведомление сотрудника и audit — смотрим на ФИНАЛЬНЫЙ статус заявки
+    // (processExchange может авто-перевести approved → fulfilled когда
+    // tryPushDelivery успешно создал документ в 1С). Раньше проверяли
+    // input body.status, поэтому notification не уходил при автовыдаче.
+    const finalStatus = exchange.status;
+    if (finalStatus === 'fulfilled' || finalStatus === 'rejected') {
       pool.query<{ employeeId: number; prizeName: string }>(
         `SELECT se.employee_id AS "employeeId", p.name AS "prizeName"
          FROM store_exchanges se JOIN prizes p ON p.id = se.prize_id
@@ -98,10 +102,10 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
         [parseInt(req.params.id, 10)]
       ).then(({ rows }) => {
         if (rows[0]) {
-          notifyExchangeStatus(rows[0].employeeId, rows[0].prizeName, status, notes).catch(() => {});
+          notifyExchangeStatus(rows[0].employeeId, rows[0].prizeName, finalStatus, notes).catch(() => {});
         }
       }).catch(() => {});
-      const action = status === 'fulfilled' ? 'exchange_fulfill' : 'exchange_reject';
+      const action = finalStatus === 'fulfilled' ? 'exchange_fulfill' : 'exchange_reject';
       logAudit(action, { exchangeId: parseInt(req.params.id, 10), processedBy: req.adminUserId }).catch(() => {});
     }
   } catch (err) {
