@@ -1135,8 +1135,8 @@ async function init() {
         uniqueHeroes: me.uniqueHeroes ?? 0,
       });
 
-      // Push-уведомления отключены до настройки Firebase
-      // setupPushNotifications().catch(err => console.warn('[push] setup failed:', err));
+      // Push-уведомления (только в Capacitor APK — в Mini App и браузере silent no-op)
+      setupPushNotifications().catch(err => console.warn('[push] setup failed:', err));
     } catch (err) {
       stopLoadingProgress();
       saveMobileToken(null); clearCachedMe();
