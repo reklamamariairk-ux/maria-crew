@@ -3350,14 +3350,21 @@ async function loadRequests() {
     } else {
       target = '—';
     }
-    const created = new Date(r.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
-    return `<tr style="cursor:pointer" onclick="openRequestModal(${r.id})">
+    const activity = new Date(r.lastActivityAt || r.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
+    const unread = r.unreadCount || 0;
+    const rowStyle = unread > 0
+      ? 'cursor:pointer;background:rgba(25,118,210,.06);font-weight:500'
+      : 'cursor:pointer';
+    const unreadBadge = unread > 0
+      ? ` <span style="display:inline-block;background:#1976d2;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:600;margin-left:6px;min-width:18px;text-align:center">${unread > 99 ? '99+' : unread}</span>`
+      : '';
+    return `<tr style="${rowStyle}" onclick="openRequestModal(${r.id})">
       <td style="color:var(--muted);font-size:12px">${r.id}</td>
-      <td>${target}</td>
+      <td>${target}${unreadBadge}</td>
       <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.requestText)}</td>
       <td class="col-hide-sm">${r.responseCount} / ${r.notificationsSent}</td>
       <td>${REQUEST_STATUS_LABELS[r.status] || r.status}</td>
-      <td class="col-hide-md" style="color:var(--muted);font-size:12px">${created}</td>
+      <td class="col-hide-md" style="color:var(--muted);font-size:12px">${activity}</td>
       <td onclick="event.stopPropagation()">
         ${r.status !== 'closed' ? `<button class="btn btn-ghost btn-sm" onclick="closeReq(${r.id})" title="Закрыть"><i data-lucide="x"></i></button>` : ''}
       </td>

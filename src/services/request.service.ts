@@ -52,6 +52,10 @@ export interface RequestSummary {
   targetCount: number;
   /** Имена первых 3 получателей — для краткого превью в списке. */
   targetNames: string[];
+  /** Число непрочитанных ответов сотрудников — для badge на строке. */
+  unreadCount: number;
+  /** Время последней активности — для сортировки. */
+  lastActivityAt: string;
 }
 
 export interface RequestResponseRow {
@@ -465,12 +469,35 @@ export async function listRequests(filter?: { status?: string }): Promise<Reques
                SELECT e.name FROM request_targets rt
                JOIN employees e ON e.id = rt.employee_id
                WHERE rt.request_id = r.id ORDER BY e.name LIMIT 3
-             ) e) AS "targetNames"
+             ) e) AS "targetNames",
+            -- Непрочитанные ответы сотрудников после last_viewed_at (или все если ни разу не смотрели)
+            (SELECT COUNT(*)::int FROM request_responses rr
+              WHERE rr.request_id = r.id
+                AND rr.sender_type = 'employee'
+                AND (r.last_viewed_at IS NULL OR rr.created_at > r.last_viewed_at)
+            ) AS "unreadCount",
+            -- Время последней активности — max(updated_at, last response.created_at)
+            GREATEST(r.updated_at, COALESCE(
+              (SELECT MAX(created_at) FROM request_responses WHERE request_id = r.id),
+              r.updated_at
+            )) AS "lastActivityAt"
      FROM employee_requests r
      LEFT JOIN employees te ON te.id = r.target_employee_id
      LEFT JOIN stores s     ON s.id  = r.target_store_id
      WHERE ($1::text IS NULL OR r.status = $1)
-     ORDER BY r.created_at DESC
+     ORDER BY
+       -- Сначала запросы с непрочитанными ответами (как в мессенджере)
+       (CASE WHEN (
+         SELECT COUNT(*) FROM request_responses rr
+         WHERE rr.request_id = r.id
+           AND rr.sender_type = 'employee'
+           AND (r.last_viewed_at IS NULL OR rr.created_at > r.last_viewed_at)
+       ) > 0 THEN 0 ELSE 1 END),
+       -- Потом по времени последней активности
+       GREATEST(r.updated_at, COALESCE(
+         (SELECT MAX(created_at) FROM request_responses WHERE request_id = r.id),
+         r.updated_at
+       )) DESC
      LIMIT 200`,
     params
   );
