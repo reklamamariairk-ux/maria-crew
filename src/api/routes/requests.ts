@@ -5,6 +5,9 @@ import {
   listRequests,
   getRequest,
   closeRequest,
+  sendManagerMessage,
+  getUnreadRequestCount,
+  markRequestViewed,
 } from '../../services/request.service';
 import { logAudit } from '../../services/audit.service';
 
@@ -19,13 +22,36 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
   } catch (err) { next(err); }
 });
 
-// GET /api/requests/:id — детали + responses
+// GET /api/requests/unread-count — badge для sidebar (poll каждые 2 мин)
+router.get('/unread-count', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const count = await getUnreadRequestCount();
+    res.json({ count });
+  } catch (err) { next(err); }
+});
+
+// GET /api/requests/:id — детали + responses. Помечает как viewed (badge -1).
 router.get('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = parseInt(req.params.id, 10);
     const data = await getRequest(id);
     if (!data) { res.status(404).json({ error: 'Запрос не найден' }); return; }
+    // Mark viewed — но только если есть unread responses (избегаем лишних writes)
+    await markRequestViewed(id).catch(() => {});
     res.json(data);
+  } catch (err) { next(err); }
+});
+
+// POST /api/requests/:id/message — менеджер пишет в существующий запрос
+router.post('/:id/message', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const { text } = req.body as { text: string };
+    if (!text || !text.trim()) {
+      res.status(400).json({ error: 'text обязателен' }); return;
+    }
+    const result = await sendManagerMessage({ requestId: id, text: text.trim() });
+    res.json(result);
   } catch (err) { next(err); }
 });
 

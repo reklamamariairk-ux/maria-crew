@@ -298,6 +298,17 @@ function updatePendingBadge(count) {
   }
 }
 
+function updateRequestsBadge(count) {
+  const badge = document.getElementById('nav-requests-badge');
+  if (!badge) return;
+  if (count && count > 0) {
+    badge.textContent = count > 99 ? '99+' : String(count);
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
 function applyRoleVisibility() {
   const r = state.role;
   document.querySelectorAll('.nav-item[data-tab]').forEach(btn => {
@@ -338,14 +349,20 @@ async function showApp() {
   await Promise.all([loadStores(), loadCloudinaryConfig(), loadActiveChallengesForCoins()]);
   switchTab('dashboard');
 
-  // Раз в 2 минуты подтягиваем количество ожидающих заявок (фон, безшумно)
+  // Раз в 2 минуты подтягиваем счётчики ожидающих заявок + unread-запросов
+  const refreshBadges = async () => {
+    try {
+      const [ex, req] = await Promise.all([
+        api('GET', '/exchanges?status=pending').catch(() => []),
+        api('GET', '/requests/unread-count').catch(() => ({ count: 0 })),
+      ]);
+      updatePendingBadge(Array.isArray(ex) ? ex.length : 0);
+      updateRequestsBadge(req?.count || 0);
+    } catch { /* ignore */ }
+  };
+  refreshBadges();
   if (!state.pendingPoll) {
-    state.pendingPoll = setInterval(async () => {
-      try {
-        const data = await api('GET', '/exchanges?status=pending');
-        updatePendingBadge(Array.isArray(data) ? data.length : 0);
-      } catch { /* ignore */ }
-    }, 120_000);
+    state.pendingPoll = setInterval(refreshBadges, 120_000);
   }
 }
 
@@ -3446,12 +3463,25 @@ async function closeReq(id) {
   } catch (e) { toastError(e); }
 }
 
+let currentRequestId = null;
+
 async function openRequestModal(id) {
+  currentRequestId = id;
   const modal = document.getElementById('modal-request');
-  const body = document.getElementById('modal-req-body');
   modal.classList.remove('hidden');
-  body.innerHTML = '<p class="text-muted">Загрузка...</p>';
   document.getElementById('modal-req-title').textContent = `Запрос #${id}`;
+  document.getElementById('modal-req-input').value = '';
+  await renderRequestChat(id);
+  // Обновляем badge после mark viewed (бэк это делает в GET /:id)
+  try {
+    const r = await api('GET', '/requests/unread-count');
+    updateRequestsBadge(r?.count || 0);
+  } catch { /* ignore */ }
+}
+
+async function renderRequestChat(id) {
+  const body = document.getElementById('modal-req-body');
+  body.innerHTML = '<p class="text-muted">Загрузка...</p>';
   try {
     const data = await api('GET', `/requests/${id}`);
     const r = data.request;
@@ -3459,50 +3489,81 @@ async function openRequestModal(id) {
     if (r.targetEmployeeName) target = `👤 ${esc(r.targetEmployeeName)}`;
     else if (r.targetStoreName) target = `🏪 ${esc(r.targetStoreName)} (${r.targetCount})`;
     else target = `👥 ${(r.targetNames || []).slice(0, 5).map(esc).join(', ')}${r.targetCount > 5 ? ` +${r.targetCount - 5}` : ''}`;
+
     let html = `
-      <div style="margin-bottom:14px">
+      <div style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border)">
         <div style="color:var(--muted);font-size:12px;margin-bottom:4px">Кому: ${target} · ${REQUEST_STATUS_LABELS[r.status] || r.status}</div>
-        <div style="white-space:pre-wrap;background:var(--bg);padding:10px;border-radius:6px;border:1px solid var(--border)">${esc(r.requestText)}</div>
       </div>
-      <h3 style="margin:14px 0 8px;font-size:14px">Ответы (${data.responses.length})</h3>
+      <div class="chat-msg employee">
+        <div>
+          <div class="chat-bubble"><div style="white-space:pre-wrap">${esc(r.requestText)}</div></div>
+          <div class="chat-meta">${new Date(r.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })} · исходный запрос</div>
+        </div>
+      </div>
     `;
-    if (data.responses.length === 0) {
-      html += `<p class="text-muted">Пока никто не ответил.</p>`;
-    } else {
-      html += '<div style="display:flex;flex-direction:column;gap:10px">';
-      for (const resp of data.responses) {
-        const time = new Date(resp.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
-        let fileBlock = '';
-        if (resp.fileUrl) {
-          if (resp.fileType === 'photo') {
-            fileBlock = `<a href="${resp.fileUrl}" target="_blank" rel="noopener"><img src="${resp.fileThumbnailUrl || resp.fileUrl}" style="max-width:300px;max-height:300px;border-radius:6px;display:block" alt="фото"></a>`;
-          } else if (resp.fileType === 'video') {
-            fileBlock = `<video src="${resp.fileUrl}" controls preload="metadata" style="max-width:400px;max-height:300px;border-radius:6px;display:block;background:#000" poster="${resp.fileThumbnailUrl || ''}"></video>`;
-          } else if (resp.fileType === 'document') {
-            const fname = resp.fileName || 'файл';
-            fileBlock = `<a href="${resp.fileUrl}" target="_blank" rel="noopener" download="${esc(fname)}" style="display:inline-flex;gap:6px;align-items:center;padding:6px 10px;border:1px solid var(--border);border-radius:6px;text-decoration:none;color:inherit;background:var(--surface)"><i data-lucide="file"></i> ${esc(fname)}</a>`;
-          }
+
+    // Все сообщения — chat-thread
+    for (const resp of data.responses) {
+      const side = resp.senderType === 'manager' ? 'manager' : 'employee';
+      const time = new Date(resp.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
+      let fileBlock = '';
+      if (resp.fileUrl) {
+        if (resp.fileType === 'photo') {
+          fileBlock = `<a href="${resp.fileUrl}" target="_blank" rel="noopener"><img src="${resp.fileThumbnailUrl || resp.fileUrl}" alt="фото"></a>`;
+        } else if (resp.fileType === 'video') {
+          fileBlock = `<video src="${resp.fileUrl}" controls preload="metadata" poster="${resp.fileThumbnailUrl || ''}"></video>`;
+        } else if (resp.fileType === 'document') {
+          const fname = resp.fileName || 'файл';
+          fileBlock = `<a href="${resp.fileUrl}" target="_blank" rel="noopener" download="${esc(fname)}" style="display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border:1px solid var(--border);border-radius:4px;text-decoration:none;color:inherit;background:var(--surface);margin-top:4px;font-size:11px"><i data-lucide="file"></i> ${esc(fname)}</a>`;
         }
-        html += `<div style="border:1px solid var(--border);border-radius:6px;padding:10px;background:var(--bg)">
-          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:6px">
-            <span><b>${esc(resp.employeeName)}</b></span><span>${time}</span>
-          </div>
-          ${resp.textContent ? `<div style="white-space:pre-wrap;margin-bottom:${fileBlock ? '8px' : '0'}">${esc(resp.textContent)}</div>` : ''}
-          ${fileBlock}
-        </div>`;
       }
-      html += '</div>';
-      // Перерендерить lucide-иконки в новой модалке
-      setTimeout(() => renderIcons(), 0);
+      const meta = side === 'manager' ? 'руководитель' : esc(resp.employeeName);
+      html += `<div class="chat-msg ${side}">
+        <div>
+          <div class="chat-bubble">
+            ${resp.textContent ? `<div style="white-space:pre-wrap">${esc(resp.textContent)}</div>` : ''}
+            ${fileBlock}
+          </div>
+          <div class="chat-meta" style="text-align:${side === 'manager' ? 'right' : 'left'}">${meta} · ${time}</div>
+        </div>
+      </div>`;
     }
+
     body.innerHTML = html;
+    // Прокрутим вниз чтобы видеть последнее сообщение
+    body.scrollTop = body.scrollHeight;
+    setTimeout(() => renderIcons(), 0);
   } catch (e) {
     body.innerHTML = `<p style="color:var(--red)">Ошибка: ${esc(e.message)}</p>`;
   }
 }
 
+async function sendManagerMessage() {
+  if (!currentRequestId) return;
+  const input = document.getElementById('modal-req-input');
+  const btn = document.getElementById('modal-req-send-btn');
+  const text = input.value.trim();
+  if (!text) { toast('Введи текст'); return; }
+  btn.disabled = true;
+  try {
+    const r = await api('POST', `/requests/${currentRequestId}/message`, { text });
+    input.value = '';
+    if (r.recipientsCount === 0) {
+      toast('⚠ Отправлено в БД, но никому из получателей не доставлено');
+    }
+    await renderRequestChat(currentRequestId);
+    loadRequests();
+  } catch (e) {
+    toastError(e);
+  } finally {
+    btn.disabled = false;
+    input.focus();
+  }
+}
+
 function closeRequestModal() {
   document.getElementById('modal-request').classList.add('hidden');
+  currentRequestId = null;
 }
 
 // ── Рассылка ──────────────────────────────────────────────────────────────────

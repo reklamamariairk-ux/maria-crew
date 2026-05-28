@@ -126,6 +126,7 @@
       </button>
       <button class="nav-item" data-tab="requests" onclick="switchTab('requests')">
         <i data-lucide="message-square"></i> Запросы
+        <span id="nav-requests-badge" class="nav-badge hidden">0</span>
       </button>
       <button class="nav-item role-superadmin-only" data-tab="settings" onclick="switchTab('settings')">
         <i data-lucide="settings"></i> Настройки
@@ -1280,18 +1281,42 @@
   </main>
 </div>
 
-<!-- ── Модалка: просмотр запроса + ответы ────────────────────────────── -->
+<!-- ── Модалка: чат запроса ─────────────────────────────────────────── -->
 <div id="modal-request" class="modal-overlay hidden" onclick="if(event.target===this)closeRequestModal()">
-  <div class="modal-box" style="max-width:720px;width:95%">
+  <div class="modal-box" style="max-width:720px;width:95%;display:flex;flex-direction:column;max-height:90vh">
     <div class="modal-header">
       <h2 class="modal-title" id="modal-req-title">Запрос</h2>
       <button class="modal-close" onclick="closeRequestModal()"><i data-lucide="x"></i></button>
     </div>
-    <div id="modal-req-body" style="overflow-y:auto;max-height:70vh;padding:16px">
+    <div id="modal-req-body" style="overflow-y:auto;flex:1;padding:16px;min-height:200px">
       <p class="text-muted">Загрузка...</p>
+    </div>
+    <div id="modal-req-compose" style="border-top:1px solid var(--border);padding:10px 14px;display:flex;gap:8px;align-items:flex-end;background:var(--surface)">
+      <textarea id="modal-req-input" class="input" rows="2" placeholder="Написать сотруднику…" style="flex:1;resize:none;min-height:40px;max-height:140px"></textarea>
+      <button class="btn btn-primary" onclick="sendManagerMessage()" id="modal-req-send-btn" title="Отправить">
+        <i data-lucide="send"></i>
+      </button>
     </div>
   </div>
 </div>
+<style>
+  /* Chat bubbles в модалке запроса */
+  .chat-msg { display: flex; margin-bottom: 8px; max-width: 100%; }
+  .chat-msg.employee { justify-content: flex-start; }
+  .chat-msg.manager  { justify-content: flex-end; }
+  .chat-bubble {
+    max-width: 75%;
+    padding: 8px 12px;
+    border-radius: 14px;
+    font-size: 13px;
+    line-height: 1.4;
+    word-wrap: break-word;
+  }
+  .chat-msg.employee .chat-bubble { background: var(--bg, #f0f0f0); border-bottom-left-radius: 4px; }
+  .chat-msg.manager  .chat-bubble { background: #d4edff; border-bottom-right-radius: 4px; }
+  .chat-meta { font-size: 10px; color: var(--muted); margin: 2px 4px; }
+  .chat-bubble img, .chat-bubble video { max-width: 240px; max-height: 240px; border-radius: 6px; display: block; margin-top: 4px; }
+</style>
 
 <!-- ── Модалка: Карточка сотрудника ─────────────────────────────────────── -->
 <div id="modal-employee" class="modal-overlay hidden" onclick="if(event.target===this)closeEmployeeModal()">

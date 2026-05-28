@@ -58,6 +58,7 @@ export interface RequestResponseRow {
   id: number;
   employeeId: number;
   employeeName: string;
+  senderType: 'employee' | 'manager';
   textContent: string | null;
   fileUrl: string | null;
   fileThumbnailUrl: string | null;
@@ -299,8 +300,8 @@ export async function handleEmployeeReply(opts: {
 
   await pool.query(
     `INSERT INTO request_responses
-       (request_id, employee_id, text_content, file_url, file_thumbnail_url, file_type, file_name, telegram_message_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+       (request_id, employee_id, sender_type, text_content, file_url, file_thumbnail_url, file_type, file_name, telegram_message_id)
+     VALUES ($1, $2, 'employee', $3, $4, $5, $6, $7, $8)`,
     [requestId, opts.employeeId, textContent, fileUrl, fileThumb, fileType, opts.fileName ?? null, opts.messageId]
   );
 
@@ -309,21 +310,95 @@ export async function handleEmployeeReply(opts: {
     console.warn('[request reply] не уведомили владельца:', err);
   });
 
-  // Обновляем статус: для single-employee запроса auto-close → answered.
-  // Для store-запроса (multi-target) оставляем open, чтобы пришли ответы от
-  // остальных сотрудников; админ закроет вручную.
+  // Chat-mode: статус НЕ меняем автоматически. Запрос остаётся 'open'
+  // пока менеджер вручную не закроет, чтобы можно было продолжать диалог.
   await pool.query(
-    `UPDATE employee_requests SET
-       status = CASE
-         WHEN target_employee_id IS NOT NULL THEN 'answered'
-         ELSE status
-       END,
-       updated_at = now()
-     WHERE id = $1`,
+    `UPDATE employee_requests SET updated_at = now() WHERE id = $1`,
     [requestId]
   );
 
   return { requestId };
+}
+
+/** Менеджер шлёт сообщение в существующий запрос. Создаёт response с
+ *  sender_type='manager' и DM сотрудникам с пометкой «Сообщение от менеджера». */
+export async function sendManagerMessage(opts: {
+  requestId: number;
+  text: string;
+}): Promise<{ recipientsCount: number; responseId: number }> {
+  if (!_bot) throw new Error('request.service: bot не инициализирован');
+  const text = (opts.text ?? '').trim();
+  if (!text) throw new Error('Текст обязателен');
+
+  // Берём первого target — для UI-чата это «адресат». Если запрос на
+  // несколько сотрудников, шлём всем активным.
+  const targets = await getTargetEmployees(opts.requestId);
+  if (targets.length === 0) throw new Error('У запроса нет получателей');
+
+  // Записываем сообщение в БД (employee_id = первого target, для записи).
+  const { rows: insRows } = await pool.query<{ id: number }>(
+    `INSERT INTO request_responses (request_id, employee_id, sender_type, text_content)
+     VALUES ($1, $2, 'manager', $3) RETURNING id`,
+    [opts.requestId, targets[0].id, text]
+  );
+
+  // Рассылаем DM каждому получателю. Связываем reply→этот же запрос
+  // через request_notifications (новое сообщение → новый message_id).
+  const escText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const dmHtml =
+    `💬 <b>Сообщение от руководителя</b>\n\n` +
+    `${escText}\n\n` +
+    `<i>Ответь любым сообщением — попадёт в этот же диалог.</i>`;
+
+  let sent = 0;
+  for (const emp of targets) {
+    if (!emp.telegramId) continue;
+    try {
+      const msg = await _bot.api.sendMessage(emp.telegramId, dmHtml, { parse_mode: 'HTML' });
+      // Обновляем request_notifications: последний bot-message_id для reply-связки
+      await pool.query(
+        `INSERT INTO request_notifications
+           (request_id, employee_id, telegram_message_id, telegram_chat_id)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (request_id, employee_id) DO UPDATE SET
+           telegram_message_id = EXCLUDED.telegram_message_id,
+           telegram_chat_id    = EXCLUDED.telegram_chat_id,
+           sent_at             = now()`,
+        [opts.requestId, emp.id, msg.message_id, msg.chat.id]
+      );
+      sent++;
+    } catch (err) {
+      console.warn(`[request msg] не отправлено employee ${emp.id}:`, (err as Error).message);
+    }
+  }
+
+  await pool.query(
+    `UPDATE employee_requests SET updated_at = now(), last_viewed_at = now() WHERE id = $1`,
+    [opts.requestId]
+  );
+
+  return { recipientsCount: sent, responseId: insRows[0].id };
+}
+
+/** Сколько запросов имеют ответ свежее last_viewed_at (или never-viewed с ответами). */
+export async function getUnreadRequestCount(): Promise<number> {
+  const { rows } = await pool.query<{ n: number }>(
+    `SELECT COUNT(DISTINCT r.id)::int AS n
+     FROM employee_requests r
+     JOIN request_responses rr ON rr.request_id = r.id
+     WHERE r.status <> 'closed'
+       AND rr.sender_type = 'employee'
+       AND (r.last_viewed_at IS NULL OR rr.created_at > r.last_viewed_at)`
+  );
+  return rows[0]?.n ?? 0;
+}
+
+/** Помечает запрос как просмотренный (для badge). */
+export async function markRequestViewed(id: number): Promise<void> {
+  await pool.query(
+    `UPDATE employee_requests SET last_viewed_at = now() WHERE id = $1`,
+    [id]
+  );
 }
 
 /** Шлёт DM владельцу (OWNER_TELEGRAM_ID) о новом ответе на запрос. */
@@ -405,6 +480,7 @@ export async function getRequest(id: number): Promise<{
     `SELECT rr.id,
             rr.employee_id          AS "employeeId",
             e.name                  AS "employeeName",
+            rr.sender_type          AS "senderType",
             rr.text_content         AS "textContent",
             rr.file_url             AS "fileUrl",
             rr.file_thumbnail_url   AS "fileThumbnailUrl",
