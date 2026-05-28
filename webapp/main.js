@@ -1478,6 +1478,38 @@ async function sendChatMessage() {
   }
 }
 
+function openNewChatCompose() {
+  document.getElementById('new-chat-modal').style.display = 'flex';
+  document.getElementById('new-chat-text').value = '';
+  setTimeout(() => document.getElementById('new-chat-text').focus(), 100);
+}
+
+function closeNewChat() {
+  document.getElementById('new-chat-modal').style.display = 'none';
+}
+
+async function submitNewChat() {
+  const text = document.getElementById('new-chat-text').value.trim();
+  if (!text) { showToast('Напиши сообщение'); return; }
+  const btn = document.getElementById('new-chat-send-btn');
+  btn.disabled = true; btn.textContent = 'Отправка…';
+  try {
+    const r = await apiFetch('/messages/new', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    });
+    closeNewChat();
+    if (r?.requestId) {
+      await loadMessages();
+      openChat(r.requestId);
+    }
+  } catch (e) {
+    showToast('Не отправилось: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Отправить';
+  }
+}
+
 async function refreshMessagesBadge() {
   try {
     const r = await apiFetch('/messages/unread-count');

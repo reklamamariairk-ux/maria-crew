@@ -3339,7 +3339,10 @@ async function loadRequests() {
   }
   tbody.innerHTML = list.map(r => {
     let target;
-    if (r.targetEmployeeName) {
+    if (r.initiatedByName) {
+      // Сотрудник сам написал нам — иконка 📨 «От: …»
+      target = `📨 от ${esc(r.initiatedByName)}`;
+    } else if (r.targetEmployeeName) {
       target = `👤 ${esc(r.targetEmployeeName)}`;
     } else if (r.targetStoreName) {
       target = `🏪 ${esc(r.targetStoreName)} <span style="color:var(--muted);font-size:11px">(${r.targetCount})</span>`;

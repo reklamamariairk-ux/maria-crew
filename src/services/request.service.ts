@@ -57,6 +57,9 @@ export interface RequestSummary {
   unreadCount: number;
   /** Время последней активности — для сортировки. */
   lastActivityAt: string;
+  /** Если запрос инициирован сотрудником (не менеджером) — id и имя инициатора. */
+  initiatedByEmployeeId: number | null;
+  initiatedByName: string | null;
 }
 
 export interface RequestResponseRow {
@@ -501,6 +504,8 @@ export async function listRequests(filter?: { status?: string }): Promise<Reques
             r.status,
             r.created_at        AS "createdAt",
             r.updated_at        AS "updatedAt",
+            r.initiated_by_employee_id AS "initiatedByEmployeeId",
+            ie.name             AS "initiatedByName",
             (SELECT COUNT(*)::int FROM request_responses WHERE request_id = r.id) AS "responseCount",
             (SELECT COUNT(*)::int FROM request_notifications WHERE request_id = r.id) AS "notificationsSent",
             (SELECT COUNT(*)::int FROM request_targets WHERE request_id = r.id) AS "targetCount",
@@ -523,6 +528,7 @@ export async function listRequests(filter?: { status?: string }): Promise<Reques
             )) AS "lastActivityAt"
      FROM employee_requests r
      LEFT JOIN employees te ON te.id = r.target_employee_id
+     LEFT JOIN employees ie ON ie.id = r.initiated_by_employee_id
      LEFT JOIN stores s     ON s.id  = r.target_store_id
      WHERE ($1::text IS NULL OR r.status = $1)
      ORDER BY

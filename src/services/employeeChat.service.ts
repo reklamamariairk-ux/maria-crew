@@ -35,8 +35,70 @@ export interface EmployeeChatMessage {
   createdAt: string;
 }
 
-/** Список запросов где сотрудник — получатель, со счётчиком непрочитанных
- *  manager-сообщений (после employee'й last_viewed_at). Закрытые не показываем. */
+/** Сотрудник создаёт новый диалог с руководителем. Без target'ов, только
+ *  initiated_by_employee_id = он сам. Админы увидят thread в общем списке. */
+export async function createEmployeeInitiatedRequest(opts: {
+  employeeId: number;
+  text: string;
+  fileUrl?: string | null;
+  fileThumbnailUrl?: string | null;
+  fileType?: 'photo' | 'video' | 'document' | null;
+  fileName?: string | null;
+}): Promise<{ requestId: number }> {
+  const text = (opts.text ?? '').trim();
+  if (!text && !opts.fileUrl) throw new Error('Нужен текст или файл');
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Сам запрос. request_text — это первое сообщение сотрудника (показывается
+    // как первый bubble в чате). Targets пустые, initiated_by_employee_id заполнен.
+    // requested_by NOT NULL — используем placeholder 0 (нет admin как создателя).
+    const { rows: reqRows } = await client.query<{ id: number }>(
+      `INSERT INTO employee_requests
+         (requested_by, request_text, initiated_by_employee_id, status)
+       VALUES (NULL, $1, $2, 'open')
+       RETURNING id`,
+      [text || (opts.fileType ? `(вложение: ${opts.fileType})` : '—'), opts.employeeId]
+    );
+    const requestId = reqRows[0].id;
+
+    // Сразу пишем первое сообщение в request_responses как сотрудник.
+    // Это нужно чтобы в admin-thread первый bubble был от сотрудника, а не как
+    // системный "request_text" (он же используется как мета-первое-сообщение).
+    // Но чтобы избежать дубликата (request_text + response) — не дублируем,
+    // используем только request_text для отображения. Сообщение само лежит там.
+    if (opts.fileUrl) {
+      // Если есть файл — дополнительно вставляем как response (request_text
+      // не содержит файла, только текст). Файл будет первым messages-bubble.
+      await client.query(
+        `INSERT INTO request_responses
+           (request_id, employee_id, sender_type, text_content, file_url,
+            file_thumbnail_url, file_type, file_name)
+         VALUES ($1, $2, 'employee', NULL, $3, $4, $5, $6)`,
+        [requestId, opts.employeeId, opts.fileUrl, opts.fileThumbnailUrl ?? null,
+         opts.fileType ?? null, opts.fileName ?? null]
+      );
+    }
+
+    // Помечаем что сотрудник «прочитал» свой запрос (свои сообщения он же видит)
+    await client.query(
+      `INSERT INTO request_employee_views (request_id, employee_id, last_viewed_at)
+       VALUES ($1, $2, now()) ON CONFLICT DO NOTHING`,
+      [requestId, opts.employeeId]
+    );
+
+    await client.query('COMMIT');
+    return { requestId };
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/** Список запросов где сотрудник — получатель ИЛИ инициатор. Закрытые не показываем. */
 export async function listEmployeeRequests(employeeId: number): Promise<EmployeeRequestSummary[]> {
   const { rows } = await pool.query<EmployeeRequestSummary & { lastMsgText: string | null; lastMsgFileType: string | null }>(
     `SELECT r.id,
@@ -68,8 +130,8 @@ export async function listEmployeeRequests(employeeId: number): Promise<Employee
                 )
             ) AS "unreadCount"
      FROM employee_requests r
-     JOIN request_targets rt ON rt.request_id = r.id
-     WHERE rt.employee_id = $1
+     LEFT JOIN request_targets rt ON rt.request_id = r.id AND rt.employee_id = $1
+     WHERE (rt.employee_id = $1 OR r.initiated_by_employee_id = $1)
        AND r.status <> 'closed'
      ORDER BY
        (CASE WHEN (
@@ -116,12 +178,12 @@ export async function getEmployeeRequestThread(opts: {
   requestId: number;
   employeeId: number;
 }): Promise<{ requestText: string; status: string; createdAt: string; messages: EmployeeChatMessage[] } | null> {
-  // Проверяем что сотрудник имеет доступ к этому запросу
+  // Проверяем что сотрудник имеет доступ — он target ИЛИ инициатор запроса
   const { rows: access } = await pool.query<{ id: number; requestText: string; status: string; createdAt: string }>(
     `SELECT r.id, r.request_text AS "requestText", r.status, r.created_at AS "createdAt"
      FROM employee_requests r
-     JOIN request_targets rt ON rt.request_id = r.id
-     WHERE r.id = $1 AND rt.employee_id = $2`,
+     LEFT JOIN request_targets rt ON rt.request_id = r.id AND rt.employee_id = $2
+     WHERE r.id = $1 AND (rt.employee_id = $2 OR r.initiated_by_employee_id = $2)`,
     [opts.requestId, opts.employeeId]
   );
   if (!access[0]) return null;
@@ -170,11 +232,11 @@ export async function sendEmployeeMessage(opts: {
   fileType?: 'photo' | 'video' | 'document' | null;
   fileName?: string | null;
 }): Promise<{ messageId: number } | null> {
-  // Доступ-чек
+  // Доступ-чек — сотрудник target ИЛИ инициатор
   const { rows: access } = await pool.query<{ id: number; status: string }>(
     `SELECT r.id, r.status FROM employee_requests r
-     JOIN request_targets rt ON rt.request_id = r.id
-     WHERE r.id = $1 AND rt.employee_id = $2`,
+     LEFT JOIN request_targets rt ON rt.request_id = r.id AND rt.employee_id = $2
+     WHERE r.id = $1 AND (rt.employee_id = $2 OR r.initiated_by_employee_id = $2)`,
     [opts.requestId, opts.employeeId]
   );
   if (!access[0]) return null;
@@ -216,9 +278,9 @@ export async function getEmployeeUnreadCount(employeeId: number): Promise<number
   const { rows } = await pool.query<{ n: number }>(
     `SELECT COUNT(DISTINCT r.id)::int AS n
      FROM employee_requests r
-     JOIN request_targets rt ON rt.request_id = r.id
+     LEFT JOIN request_targets rt ON rt.request_id = r.id AND rt.employee_id = $1
      JOIN request_responses rr ON rr.request_id = r.id
-     WHERE rt.employee_id = $1
+     WHERE (rt.employee_id = $1 OR r.initiated_by_employee_id = $1)
        AND r.status <> 'closed'
        AND rr.sender_type = 'manager'
        AND rr.created_at > COALESCE(

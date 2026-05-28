@@ -16,6 +16,7 @@ import { normalizePhone } from '../../services/employeeAuth.service';
 import {
   listEmployeeRequests, getEmployeeRequestThread,
   sendEmployeeMessage, getEmployeeUnreadCount,
+  createEmployeeInitiatedRequest,
 } from '../../services/employeeChat.service';
 
 const router = Router();
@@ -722,6 +723,50 @@ router.get('/messages', async (req: Request, res: Response, next: NextFunction):
     res.json({ items });
   } catch (err) { next(err); }
 });
+
+// POST /api/webapp/messages/new — сотрудник создаёт новый диалог с руководителем
+router.post('/messages/new', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const body = req.body as {
+      text?: string;
+      fileUrl?: string;
+      fileThumbnailUrl?: string;
+      fileType?: 'photo' | 'video' | 'document';
+      fileName?: string;
+    };
+    if (!body.text?.trim() && !body.fileUrl) {
+      res.status(400).json({ error: 'Нужен текст или файл' }); return;
+    }
+    const result = await createEmployeeInitiatedRequest({
+      employeeId: auth.employee.id,
+      text: body.text || '',
+      fileUrl: body.fileUrl,
+      fileThumbnailUrl: body.fileThumbnailUrl,
+      fileType: body.fileType,
+      fileName: body.fileName,
+    });
+    res.json(result);
+    // Уведомляем владельца в TG (async, не блокирует ответ)
+    notifyOwnerOfNewChat(auth.employee.name, auth.employee.id, result.requestId, body.text || '', body.fileType).catch(() => {});
+  } catch (err) { next(err); }
+});
+
+async function notifyOwnerOfNewChat(empName: string, empId: number, reqId: number, text: string, fileType?: string): Promise<void> {
+  const ownerId = (process.env.OWNER_TELEGRAM_ID ?? '').trim();
+  if (!ownerId) return;
+  const { sendBroadcast } = await import('../../bot/notifications/sender');
+  const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const fileLabel = fileType === 'photo' ? '📷 фото' : fileType === 'video' ? '🎬 видео' : fileType === 'document' ? '📎 файл' : '';
+  const preview = text.trim() ? esc(text.slice(0, 100)) : fileLabel;
+  const html =
+    `📨 <b>Новое сообщение от сотрудника</b>\n\n` +
+    `От: <b>${esc(empName)}</b>\n` +
+    `Сообщение: ${preview}\n\n` +
+    `Открыть в админке: https://crew.145-223-121-47.sslip.io/`;
+  await sendBroadcast([ownerId], html).catch(() => {});
+}
 
 // GET /api/webapp/messages/unread-count — badge на иконке «Сообщения»
 router.get('/messages/unread-count', async (req: Request, res: Response, next: NextFunction): Promise<void> => {

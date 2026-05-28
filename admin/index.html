@@ -121,11 +121,8 @@
       <button class="nav-item" data-tab="audit" onclick="switchTab('audit')">
         <i data-lucide="file-clock"></i> Журнал
       </button>
-      <button class="nav-item" data-tab="notify" onclick="switchTab('notify')">
-        <i data-lucide="send"></i> Рассылка
-      </button>
       <button class="nav-item" data-tab="requests" onclick="switchTab('requests')">
-        <i data-lucide="message-square"></i> Запросы
+        <i data-lucide="message-square"></i> Мессенджер
         <span id="nav-requests-badge" class="nav-badge hidden">0</span>
       </button>
       <button class="nav-item role-superadmin-only" data-tab="settings" onclick="switchTab('settings')">
@@ -1208,14 +1205,14 @@
       </div>
     </div>
 
-    <!-- ── Запросы ─────────────────────────────────────────────────── -->
+    <!-- ── Мессенджер (объединённые запросы + рассылка) ─────────────── -->
     <div id="tab-requests" class="tab-content hidden">
       <div class="page-head">
         <div>
-          <h1 class="page-title">Запросы</h1>
-          <p class="page-subtitle">Попросить сотрудника или точку прислать фото/ответ через бота</p>
+          <h1 class="page-title">Мессенджер</h1>
+          <p class="page-subtitle">Чаты с сотрудниками: вы инициируете запрос или они пишут вам сами</p>
         </div>
-        <button class="btn btn-primary" onclick="showNewRequest()"><i data-lucide="plus"></i> Новый запрос</button>
+        <button class="btn btn-primary" onclick="showNewRequest()"><i data-lucide="plus"></i> Новое сообщение</button>
       </div>
 
       <div id="new-request-form" class="hidden card card-pad" style="margin-bottom:16px;max-width:680px">
