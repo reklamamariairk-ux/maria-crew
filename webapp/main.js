@@ -1364,8 +1364,171 @@ function switchTab(tab) {
   document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
   document.getElementById('nav-' + tab).classList.add('active');
-  ({ collection: loadCollection, coins: loadCoins, quiz: loadQuiz, rating: loadRating, store: loadStore })[tab]?.();
+  ({ collection: loadCollection, coins: loadCoins, quiz: loadQuiz, rating: loadRating, store: loadStore, messages: loadMessages })[tab]?.();
 }
+
+// ── Чат с руководителем ─────────────────────────────────────────────────────
+
+let currentChatId = null;
+let chatPollTimer = null;
+
+async function loadMessages() {
+  const wrap = document.getElementById('messages-list');
+  wrap.innerHTML = '<div class="empty"><div class="empty-text">Загружаем...</div></div>';
+  try {
+    const r = await apiFetch('/messages');
+    const items = r.items || [];
+    if (items.length === 0) {
+      wrap.innerHTML = '<div class="empty" style="padding:40px 20px"><div class="empty-icon"><i data-lucide="message-circle"></i></div><div class="empty-text">Пока сообщений нет</div></div>';
+      renderIcons();
+      return;
+    }
+    wrap.innerHTML = items.map(it => {
+      const time = formatChatTime(it.lastMessageAt);
+      const unread = it.unreadCount > 0
+        ? `<span class="msg-list-badge">${it.unreadCount > 99 ? '99+' : it.unreadCount}</span>`
+        : '';
+      const cls = it.unreadCount > 0 ? 'msg-list-item unread' : 'msg-list-item';
+      const initial = (it.requestText || '?').charAt(0).toUpperCase();
+      const preview = (it.lastMessageSender === 'employee' ? 'Вы: ' : '') + (it.lastMessagePreview || '');
+      return `<div class="${cls}" onclick="openChat(${it.id})">
+        <div class="msg-list-avatar">${escapeHtml(initial)}</div>
+        <div class="msg-list-content">
+          <div class="msg-list-title">
+            <div class="msg-list-title-name">Руководитель${unread}</div>
+            <div class="msg-list-time">${time}</div>
+          </div>
+          <div class="msg-list-preview">${escapeHtml(preview)}</div>
+        </div>
+      </div>`;
+    }).join('');
+    renderIcons();
+  } catch (e) {
+    wrap.innerHTML = `<div class="empty"><div class="empty-text">Ошибка: ${escapeHtml(e.message)}</div></div>`;
+  }
+}
+
+async function openChat(id) {
+  currentChatId = id;
+  document.getElementById('chat-modal').style.display = 'flex';
+  document.getElementById('chat-input').value = '';
+  await renderChatThread();
+  renderIcons();
+  // Polling раз в 15 сек когда чат открыт — подтянуть новые сообщения менеджера
+  if (chatPollTimer) clearInterval(chatPollTimer);
+  chatPollTimer = setInterval(() => { if (currentChatId) renderChatThread(true); }, 15000);
+}
+
+function closeChat() {
+  document.getElementById('chat-modal').style.display = 'none';
+  currentChatId = null;
+  if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
+  loadMessages();
+  refreshMessagesBadge();
+}
+
+async function renderChatThread(quiet) {
+  if (!currentChatId) return;
+  const thread = document.getElementById('chat-thread');
+  if (!quiet) thread.innerHTML = '<div style="text-align:center;padding:20px;color:#888">Загружаем…</div>';
+  try {
+    const data = await apiFetch('/messages/' + currentChatId);
+    document.getElementById('chat-title-sub').textContent = (data.requestText || '').slice(0, 60);
+    const wasAtBottom = (thread.scrollHeight - thread.scrollTop - thread.clientHeight) < 80;
+    // Исходный запрос как первый bubble manager
+    let html = `<div class="chat-row manager"><div>
+      <div class="chat-bubble">${escapeHtml(data.requestText)}</div>
+      <div class="chat-meta">руководитель · ${formatChatTime(data.createdAt)}</div>
+    </div></div>`;
+    for (const m of data.messages) {
+      const side = m.senderType === 'employee' ? 'employee' : 'manager';
+      const time = formatChatTime(m.createdAt);
+      const who = side === 'employee' ? 'Вы' : (m.adminUsername || 'руководитель');
+      let fileBlock = '';
+      if (m.fileUrl) {
+        if (m.fileType === 'photo') {
+          fileBlock = `<a href="${m.fileUrl}" target="_blank"><img src="${m.fileThumbnailUrl || m.fileUrl}" alt="фото"></a>`;
+        } else if (m.fileType === 'video') {
+          fileBlock = `<video src="${m.fileUrl}" controls preload="metadata" poster="${m.fileThumbnailUrl || ''}"></video>`;
+        } else if (m.fileType === 'document') {
+          fileBlock = `<a href="${m.fileUrl}" target="_blank" download="${escapeHtml(m.fileName || 'файл')}" style="color:inherit;text-decoration:underline">📎 ${escapeHtml(m.fileName || 'файл')}</a>`;
+        }
+      }
+      html += `<div class="chat-row ${side}"><div style="display:flex;flex-direction:column;align-items:${side === 'employee' ? 'flex-end' : 'flex-start'}">
+        <div class="chat-bubble">
+          ${m.textContent ? `<div style="white-space:pre-wrap">${escapeHtml(m.textContent)}</div>` : ''}
+          ${fileBlock}
+        </div>
+        <div class="chat-meta">${escapeHtml(who)} · ${time}</div>
+      </div></div>`;
+    }
+    thread.innerHTML = html;
+    if (wasAtBottom || !quiet) thread.scrollTop = thread.scrollHeight;
+  } catch (e) {
+    if (!quiet) thread.innerHTML = `<div style="color:#c00;padding:20px">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function sendChatMessage() {
+  if (!currentChatId) return;
+  const input = document.getElementById('chat-input');
+  const btn = document.getElementById('chat-send-btn');
+  const text = input.value.trim();
+  if (!text) return;
+  btn.disabled = true;
+  try {
+    await apiFetch('/messages/' + currentChatId + '/send', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    });
+    input.value = '';
+    await renderChatThread();
+  } catch (e) {
+    showToast('Не отправилось: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    input.focus();
+  }
+}
+
+async function refreshMessagesBadge() {
+  try {
+    const r = await apiFetch('/messages/unread-count');
+    const badge = document.getElementById('nav-messages-badge');
+    if (badge) {
+      const n = r.count || 0;
+      if (n > 0) {
+        badge.textContent = n > 99 ? '99+' : n;
+        badge.style.display = '';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+function formatChatTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return 'вчера';
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+}
+
+// Подгружаем бейдж при старте + каждые 60 сек в фоне
+setTimeout(() => { refreshMessagesBadge(); setInterval(refreshMessagesBadge, 60000); }, 3000);
+
+// Enter в чате — отправка (Shift+Enter — новая строка)
+document.addEventListener('DOMContentLoaded', () => {
+  const ci = document.getElementById('chat-input');
+  if (ci) ci.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
+  });
+});
 
 function switchStoreTab(tab) {
   storeTab = tab;

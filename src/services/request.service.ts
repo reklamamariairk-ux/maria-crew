@@ -15,6 +15,7 @@ import type { BotContext } from '../bot/context';
 import { pool } from '../db/pool';
 import { uploadFileFromUrl, isCloudinaryConfigured } from './cloudinary.service';
 import type { CloudinaryResource } from './cloudinary.service';
+import { sendPushToEmployee } from './push.service';
 
 const BOT_TOKEN = (process.env.BOT_TOKEN ?? '').trim();
 
@@ -356,26 +357,36 @@ export async function sendManagerMessage(opts: {
     `${escText}\n\n` +
     `<i>Ответь любым сообщением — попадёт в этот же диалог.</i>`;
 
+  // Превью текста для пуша/уведомления
+  const preview = text.length > 100 ? text.slice(0, 100) + '…' : text;
+
   let sent = 0;
   for (const emp of targets) {
-    if (!emp.telegramId) continue;
-    try {
-      const msg = await _bot.api.sendMessage(emp.telegramId, dmHtml, { parse_mode: 'HTML' });
-      // Обновляем request_notifications: последний bot-message_id для reply-связки
-      await pool.query(
-        `INSERT INTO request_notifications
-           (request_id, employee_id, telegram_message_id, telegram_chat_id)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (request_id, employee_id) DO UPDATE SET
-           telegram_message_id = EXCLUDED.telegram_message_id,
-           telegram_chat_id    = EXCLUDED.telegram_chat_id,
-           sent_at             = now()`,
-        [opts.requestId, emp.id, msg.message_id, msg.chat.id]
-      );
-      sent++;
-    } catch (err) {
-      console.warn(`[request msg] не отправлено employee ${emp.id}:`, (err as Error).message);
+    // TG DM (если есть привязка)
+    if (emp.telegramId) {
+      try {
+        const msg = await _bot.api.sendMessage(emp.telegramId, dmHtml, { parse_mode: 'HTML' });
+        await pool.query(
+          `INSERT INTO request_notifications
+             (request_id, employee_id, telegram_message_id, telegram_chat_id)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (request_id, employee_id) DO UPDATE SET
+             telegram_message_id = EXCLUDED.telegram_message_id,
+             telegram_chat_id    = EXCLUDED.telegram_chat_id,
+             sent_at             = now()`,
+          [opts.requestId, emp.id, msg.message_id, msg.chat.id]
+        );
+        sent++;
+      } catch (err) {
+        console.warn(`[request msg] TG не отправлено employee ${emp.id}:`, (err as Error).message);
+      }
     }
+    // FCM push (APK / standalone) — параллельно с TG
+    sendPushToEmployee(emp.id, {
+      title: '💬 Сообщение от руководителя',
+      body: preview,
+      data: { type: 'request_message', requestId: String(opts.requestId) },
+    }).catch(err => console.warn(`[request msg] push не отправлен employee ${emp.id}:`, err));
   }
 
   // Менеджер написал в запрос — значит диалог активен. Если был closed,

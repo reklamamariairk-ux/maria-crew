@@ -13,6 +13,10 @@ import { markWebappAuth } from '../../diagnostics';
 import { verifyEmployeeToken } from '../../services/employeeAuth.service';
 import { listNotifications, countUnread, markAllAsRead, markAsRead } from '../../services/notification.service';
 import { normalizePhone } from '../../services/employeeAuth.service';
+import {
+  listEmployeeRequests, getEmployeeRequestThread,
+  sendEmployeeMessage, getEmployeeUnreadCount,
+} from '../../services/employeeChat.service';
 
 const router = Router();
 
@@ -704,6 +708,68 @@ router.post('/exchange', async (req: Request, res: Response, next: NextFunction)
     const exchange = await requestExchange(auth.employee.id, prizeId);
     res.status(201).json(exchange);
     notifyAdminNewExchange(auth.employee.id, exchange.id).catch(() => {});
+  } catch (err) { next(err); }
+});
+
+// ── Чат с руководителем (запросы-диалоги) ─────────────────────────────────────
+
+// GET /api/webapp/messages — список диалогов с превью + unread
+router.get('/messages', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const items = await listEmployeeRequests(auth.employee.id);
+    res.json({ items });
+  } catch (err) { next(err); }
+});
+
+// GET /api/webapp/messages/unread-count — badge на иконке «Сообщения»
+router.get('/messages/unread-count', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const count = await getEmployeeUnreadCount(auth.employee.id);
+    res.json({ count });
+  } catch (err) { next(err); }
+});
+
+// GET /api/webapp/messages/:id — открыть чат конкретного запроса (mark read)
+router.get('/messages/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const data = await getEmployeeRequestThread({
+      requestId: parseInt(req.params.id, 10),
+      employeeId: auth.employee.id,
+    });
+    if (!data) { res.status(404).json({ error: 'Запрос не найден или нет доступа' }); return; }
+    res.json(data);
+  } catch (err) { next(err); }
+});
+
+// POST /api/webapp/messages/:id/send — сотрудник пишет в чат
+router.post('/messages/:id/send', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
+    const body = req.body as {
+      text?: string;
+      fileUrl?: string;
+      fileThumbnailUrl?: string;
+      fileType?: 'photo' | 'video' | 'document';
+      fileName?: string;
+    };
+    const result = await sendEmployeeMessage({
+      requestId: parseInt(req.params.id, 10),
+      employeeId: auth.employee.id,
+      text: body.text,
+      fileUrl: body.fileUrl,
+      fileThumbnailUrl: body.fileThumbnailUrl,
+      fileType: body.fileType,
+      fileName: body.fileName,
+    });
+    if (!result) { res.status(404).json({ error: 'Запрос не найден или нет доступа' }); return; }
+    res.json(result);
   } catch (err) { next(err); }
 });
 
