@@ -48,12 +48,35 @@ export async function createEmployeeInitiatedRequest(opts: {
   const text = (opts.text ?? '').trim();
   if (!text && !opts.fileUrl) throw new Error('Нужен текст или файл');
 
+  // Месенджер-логика: если у сотрудника уже есть open thread (где он target
+  // ИЛИ инициатор) — пишем туда вместо создания нового. WhatsApp-стиль.
+  const { rows: existing } = await pool.query<{ id: number }>(
+    `SELECT r.id FROM employee_requests r
+     LEFT JOIN request_targets rt ON rt.request_id = r.id AND rt.employee_id = $1
+     WHERE r.status <> 'closed'
+       AND (rt.employee_id = $1 OR r.initiated_by_employee_id = $1)
+     ORDER BY r.updated_at DESC LIMIT 1`,
+    [opts.employeeId]
+  );
+  if (existing[0]) {
+    const res = await sendEmployeeMessage({
+      requestId: existing[0].id,
+      employeeId: opts.employeeId,
+      text: text || null,
+      fileUrl: opts.fileUrl ?? null,
+      fileThumbnailUrl: opts.fileThumbnailUrl ?? null,
+      fileType: opts.fileType ?? null,
+      fileName: opts.fileName ?? null,
+    });
+    if (!res) throw new Error('Не удалось добавить сообщение в существующий чат');
+    return { requestId: existing[0].id };
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     // Сам запрос. request_text — это первое сообщение сотрудника (показывается
     // как первый bubble в чате). Targets пустые, initiated_by_employee_id заполнен.
-    // requested_by NOT NULL — используем placeholder 0 (нет admin как создателя).
     const { rows: reqRows } = await client.query<{ id: number }>(
       `INSERT INTO employee_requests
          (requested_by, request_text, initiated_by_employee_id, status)

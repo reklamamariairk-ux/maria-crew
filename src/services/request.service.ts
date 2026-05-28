@@ -97,6 +97,34 @@ export async function createRequest(input: CreateRequestInput): Promise<number> 
     throw new Error('Нужны targetEmployeeIds (или targetEmployeeId/targetStoreId)');
   }
 
+  // Месенджер-логика: для **одного** получателя — ищем существующий open
+  // чат с этим сотрудником (как админский, так и employee-initiated).
+  // Если есть — добавляем сообщение в него, не создаём новый. Это даёт
+  // WhatsApp-стиль: один постоянный чат на каждого сотрудника. Для multi-
+  // recipient (рассылка / точка / несколько выбранных) — всегда новый.
+  if (employeeIds.length === 1) {
+    const empId = employeeIds[0];
+    const { rows: existing } = await pool.query<{ id: number }>(
+      `SELECT r.id FROM employee_requests r
+       LEFT JOIN request_targets rt ON rt.request_id = r.id
+       WHERE r.status <> 'closed'
+         AND (rt.employee_id = $1 OR r.initiated_by_employee_id = $1)
+       ORDER BY r.updated_at DESC LIMIT 1`,
+      [empId]
+    );
+    if (existing[0]) {
+      // Существующий чат — добавляем сообщение через sendManagerMessage
+      const res = await sendManagerMessage({
+        requestId: existing[0].id,
+        text,
+        adminUserId: input.requestedBy,
+      });
+      // sendManagerMessage уже обновил last_viewed_at, разослал DM/push
+      void res;
+      return existing[0].id;
+    }
+  }
+
   // Display hints — для удобства списка в админке:
   // - если 1 получатель → пишем target_employee_id (показывается как имя)
   // - если несколько и все из одной точки И это все активные точки →
