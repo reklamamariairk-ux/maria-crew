@@ -50,7 +50,7 @@ router.post('/:id/message', async (req: Request, res: Response, next: NextFuncti
     if (!text || !text.trim()) {
       res.status(400).json({ error: 'text обязателен' }); return;
     }
-    const result = await sendManagerMessage({ requestId: id, text: text.trim() });
+    const result = await sendManagerMessage({ requestId: id, text: text.trim(), adminUserId: req.adminUserId });
     res.json(result);
   } catch (err) { next(err); }
 });

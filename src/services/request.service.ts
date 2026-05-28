@@ -59,6 +59,7 @@ export interface RequestResponseRow {
   employeeId: number;
   employeeName: string;
   senderType: 'employee' | 'manager';
+  adminUsername: string | null; // только для sender_type='manager'
   textContent: string | null;
   fileUrl: string | null;
   fileThumbnailUrl: string | null;
@@ -325,6 +326,7 @@ export async function handleEmployeeReply(opts: {
 export async function sendManagerMessage(opts: {
   requestId: number;
   text: string;
+  adminUserId?: number;
 }): Promise<{ recipientsCount: number; responseId: number }> {
   if (!_bot) throw new Error('request.service: bot не инициализирован');
   const text = (opts.text ?? '').trim();
@@ -337,9 +339,9 @@ export async function sendManagerMessage(opts: {
 
   // Записываем сообщение в БД (employee_id = первого target, для записи).
   const { rows: insRows } = await pool.query<{ id: number }>(
-    `INSERT INTO request_responses (request_id, employee_id, sender_type, text_content)
-     VALUES ($1, $2, 'manager', $3) RETURNING id`,
-    [opts.requestId, targets[0].id, text]
+    `INSERT INTO request_responses (request_id, employee_id, sender_type, admin_user_id, text_content)
+     VALUES ($1, $2, 'manager', $3, $4) RETURNING id`,
+    [opts.requestId, targets[0].id, opts.adminUserId ?? null, text]
   );
 
   // Рассылаем DM каждому получателю. Связываем reply→этот же запрос
@@ -487,6 +489,7 @@ export async function getRequest(id: number): Promise<{
             rr.employee_id          AS "employeeId",
             e.name                  AS "employeeName",
             rr.sender_type          AS "senderType",
+            au.username             AS "adminUsername",
             rr.text_content         AS "textContent",
             rr.file_url             AS "fileUrl",
             rr.file_thumbnail_url   AS "fileThumbnailUrl",
@@ -495,6 +498,7 @@ export async function getRequest(id: number): Promise<{
             rr.created_at           AS "createdAt"
      FROM request_responses rr
      JOIN employees e ON e.id = rr.employee_id
+     LEFT JOIN admin_users au ON au.id = rr.admin_user_id
      WHERE rr.request_id = $1
      ORDER BY rr.created_at`,
     [id]

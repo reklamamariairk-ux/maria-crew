@@ -3517,7 +3517,9 @@ async function renderRequestChat(id) {
           fileBlock = `<a href="${resp.fileUrl}" target="_blank" rel="noopener" download="${esc(fname)}" style="display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border:1px solid var(--border);border-radius:4px;text-decoration:none;color:inherit;background:var(--surface);margin-top:4px;font-size:11px"><i data-lucide="file"></i> ${esc(fname)}</a>`;
         }
       }
-      const meta = side === 'manager' ? 'руководитель' : esc(resp.employeeName);
+      const meta = side === 'manager'
+        ? (resp.adminUsername ? `👨‍💼 ${esc(resp.adminUsername)}` : '👨‍💼 руководитель')
+        : `👤 ${esc(resp.employeeName)}`;
       html += `<div class="chat-msg ${side}">
         <div>
           <div class="chat-bubble">
