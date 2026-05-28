@@ -372,8 +372,14 @@ export async function sendManagerMessage(opts: {
     }
   }
 
+  // Менеджер написал в запрос — значит диалог активен. Если был closed,
+  // переоткрываем (chat-mode: writes from manager re-open the thread).
   await pool.query(
-    `UPDATE employee_requests SET updated_at = now(), last_viewed_at = now() WHERE id = $1`,
+    `UPDATE employee_requests SET
+       status = CASE WHEN status = 'closed' THEN 'open' ELSE status END,
+       updated_at = now(),
+       last_viewed_at = now()
+     WHERE id = $1`,
     [opts.requestId]
   );
 
