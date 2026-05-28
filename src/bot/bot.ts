@@ -148,8 +148,9 @@ export function createBot(token: string): Bot<BotContext> {
   // с фото или текстом привязывается к самому свежему такому запросу. Reply
   // на конкретное сообщение бота переопределяет fallback (точный матч).
   bot.on('message', async (ctx, next) => {
-    if (!ctx.employee) { return next(); }
-    if (!ctx.chat?.id) { return next(); }
+    console.log(`[req-reply] message from=${ctx.from?.id} chat=${ctx.chat?.id} employee=${ctx.employee?.id ?? 'NULL'} reply_to=${ctx.message.reply_to_message?.message_id ?? 'none'} text="${(ctx.message.text ?? ctx.message.caption ?? '').slice(0,30)}"`);
+    if (!ctx.employee) { console.log('[req-reply] skip: employee null'); return next(); }
+    if (!ctx.chat?.id) { console.log('[req-reply] skip: chat null'); return next(); }
 
     const reply = ctx.message.reply_to_message;
     const photo = ctx.message.photo;
@@ -175,7 +176,8 @@ export function createBot(token: string): Bot<BotContext> {
 
     // Команды (/start, /coins, etc.) уже обработаны выше; сюда не дойдут.
     // Если сообщение без полезной нагрузки — пропускаем.
-    if (!fileId && !text) { return next(); }
+    if (!fileId && !text) { console.log('[req-reply] skip: empty msg'); return next(); }
+    console.log(`[req-reply] → handleEmployeeReply replyTo=${reply?.message_id ?? 'null'} fileKind=${fileKind ?? 'null'}`);
 
     try {
       const res = await handleEmployeeReply({
@@ -188,6 +190,7 @@ export function createBot(token: string): Bot<BotContext> {
         fileName,
         messageId: ctx.message.message_id,
       });
+      console.log(`[req-reply] result: ${res ? 'requestId=' + res.requestId : 'NULL (нет связи с запросом)'}`);
       if (res) {
         await ctx.reply('✅ Ответ принят, спасибо!');
       } else {
