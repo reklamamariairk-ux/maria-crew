@@ -609,3 +609,12 @@ export async function closeRequest(id: number): Promise<boolean> {
   );
   return (rowCount ?? 0) > 0;
 }
+
+/** Полное удаление запроса с каскадом (responses, notifications, targets). */
+export async function deleteRequest(id: number): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `DELETE FROM employee_requests WHERE id = $1`,
+    [id]
+  );
+  return (rowCount ?? 0) > 0;
+}

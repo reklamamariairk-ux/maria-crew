@@ -3366,7 +3366,10 @@ async function loadRequests() {
       <td>${REQUEST_STATUS_LABELS[r.status] || r.status}</td>
       <td class="col-hide-md" style="color:var(--muted);font-size:12px">${activity}</td>
       <td onclick="event.stopPropagation()">
-        ${r.status !== 'closed' ? `<button class="btn btn-ghost btn-sm" onclick="closeReq(${r.id})" title="Закрыть"><i data-lucide="x"></i></button>` : ''}
+        <div style="display:flex;gap:3px">
+          ${r.status !== 'closed' ? `<button class="btn btn-ghost btn-sm btn-icon" onclick="closeReq(${r.id})" title="Закрыть (оставить в истории)"><i data-lucide="x"></i></button>` : ''}
+          <button class="btn btn-danger btn-sm btn-icon" onclick="deleteReq(${r.id})" title="Удалить диалог полностью"><i data-lucide="trash-2"></i></button>
+        </div>
       </td>
     </tr>`;
   }).join('');
@@ -3466,6 +3469,20 @@ async function closeReq(id) {
   try {
     await api('POST', `/requests/${id}/close`);
     toast('✅ Запрос закрыт');
+    loadRequests();
+  } catch (e) { toastError(e); }
+}
+
+async function deleteReq(id) {
+  const ok = await confirmDialog(
+    `Удалить запрос #${id}?`,
+    'Удалится навсегда вместе со всеми сообщениями, фото и историей. Восстановить нельзя.',
+    { danger: true, confirmText: 'Удалить' }
+  );
+  if (!ok) return;
+  try {
+    await api('DELETE', `/requests/${id}`);
+    toast('🗑 Запрос удалён');
     loadRequests();
   } catch (e) { toastError(e); }
 }

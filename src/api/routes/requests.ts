@@ -5,6 +5,7 @@ import {
   listRequests,
   getRequest,
   closeRequest,
+  deleteRequest,
   sendManagerMessage,
   getUnreadRequestCount,
   markRequestViewed,
@@ -101,6 +102,17 @@ router.post('/:id/close', async (req: Request, res: Response, next: NextFunction
     if (!ok) { res.status(404).json({ error: 'Запрос не найден или уже закрыт' }); return; }
     res.json({ ok: true });
     logAudit('request_close', { requestId: id }).catch(() => {});
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/requests/:id — полное удаление с каскадом
+router.delete('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const ok = await deleteRequest(id);
+    if (!ok) { res.status(404).json({ error: 'Запрос не найден' }); return; }
+    res.json({ ok: true });
+    logAudit('request_delete', { requestId: id }).catch(() => {});
   } catch (err) { next(err); }
 });
 

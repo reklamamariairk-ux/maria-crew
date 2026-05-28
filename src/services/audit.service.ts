@@ -21,6 +21,7 @@ export type AuditAction =
   | 'catalog_refresh'
   | 'request_create'
   | 'request_close'
+  | 'request_delete'
   | 'store_create'
   | 'store_update'
   | 'prize_create'
