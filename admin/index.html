@@ -1291,7 +1291,15 @@
     <div id="modal-req-body" style="overflow-y:auto;flex:1;padding:16px;min-height:200px">
       <p class="text-muted">Загрузка...</p>
     </div>
-    <div id="modal-req-compose" style="border-top:1px solid var(--border);padding:10px 14px;display:flex;gap:8px;align-items:flex-end;background:var(--surface)">
+    <div id="modal-req-attachment-preview" class="hidden" style="padding:6px 14px;border-top:1px solid var(--border);background:var(--bg);display:flex;gap:8px;align-items:center">
+      <div id="modal-req-attachment-info" style="flex:1;font-size:12px;color:var(--muted)">—</div>
+      <button class="btn btn-ghost btn-sm" onclick="clearReqAttachment()" title="Убрать"><i data-lucide="x"></i></button>
+    </div>
+    <div id="modal-req-compose" style="border-top:1px solid var(--border);padding:10px 14px;display:flex;gap:6px;align-items:flex-end;background:var(--surface)">
+      <input type="file" id="modal-req-file-input" style="display:none" onchange="onReqFileSelected(event)" accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt">
+      <button class="btn btn-ghost" onclick="document.getElementById('modal-req-file-input').click()" id="modal-req-attach-btn" title="Прикрепить файл">
+        <i data-lucide="paperclip"></i>
+      </button>
       <textarea id="modal-req-input" class="input" rows="2" placeholder="Написать сотруднику…" style="flex:1;resize:none;min-height:40px;max-height:140px"></textarea>
       <button class="btn btn-primary" onclick="sendManagerMessage()" id="modal-req-send-btn" title="Отправить">
         <i data-lucide="send"></i>

@@ -327,15 +327,21 @@ export async function handleEmployeeReply(opts: {
 }
 
 /** Менеджер шлёт сообщение в существующий запрос. Создаёт response с
- *  sender_type='manager' и DM сотрудникам с пометкой «Сообщение от менеджера». */
+ *  sender_type='manager' и DM сотрудникам с пометкой «Сообщение от менеджера».
+ *  Принимает либо текст, либо файл (фото/видео/документ), либо оба. */
 export async function sendManagerMessage(opts: {
   requestId: number;
-  text: string;
+  text?: string;
+  fileUrl?: string;
+  fileThumbnailUrl?: string;
+  fileType?: 'photo' | 'video' | 'document';
+  fileName?: string;
   adminUserId?: number;
 }): Promise<{ recipientsCount: number; responseId: number }> {
   if (!_bot) throw new Error('request.service: bot не инициализирован');
   const text = (opts.text ?? '').trim();
-  if (!text) throw new Error('Текст обязателен');
+  const hasFile = !!opts.fileUrl && !!opts.fileType;
+  if (!text && !hasFile) throw new Error('Нужен текст или файл');
 
   // Берём первого target — для UI-чата это «адресат». Если запрос на
   // несколько сотрудников, шлём всем активным.
@@ -344,28 +350,51 @@ export async function sendManagerMessage(opts: {
 
   // Записываем сообщение в БД (employee_id = первого target, для записи).
   const { rows: insRows } = await pool.query<{ id: number }>(
-    `INSERT INTO request_responses (request_id, employee_id, sender_type, admin_user_id, text_content)
-     VALUES ($1, $2, 'manager', $3, $4) RETURNING id`,
-    [opts.requestId, targets[0].id, opts.adminUserId ?? null, text]
+    `INSERT INTO request_responses
+       (request_id, employee_id, sender_type, admin_user_id,
+        text_content, file_url, file_thumbnail_url, file_type, file_name)
+     VALUES ($1, $2, 'manager', $3, $4, $5, $6, $7, $8) RETURNING id`,
+    [opts.requestId, targets[0].id, opts.adminUserId ?? null,
+     text || null,
+     opts.fileUrl ?? null, opts.fileThumbnailUrl ?? null,
+     opts.fileType ?? null, opts.fileName ?? null]
   );
 
   // Рассылаем DM каждому получателю. Связываем reply→этот же запрос
   // через request_notifications (новое сообщение → новый message_id).
   const escText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const dmHtml =
+  const captionHtml = text
+    ? `💬 <b>Сообщение от руководителя</b>\n\n${escText}`
+    : `💬 <b>Сообщение от руководителя</b>`;
+  const dmHtmlNoFile =
     `💬 <b>Сообщение от руководителя</b>\n\n` +
     `${escText}\n\n` +
     `<i>Ответь любым сообщением — попадёт в этот же диалог.</i>`;
 
   // Превью текста для пуша/уведомления
-  const preview = text.length > 100 ? text.slice(0, 100) + '…' : text;
+  const pushBody = text
+    ? (text.length > 100 ? text.slice(0, 100) + '…' : text)
+    : (opts.fileType === 'photo' ? '📷 Фото' :
+       opts.fileType === 'video' ? '🎬 Видео' :
+       opts.fileType === 'document' ? `📎 ${opts.fileName || 'файл'}` : '');
 
   let sent = 0;
   for (const emp of targets) {
-    // TG DM (если есть привязка)
+    // TG DM (если есть привязка) — sendPhoto/Video/Document для файлов, иначе sendMessage
     if (emp.telegramId) {
       try {
-        const msg = await _bot.api.sendMessage(emp.telegramId, dmHtml, { parse_mode: 'HTML' });
+        let msg;
+        if (hasFile && opts.fileUrl) {
+          if (opts.fileType === 'photo') {
+            msg = await _bot.api.sendPhoto(emp.telegramId, opts.fileUrl, { caption: captionHtml, parse_mode: 'HTML' });
+          } else if (opts.fileType === 'video') {
+            msg = await _bot.api.sendVideo(emp.telegramId, opts.fileUrl, { caption: captionHtml, parse_mode: 'HTML' });
+          } else {
+            msg = await _bot.api.sendDocument(emp.telegramId, opts.fileUrl, { caption: captionHtml, parse_mode: 'HTML' });
+          }
+        } else {
+          msg = await _bot.api.sendMessage(emp.telegramId, dmHtmlNoFile, { parse_mode: 'HTML' });
+        }
         await pool.query(
           `INSERT INTO request_notifications
              (request_id, employee_id, telegram_message_id, telegram_chat_id)
@@ -384,7 +413,7 @@ export async function sendManagerMessage(opts: {
     // FCM push (APK / standalone) — параллельно с TG
     sendPushToEmployee(emp.id, {
       title: '💬 Сообщение от руководителя',
-      body: preview,
+      body: pushBody,
       data: { type: 'request_message', requestId: String(opts.requestId) },
     }).catch(err => console.warn(`[request msg] push не отправлен employee ${emp.id}:`, err));
   }

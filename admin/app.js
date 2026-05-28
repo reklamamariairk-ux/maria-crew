@@ -3488,13 +3488,16 @@ async function deleteReq(id) {
 }
 
 let currentRequestId = null;
+let currentReqAttachment = null;
 
 async function openRequestModal(id) {
   currentRequestId = id;
+  currentReqAttachment = null;
   const modal = document.getElementById('modal-request');
   modal.classList.remove('hidden');
   document.getElementById('modal-req-title').textContent = `Запрос #${id}`;
   document.getElementById('modal-req-input').value = '';
+  clearReqAttachment();
   await renderRequestChat(id);
   // Обновляем badge после mark viewed (бэк это делает в GET /:id)
   try {
@@ -3569,11 +3572,19 @@ async function sendManagerMessage() {
   const input = document.getElementById('modal-req-input');
   const btn = document.getElementById('modal-req-send-btn');
   const text = input.value.trim();
-  if (!text) { toast('Введи текст'); return; }
+  if (!text && !currentReqAttachment) { toast('Введи текст или прикрепи файл'); return; }
   btn.disabled = true;
   try {
-    const r = await api('POST', `/requests/${currentRequestId}/message`, { text });
+    const payload = { text };
+    if (currentReqAttachment) {
+      payload.fileUrl = currentReqAttachment.url;
+      payload.fileThumbnailUrl = currentReqAttachment.thumbnailUrl;
+      payload.fileType = currentReqAttachment.type;
+      payload.fileName = currentReqAttachment.name;
+    }
+    const r = await api('POST', `/requests/${currentRequestId}/message`, payload);
     input.value = '';
+    clearReqAttachment();
     if (r.recipientsCount === 0) {
       toast('⚠ Отправлено в БД, но никому из получателей не доставлено');
     }
@@ -3585,6 +3596,62 @@ async function sendManagerMessage() {
     btn.disabled = false;
     input.focus();
   }
+}
+
+async function onReqFileSelected(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  if (!state.cloudinary?.enabled) { toast('Cloudinary не настроен'); return; }
+  const max = 20 * 1024 * 1024;
+  if (file.size > max) { toast('Файл больше 20 МБ — Telegram не примет'); return; }
+
+  // Определяем тип
+  let fileType = 'document';
+  let resource = 'auto';
+  if (file.type.startsWith('image/')) { fileType = 'photo'; resource = 'image'; }
+  else if (file.type.startsWith('video/')) { fileType = 'video'; resource = 'video'; }
+  else { resource = 'raw'; }
+
+  const info = document.getElementById('modal-req-attachment-info');
+  const preview = document.getElementById('modal-req-attachment-preview');
+  preview.classList.remove('hidden');
+  info.textContent = `Загружаю «${file.name}»…`;
+
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('upload_preset', state.cloudinary.uploadPreset);
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${state.cloudinary.cloudName}/${resource}/upload`, {
+      method: 'POST', body: fd,
+    });
+    if (!res.ok) throw new Error(`Cloudinary error ${res.status}`);
+    const data = await res.json();
+    let thumbUrl = null;
+    if (fileType === 'photo') {
+      thumbUrl = data.secure_url.replace(/\/upload\//, '/upload/w_300,h_300,c_fill,q_auto/');
+    } else if (fileType === 'video') {
+      thumbUrl = data.secure_url.replace(/\/upload\//, '/upload/w_300,h_300,c_fill,so_0/').replace(/\.(mp4|mov|avi|webm|mkv)$/i, '.jpg');
+    }
+    currentReqAttachment = {
+      url: data.secure_url,
+      thumbnailUrl: thumbUrl,
+      type: fileType,
+      name: file.name,
+    };
+    const icon = fileType === 'photo' ? '📷' : fileType === 'video' ? '🎬' : '📎';
+    info.innerHTML = `${icon} <strong>${esc(file.name)}</strong> готов к отправке`;
+  } catch (err) {
+    info.textContent = 'Ошибка загрузки: ' + err.message;
+    currentReqAttachment = null;
+  } finally {
+    e.target.value = ''; // сброс input чтобы можно было выбрать тот же файл снова
+  }
+}
+
+function clearReqAttachment() {
+  currentReqAttachment = null;
+  const preview = document.getElementById('modal-req-attachment-preview');
+  if (preview) preview.classList.add('hidden');
 }
 
 function closeRequestModal() {

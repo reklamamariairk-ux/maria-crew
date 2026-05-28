@@ -47,11 +47,26 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction): Prom
 router.post('/:id/message', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = parseInt(req.params.id, 10);
-    const { text } = req.body as { text: string };
-    if (!text || !text.trim()) {
-      res.status(400).json({ error: 'text обязателен' }); return;
+    const body = req.body as {
+      text?: string;
+      fileUrl?: string;
+      fileThumbnailUrl?: string;
+      fileType?: 'photo' | 'video' | 'document';
+      fileName?: string;
+    };
+    const hasFile = !!body.fileUrl && !!body.fileType;
+    if (!body.text?.trim() && !hasFile) {
+      res.status(400).json({ error: 'Нужен текст или файл' }); return;
     }
-    const result = await sendManagerMessage({ requestId: id, text: text.trim(), adminUserId: req.adminUserId });
+    const result = await sendManagerMessage({
+      requestId: id,
+      text: body.text?.trim(),
+      fileUrl: body.fileUrl,
+      fileThumbnailUrl: body.fileThumbnailUrl,
+      fileType: body.fileType,
+      fileName: body.fileName,
+      adminUserId: req.adminUserId,
+    });
     res.json(result);
   } catch (err) { next(err); }
 });
