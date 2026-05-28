@@ -303,7 +303,7 @@ function showLoginScreen() {
                  style="width:100%;padding:14px;border:1.5px solid #ddd;border-radius:12px;font-size:16px;margin-bottom:12px">
           <input type="email" id="login-email" inputmode="email" placeholder="ivan@example.com" autocomplete="email"
                  style="width:100%;padding:14px;border:1.5px solid #ddd;border-radius:12px;font-size:16px;margin-bottom:12px;display:none">
-          <button id="login-request-btn" class="mc-primary-btn">Получить код</button>
+          <button id="login-request-btn" class="mc-primary-btn">Войти</button>
         </div>
 
         <div id="login-step-pin" style="display:none">
@@ -429,55 +429,42 @@ function loginError(msg) {
 }
 
 async function doLoginRequestPin() {
+  // Упрощённый логин: только phone, без PIN. Внутреннее использование Маши.
   const phone = document.getElementById('login-phone').value.trim();
-  const email = document.getElementById('login-email').value.trim();
-  const id = (__loginMode === 'email') ? email : phone;
-  if (!id) {
-    loginError(__loginMode === 'email' ? 'Введи email' : 'Введи номер телефона');
+  if (!phone) {
+    loginError('Введи номер телефона');
     return;
-  }
-  if (__loginMode === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    loginError('Неверный формат email'); return;
   }
   loginError('');
   const btn = document.getElementById('login-request-btn');
-  btn.disabled = true; btn.textContent = 'Отправляем...';
+  btn.disabled = true; btn.textContent = 'Входим...';
   try {
-    const body = __loginMode === 'email' ? { email } : { phone };
-    const res = await fetch(API_V1 + '/auth/request-pin', {
+    const res = await fetch(API_V1 + '/auth/login-by-phone', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ phone }),
     });
     const data = await res.json().catch(() => ({}));
-    // 404 — сотрудник не найден → предлагаем зарегистрироваться
     if (res.status === 404) {
+      // Сотрудник не найден → регистрация (если в проде нужна) или ошибка
       await loadStoresForRegistration();
       switchLoginStep('register');
       document.getElementById('reg-name').focus();
       return;
     }
-    // 409 — нет канала доставки (нет ни Telegram ни email) → предлагаем привязать email
-    if (res.status === 409) {
-      switchLoginStep('set-email');
-      document.getElementById('login-set-email').focus();
+    if (!res.ok) { loginError(data.error || 'Ошибка входа'); return; }
+    // Получили JWT — сохраняем и перезагружаем приложение (как verify-pin)
+    if (data.token) {
+      saveMobileToken(data.token);
+      document.getElementById('login-screen').style.display = 'none';
+      location.reload();
       return;
     }
-    if (!res.ok) { loginError(data.error || 'Ошибка'); return; }
-    switchLoginStep('pin');
-    // Динамическая подсказка: куда именно ушёл код
-    const hint = document.getElementById('pin-hint');
-    if (hint) {
-      const ch = (data.channels || []).join(' и ');
-      hint.textContent = ch
-        ? `Код отправлен в ${ch}. Введи 6 цифр ниже.`
-        : 'Введи 6-значный код, который мы прислали';
-    }
-    document.getElementById('login-pin').focus();
+    loginError('Не получен токен');
   } catch (e) {
-    loginError('Нет связи с сервером');
+    loginError('Нет связи: ' + (e?.message || String(e)));
   } finally {
-    btn.disabled = false; btn.textContent = 'Получить код';
+    btn.disabled = false; btn.textContent = 'Войти';
   }
 }
 
@@ -526,7 +513,7 @@ async function doLoginSetEmail() {
       switchLoginStep('phone');
     }
   } catch (e) {
-    loginError('Нет связи с сервером');
+    loginError('Нет связи: ' + (e?.message || String(e)));
   } finally {
     btn.disabled = false; btn.textContent = 'Сохранить и получить код';
   }
@@ -564,7 +551,7 @@ async function doLoginRegister() {
     document.getElementById('login-screen').style.display = 'none';
     location.reload();
   } catch (e) {
-    loginError('Нет связи с сервером');
+    loginError('Нет связи: ' + (e?.message || String(e)));
   } finally {
     btn.disabled = false; btn.textContent = 'Зарегистрироваться';
   }
@@ -982,7 +969,7 @@ async function doLoginVerifyPin() {
     document.getElementById('login-screen').style.display = 'none';
     location.reload();
   } catch (e) {
-    loginError('Нет связи с сервером');
+    loginError('Нет связи: ' + (e?.message || String(e)));
   } finally {
     btn.disabled = false; btn.textContent = 'Войти';
   }

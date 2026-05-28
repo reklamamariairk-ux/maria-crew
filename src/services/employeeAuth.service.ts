@@ -280,6 +280,33 @@ export async function verifyPinAndIssueToken(
   return { employeeId: employee.id, token, expiresAt };
 }
 
+/** Простой логин по телефону БЕЗ подтверждения кодом — для внутреннего
+ *  использования. Находит активного сотрудника по нормализованному phone
+ *  и сразу выдаёт JWT.
+ *
+ *  ВНИМАНИЕ: безопасность ослаблена — любой кто знает телефон коллеги
+ *  сможет войти от его имени. Использовать только в доверенной среде
+ *  (внутренние сотрудники Маши). */
+export async function loginByPhoneNoPin(phone: string): Promise<
+  | { employeeId: number; token: string; expiresAt: Date }
+  | { error: string; status: number }
+> {
+  const phoneNorm = normalizePhone(phone);
+  if (!phoneNorm) return { error: 'Неверный формат телефона', status: 400 };
+
+  const { rows } = await pool.query<{ id: number }>(
+    `SELECT id FROM employees
+     WHERE phone_normalized = $1 AND is_active = true
+     LIMIT 1`,
+    [phoneNorm]
+  );
+  if (!rows[0]) return { error: 'Сотрудник с таким телефоном не найден', status: 404 };
+
+  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS);
+  const token = signEmployeeToken(rows[0].id, expiresAt.getTime());
+  return { employeeId: rows[0].id, token, expiresAt };
+}
+
 // ── JWT-подобные токены (HMAC-подписанный JSON) ────────────────────────────
 
 interface EmployeeTokenPayload {

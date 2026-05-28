@@ -68,6 +68,34 @@ router.post(
   }
 );
 
+// POST /api/v1/auth/login-by-phone — упрощённый логин без PIN.
+// ВНИМАНИЕ: меньше безопасности, использовать только для внутренних
+// сотрудников Маши. Любой кто знает телефон сможет войти.
+router.post(
+  '/login-by-phone',
+  rateLimit(20, 60 * 60 * 1000),
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { phone } = req.body as { phone?: string };
+      if (!phone || !phone.trim()) {
+        res.status(400).json({ error: 'phone обязателен' });
+        return;
+      }
+      const { loginByPhoneNoPin } = await import('../../services/employeeAuth.service');
+      const result = await loginByPhoneNoPin(phone.trim());
+      if ('error' in result) {
+        res.status(result.status).json({ error: result.error });
+        return;
+      }
+      res.json({
+        token: result.token,
+        expiresAt: result.expiresAt.toISOString(),
+        employeeId: result.employeeId,
+      });
+    } catch (err) { next(err); }
+  }
+);
+
 // Verify: rate limit 20 попыток в час с IP
 router.post(
   '/verify-pin',
