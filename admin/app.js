@@ -2066,13 +2066,108 @@ const PRIZE_TYPE_LABELS = {
 };
 
 let prizesCache = [];
+let categoriesCache = [];
 
 async function loadPrizes() {
   const tbody = document.getElementById('prizes-tbody');
   tbody.innerHTML = skeletonRows(8, 5);
-  prizesCache = await api('GET', '/prizes') || [];
+  // Категории нужны и для дропдаунов, и для группировки списка призов.
+  [categoriesCache, prizesCache] = await Promise.all([
+    api('GET', '/categories').then(r => r || []).catch(() => []),
+    api('GET', '/prizes').then(r => r || []),
+  ]);
+  fillCategorySelect(document.getElementById('new-prize-category'), '');
+  renderCategoriesList();
   renderPrizes();
   loadCatalogStatus();
+}
+
+// ── Категории призов (секции витрины) ──────────────────────────────────────
+
+function toggleCategoriesPanel() {
+  document.getElementById('categories-panel').classList.toggle('hidden');
+  renderIcons();
+}
+
+/** Заполняет <select> опциями категорий (+ «без категории»). */
+function fillCategorySelect(sel, selectedId) {
+  if (!sel) return;
+  const sid = selectedId == null ? '' : String(selectedId);
+  sel.innerHTML = '<option value="">— без категории —</option>' +
+    categoriesCache.map(c =>
+      `<option value="${c.id}"${String(c.id) === sid ? ' selected' : ''}>${esc((c.emoji ? c.emoji + ' ' : '') + c.name)}</option>`
+    ).join('');
+}
+
+function renderCategoriesList() {
+  const wrap = document.getElementById('categories-list');
+  if (!wrap) return;
+  if (!categoriesCache.length) {
+    wrap.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:6px 0">Категорий пока нет — добавьте ниже.</div>';
+    return;
+  }
+  wrap.innerHTML = categoriesCache.map(c => `
+    <div class="form-row" data-cat-id="${c.id}" style="align-items:center;gap:8px;margin-bottom:6px;flex-wrap:nowrap">
+      <input type="text" class="cat-emoji-in" value="${esc(c.emoji || '')}" maxlength="4" style="width:48px;text-align:center" title="emoji">
+      <input type="text" class="cat-name-in" value="${esc(c.name)}" style="flex:1;min-width:120px">
+      <input type="number" class="cat-order-in" value="${c.sortOrder}" style="width:72px;text-align:right" title="порядок">
+      <select class="cat-active-in" style="width:110px">
+        <option value="true"${c.isActive ? ' selected' : ''}>Активна</option>
+        <option value="false"${!c.isActive ? ' selected' : ''}>Скрыта</option>
+      </select>
+      <button class="btn btn-primary btn-sm btn-icon" onclick="saveCategory(${c.id}, this)" title="Сохранить"><i data-lucide="save"></i></button>
+      <button class="btn btn-danger btn-sm btn-icon" onclick="deleteCategory(${c.id})" title="Удалить"><i data-lucide="trash-2"></i></button>
+    </div>`).join('');
+  renderIcons();
+}
+
+async function addCategory() {
+  const name  = document.getElementById('new-cat-name').value.trim();
+  const emoji = document.getElementById('new-cat-emoji').value.trim();
+  const sortOrder = parseInt(document.getElementById('new-cat-order').value) || 100;
+  if (!name) { toast('Введите название категории'); return; }
+  try {
+    await api('POST', '/categories', { name, emoji: emoji || null, sortOrder });
+    toast('✅ Категория добавлена');
+    document.getElementById('new-cat-name').value = '';
+    document.getElementById('new-cat-emoji').value = '';
+    loadPrizes();
+  } catch (e) { toastError(e); }
+}
+
+async function saveCategory(id, btn) {
+  const row = document.querySelector(`[data-cat-id="${id}"]`);
+  if (!row) return;
+  const body = {
+    name:  row.querySelector('.cat-name-in').value.trim(),
+    emoji: row.querySelector('.cat-emoji-in').value.trim() || null,
+    sortOrder: parseInt(row.querySelector('.cat-order-in').value) || 0,
+    isActive: row.querySelector('.cat-active-in').value === 'true',
+  };
+  if (!body.name) { toast('Название не пустое'); return; }
+  btn.disabled = true; btn.textContent = '⏳';
+  try {
+    await api('PATCH', `/categories/${id}`, body);
+    toast('✅ Сохранено');
+    loadPrizes();
+  } catch (e) { toastError(e); btn.disabled = false; renderIcons(); }
+}
+
+async function deleteCategory(id) {
+  const c = categoriesCache.find(x => x.id === id);
+  const used = prizesCache.filter(p => p.categoryId === id).length;
+  const extra = used > 0 ? `\n\nПризов в категории: ${used} — они останутся без категории (попадут в «Прочее»).` : '';
+  const ok = await confirmDialog({
+    title: 'Удалить категорию?',
+    message: `«${c ? c.name : id}»${extra}`,
+    danger: true, confirmText: 'Удалить',
+  });
+  if (!ok) return;
+  try {
+    await api('DELETE', `/categories/${id}`);
+    toast('Категория удалена');
+    loadPrizes();
+  } catch (e) { toastError(e); }
 }
 
 // ── 1С каталог: статус-бар + ручной refresh + autocomplete ─────────────────
@@ -2313,16 +2408,25 @@ function renderPrizes() {
     (PRIZE_TYPE_LABELS[p.prizeType] || '').toLowerCase().includes(search)
   );
   if (prizesCache.length === 0) {
-    tbody.innerHTML = emptyRow(9, 'gift', 'Призов нет — добавьте первый');
+    tbody.innerHTML = emptyRow(10, 'gift', 'Призов нет — добавьте первый');
     renderIcons();
     return;
   }
   if (list.length === 0) {
-    tbody.innerHTML = emptyRow(9, 'search-x', 'Ничего не найдено');
+    tbody.innerHTML = emptyRow(10, 'search-x', 'Ничего не найдено');
     renderIcons();
     return;
   }
-  tbody.innerHTML = list.map(p => `<tr data-prize-id="${p.id}">
+
+  const catSelectHtml = (selectedId) => {
+    const sid = selectedId == null ? '' : String(selectedId);
+    return `<select class="prize-category-in" style="width:100%">
+      <option value="">— без категории —</option>
+      ${categoriesCache.map(c => `<option value="${c.id}"${String(c.id) === sid ? ' selected' : ''}>${esc((c.emoji ? c.emoji + ' ' : '') + c.name)}</option>`).join('')}
+    </select>`;
+  };
+
+  const prizeRow = (p) => `<tr data-prize-id="${p.id}">
     <td style="color:var(--muted);font-size:12px">${p.id}</td>
     <td><input type="text" class="prize-name-in" value="${esc(p.name)}" style="width:100%"></td>
     <td class="col-hide-sm">
@@ -2332,6 +2436,7 @@ function renderPrizes() {
         ).join('')}
       </select>
     </td>
+    <td class="col-hide-sm">${catSelectHtml(p.categoryId)}</td>
     <td><input type="number" class="prize-cards-in" min="0" value="${p.cardsRequired}" style="width:80px;text-align:right"></td>
     <td><input type="number" class="prize-coins-in" min="0" value="${p.coinsRequired}" style="width:80px;text-align:right"></td>
     <td class="col-hide-md"><input type="number" class="prize-order-in" value="${p.sortOrder}" style="width:70px;text-align:right"></td>
@@ -2350,7 +2455,26 @@ function renderPrizes() {
         <button class="btn btn-danger btn-sm btn-icon" onclick="deletePrize(${p.id})" title="Удалить"><i data-lucide="trash-2"></i></button>
       </div>
     </td>
-  </tr>`).join('');
+  </tr>`;
+
+  // Группируем по категории: порядок категорий — по их sortOrder, «без категории» последней.
+  const catOrder = new Map(categoriesCache.map(c => [c.id, c]));
+  const groups = new Map(); // categoryId|'' → prizes[]
+  for (const p of list) {
+    const key = p.categoryId != null && catOrder.has(p.categoryId) ? p.categoryId : '';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(p);
+  }
+  const sortedKeys = [...groups.keys()].sort((a, b) => {
+    if (a === '') return 1; if (b === '') return -1;
+    return (catOrder.get(a)?.sortOrder ?? 0) - (catOrder.get(b)?.sortOrder ?? 0);
+  });
+  tbody.innerHTML = sortedKeys.map(key => {
+    const cat = key === '' ? null : catOrder.get(key);
+    const title = cat ? `${cat.emoji ? cat.emoji + ' ' : ''}${esc(cat.name)}` : '📦 Без категории';
+    const header = `<tr class="cat-group-row"><td colspan="10" style="background:var(--bg-soft,#f6f6f6);font-weight:700;font-size:12px;color:var(--muted);padding:6px 10px">${title} · ${groups.get(key).length}</td></tr>`;
+    return header + groups.get(key).map(prizeRow).join('');
+  }).join('');
   renderIcons();
   // Рендерим список items в каждую строку (берём из prizesCache по id)
   tbody.querySelectorAll('.prize-items-list[data-prize-id]').forEach(wrap => {
@@ -2387,12 +2511,14 @@ async function addPrize() {
   const coinsRequired = parseInt(document.getElementById('new-prize-coins').value) || 0;
   const sortOrder   = parseInt(document.getElementById('new-prize-order').value) || 100;
   const description = document.getElementById('new-prize-desc').value.trim();
+  const catVal      = document.getElementById('new-prize-category').value;
+  const categoryId  = catVal ? parseInt(catVal, 10) : null;
   const externalItems = collectPrizeItems(document.getElementById('new-prize-items-list'));
   if (!name) { toast('Введите название'); return; }
   if (cardsRequired === 0 && coinsRequired === 0) { toast('Укажи стоимость в карточках или монетах'); return; }
   try {
     await api('POST', '/prizes', {
-      name, prizeType, cardsRequired, coinsRequired, sortOrder,
+      name, prizeType, cardsRequired, coinsRequired, sortOrder, categoryId,
       description: description || undefined,
       externalItems,
     });
@@ -2417,6 +2543,7 @@ async function savePrize(id, btn) {
     coinsRequired: parseInt(row.querySelector('.prize-coins-in').value) || 0,
     sortOrder: parseInt(row.querySelector('.prize-order-in').value) || 100,
     isActive: row.querySelector('.prize-active-in').value === 'true',
+    categoryId: row.querySelector('.prize-category-in').value ? parseInt(row.querySelector('.prize-category-in').value, 10) : null,
     externalItems: collectPrizeItems(row.querySelector('.prize-items-list')),
   };
   if (!body.name) { toast('Название не пустое'); return; }

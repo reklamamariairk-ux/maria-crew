@@ -657,6 +657,21 @@
     .store-tab-btn.active { background: var(--brand); color: #fff; box-shadow: 0 4px 12px rgba(212,33,57,0.3); }
     .store-tab-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
     .store-tab-btn .lucide { width: 16px; height: 16px; stroke-width: 2.2; }
+    /* Чипсы категорий витрины */
+    .store-cats { display: flex; gap: 7px; overflow-x: auto; padding: 2px 0 10px; margin: -6px 0 4px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .store-cats::-webkit-scrollbar { display: none; }
+    .cat-chip {
+      flex: 0 0 auto; padding: 7px 13px; border-radius: 999px; border: 1.5px solid transparent;
+      background: #fff; color: var(--hint); font-size: 13px; font-weight: 800;
+      font-family: var(--font); cursor: pointer; white-space: nowrap; transition: all 0.15s;
+      box-shadow: 0 1px 3px rgba(33,28,23,0.06);
+    }
+    .cat-chip.active { background: var(--brand); color: #fff; box-shadow: 0 3px 9px rgba(212,33,57,0.28); }
+    /* Заголовок секции категории в списке призов */
+    .prize-cat-head { display: flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 900; color: var(--text); margin: 16px 2px 8px; }
+    .prize-cat-head:first-child { margin-top: 4px; }
+    .prize-cat-head .cat-emoji { font-size: 18px; }
+    .prize-cat-head .cat-count { font-size: 12px; font-weight: 700; color: var(--hint); }
 
     .goal-card {
       background: linear-gradient(135deg, #fff4f5, var(--brand-bg));
@@ -963,6 +978,7 @@
         <button class="store-tab-btn" id="store-tab-coins" onclick="switchStoreTab('coins')"><i data-lucide="coins"></i> Монеты</button>
         <button class="store-tab-btn" id="store-tab-mine" onclick="switchStoreTab('mine')"><i data-lucide="receipt"></i> Заявки</button>
       </div>
+      <div id="store-cats" class="store-cats"></div>
       <div id="store-goal"></div>
       <div id="store-prizes"><div class="empty"><div class="empty-icon"><i data-lucide="shopping-bag"></i></div><div class="empty-text">Загружаем...</div></div></div>
       <div id="store-mine" style="display:none"></div>

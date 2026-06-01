@@ -772,7 +772,22 @@
           <h1 class="page-title">Maria Store · Призы</h1>
           <p class="page-subtitle">Каталог призов за карточки и монеты</p>
         </div>
-        <button class="btn btn-primary" onclick="showAddPrize()"><i data-lucide="plus"></i> Добавить приз</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="toggleCategoriesPanel()"><i data-lucide="folder-tree"></i> Категории</button>
+          <button class="btn btn-primary" onclick="showAddPrize()"><i data-lucide="plus"></i> Добавить приз</button>
+        </div>
+      </div>
+
+      <!-- Управление категориями призов (секции витрины) -->
+      <div id="categories-panel" class="hidden card card-pad" style="margin-bottom:16px">
+        <p class="section-title">Категории магазина <span style="font-weight:400;color:var(--muted);font-size:12px">— порядок и emoji задают вид меню в приложении</span></p>
+        <div id="categories-list"></div>
+        <div class="form-row" style="margin:10px 0 0;align-items:flex-end;gap:8px;flex-wrap:wrap">
+          <label style="font-size:12px">Emoji <input type="text" id="new-cat-emoji" placeholder="🍰" maxlength="4" style="width:60px;text-align:center"></label>
+          <label style="font-size:12px">Название <input type="text" id="new-cat-name" placeholder="Десерты" style="width:200px"></label>
+          <label style="font-size:12px">Порядок <input type="number" id="new-cat-order" value="100" style="width:80px;text-align:right"></label>
+          <button class="btn btn-primary btn-sm" onclick="addCategory()"><i data-lucide="plus"></i> Добавить категорию</button>
+        </div>
       </div>
 
       <div id="add-prize-form" class="hidden card card-pad" style="margin-bottom:16px">
@@ -791,6 +806,9 @@
               <option value="merch">Мерч</option>
               <option value="break">Доп. перерыв</option>
             </select>
+          </label>
+          <label>Категория
+            <select id="new-prize-category" class="input"><option value="">— без категории —</option></select>
           </label>
           <label>Карточек <input type="number" id="new-prize-cards" min="0" value="0" class="input"></label>
           <label>Монет <input type="number" id="new-prize-coins" min="0" value="0" class="input"></label>
@@ -831,6 +849,7 @@
             <th style="width:50px">#</th>
             <th>Название</th>
             <th style="width:140px" class="col-hide-sm">Тип</th>
+            <th style="width:150px" class="col-hide-sm">Категория</th>
             <th style="width:100px">Карт.</th>
             <th style="width:100px">Монет</th>
             <th style="width:80px" class="col-hide-md">Сорт.</th>
@@ -839,7 +858,7 @@
             <th style="width:140px">Действие</th>
           </tr></thead>
           <tbody id="prizes-tbody">
-            <tr><td colspan="9" class="empty">Загрузка...</td></tr>
+            <tr><td colspan="10" class="empty">Загрузка...</td></tr>
           </tbody>
         </table>
       </div>

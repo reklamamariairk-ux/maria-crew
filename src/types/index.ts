@@ -152,6 +152,20 @@ export interface Prize {
   coinsRequired: number;
   isActive: boolean;
   sortOrder: number;
+  categoryId: number | null;
+  // Денормализованные поля категории (JOIN в getPrizes / GET /prizes) — для
+  // группировки витрины. Отсутствуют в RETURNING после INSERT/UPDATE.
+  categoryName?: string | null;
+  categoryEmoji?: string | null;
+  categorySortOrder?: number | null;
+}
+
+export interface PrizeCategory {
+  id: number;
+  name: string;
+  emoji: string | null;
+  sortOrder: number;
+  isActive: boolean;
 }
 
 export interface StoreExchange {

@@ -80,6 +80,7 @@ function clearAllCachedViews() {
 let employee = null;
 let currentTab = 'collection';
 let storeTab = 'cards';
+let storeCatFilter = null; // null = «Всё», число = id категории, '__none__' = без категории
 let prizesCache = null;
 let myStatsCache = null;
 let isNewUser = false;
@@ -1556,6 +1557,9 @@ function switchStoreTab(tab) {
   document.getElementById('store-tab-mine').classList.toggle('active', tab === 'mine');
 
   const isMine = tab === 'mine';
+  // При смене валюты сбрасываем фильтр категории — у разных валют свой набор.
+  if (tab === 'cards' || tab === 'coins') storeCatFilter = null;
+  document.getElementById('store-cats').style.display    = isMine ? 'none' : '';
   document.getElementById('store-goal').style.display    = isMine ? 'none' : '';
   document.getElementById('store-prizes').style.display  = isMine ? 'none' : '';
   document.getElementById('store-mine').style.display    = isMine ? 'block' : 'none';
@@ -2668,7 +2672,11 @@ function renderPrizes() {
     goalEl.innerHTML = '';
   }
 
+  // Чипсы категорий — по всем призам текущей валюты (до фильтра).
+  renderStoreCats(prizes);
+
   if (!prizes.length) {
+    document.getElementById('store-cats').innerHTML = '';
     document.getElementById('store-prizes').innerHTML = `
       <div class="empty">
         <div class="empty-icon">🛍</div>
@@ -2677,31 +2685,99 @@ function renderPrizes() {
     return;
   }
 
-  document.getElementById('store-prizes').innerHTML = prizes.map(p => {
-    const canAfford = canAffordPrize(p, myStatsCache);
-    const cost      = isCards ? p.cardsRequired : p.coinsRequired;
-    const need      = Math.max(0, cost - balance);
-    // Если приз mixed — показываем полную стоимость в подзаголовке, чтобы не вводить в заблуждение
-    const isMixed = p.cardsRequired > 0 && p.coinsRequired > 0;
-    const costLine = isMixed
-      ? priceLabel(p)
-      : `${cost} ${pluralUnit(cost)}`;
-    const icon = PRIZE_ICONS[p.prizeType] || '🎁';
-    return `<div class="prize-item${canAfford ? ' can-afford' : ''}">
-      <div style="font-size:24px;line-height:1;flex-shrink:0">${icon}</div>
-      <div style="flex:1;min-width:0">
-        <div class="prize-name">${escapeHtml(p.name)}</div>
-        <div class="prize-cost">${costLine}</div>
-        ${!canAfford && !isMixed ? `<div class="prize-need">ещё ${need} ${pluralUnit(need)}</div>` : ''}
-        ${!canAfford && isMixed ? `<div class="prize-need">пока не хватает</div>` : ''}
-      </div>
-      <button class="prize-btn ${canAfford ? 'can' : 'cant'}"
-              onclick="${canAfford ? `doExchange(${p.id}, this)` : ''}"
-              ${canAfford ? '' : 'disabled'}>
-        ${canAfford ? 'Обменять' : 'Мало'}
-      </button>
-    </div>`;
+  // Применяем фильтр выбранной категории.
+  let visible = prizes;
+  if (storeCatFilter === '__none__')   visible = prizes.filter(p => !p.categoryId);
+  else if (storeCatFilter !== null)    visible = prizes.filter(p => p.categoryId === storeCatFilter);
+
+  if (!visible.length) {
+    document.getElementById('store-prizes').innerHTML =
+      `<div class="empty"><div class="empty-icon">🔍</div><div class="empty-text">В этой категории пока пусто.</div></div>`;
+    return;
+  }
+
+  // Группируем по категории (порядок — categorySortOrder, «без категории» в конце),
+  // внутри категории — по цене текущей валюты ↑ (дешёвые сверху).
+  const priceOf = (p) => isCards ? p.cardsRequired : p.coinsRequired;
+  const groups = new Map(); // key → { meta, items }
+  for (const p of visible) {
+    const key = p.categoryId || '__none__';
+    if (!groups.has(key)) groups.set(key, { meta: p, items: [] });
+    groups.get(key).items.push(p);
+  }
+  const sortedKeys = [...groups.keys()].sort((a, b) => {
+    if (a === '__none__') return 1;
+    if (b === '__none__') return -1;
+    return (groups.get(a).meta.categorySortOrder ?? 9999) - (groups.get(b).meta.categorySortOrder ?? 9999);
+  });
+
+  document.getElementById('store-prizes').innerHTML = sortedKeys.map(key => {
+    const g = groups.get(key);
+    g.items.sort((a, b) => priceOf(a) - priceOf(b));
+    const emoji = key === '__none__' ? '📦' : (g.meta.categoryEmoji || '🎁');
+    const name  = key === '__none__' ? 'Прочее' : (g.meta.categoryName || 'Прочее');
+    const head = `<div class="prize-cat-head"><span class="cat-emoji">${emoji}</span><span>${escapeHtml(name)}</span><span class="cat-count">${g.items.length}</span></div>`;
+    return head + g.items.map(p => prizeCardHtml(p, isCards, balance, pluralUnit)).join('');
   }).join('');
+}
+
+/** HTML одной карточки приза в витрине. */
+function prizeCardHtml(p, isCards, balance, pluralUnit) {
+  const canAfford = canAffordPrize(p, myStatsCache);
+  const cost      = isCards ? p.cardsRequired : p.coinsRequired;
+  const need      = Math.max(0, cost - balance);
+  const isMixed   = p.cardsRequired > 0 && p.coinsRequired > 0;
+  const costLine  = isMixed ? priceLabel(p) : `${cost} ${pluralUnit(cost)}`;
+  const icon      = PRIZE_ICONS[p.prizeType] || '🎁';
+  return `<div class="prize-item${canAfford ? ' can-afford' : ''}">
+    <div style="font-size:24px;line-height:1;flex-shrink:0">${icon}</div>
+    <div style="flex:1;min-width:0">
+      <div class="prize-name">${escapeHtml(p.name)}</div>
+      <div class="prize-cost">${costLine}</div>
+      ${!canAfford && !isMixed ? `<div class="prize-need">ещё ${need} ${pluralUnit(need)}</div>` : ''}
+      ${!canAfford && isMixed ? `<div class="prize-need">пока не хватает</div>` : ''}
+    </div>
+    <button class="prize-btn ${canAfford ? 'can' : 'cant'}"
+            onclick="${canAfford ? `doExchange(${p.id}, this)` : ''}"
+            ${canAfford ? '' : 'disabled'}>
+      ${canAfford ? 'Обменять' : 'Мало'}
+    </button>
+  </div>`;
+}
+
+/** Рисует ряд чипсов категорий над витриной (по призам текущей валюты).
+ *  Если групп меньше двух — чипсы скрываем (нечего фильтровать). */
+function renderStoreCats(prizes) {
+  const wrap = document.getElementById('store-cats');
+  if (!wrap) return;
+  const seen = new Map(); // categoryId → { emoji, name, order }
+  let hasNone = false;
+  for (const p of prizes) {
+    if (p.categoryId) {
+      if (!seen.has(p.categoryId)) {
+        seen.set(p.categoryId, {
+          emoji: p.categoryEmoji || '🎁',
+          name:  p.categoryName  || 'Категория',
+          order: p.categorySortOrder ?? 9999,
+        });
+      }
+    } else hasNone = true;
+  }
+  const cats = [...seen.entries()].sort((a, b) => a[1].order - b[1].order);
+  if (cats.length + (hasNone ? 1 : 0) < 2) { wrap.innerHTML = ''; return; }
+  const chip = (arg, label, active) =>
+    `<button class="cat-chip${active ? ' active' : ''}" onclick="selectStoreCat(${arg})">${label}</button>`;
+  let html = chip('null', 'Всё', storeCatFilter === null);
+  html += cats.map(([id, c]) =>
+    chip(String(id), `${c.emoji} ${escapeHtml(c.name)}`, storeCatFilter === id)).join('');
+  if (hasNone) html += chip(`'__none__'`, '📦 Прочее', storeCatFilter === '__none__');
+  wrap.innerHTML = html;
+}
+
+/** Клик по чипсу категории. */
+function selectStoreCat(val) {
+  storeCatFilter = (val === null || val === '__none__') ? val : Number(val);
+  renderPrizes();
 }
 
 let exchangeInFlight = false;

@@ -63,16 +63,32 @@ const PRIZE_SELECT = `
   SELECT id, name, description, prize_type AS "prizeType",
          cards_required AS "cardsRequired", coins_required AS "coinsRequired",
          is_active AS "isActive", sort_order AS "sortOrder",
+         category_id           AS "categoryId",
          external_product_id   AS "externalProductId",
          external_product_name AS "externalProductName",
          external_qty          AS "externalQty",
          external_items        AS "externalItems"
 `;
 
-// GET /api/prizes — все призы (включая скрытые)
+// GET /api/prizes — все призы (включая скрытые), с полями категории.
+// Порядок: категория → цена ↑ → sort_order → id (как в витрине).
 router.get('/', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { rows } = await pool.query(`${PRIZE_SELECT} FROM prizes ORDER BY sort_order, id`);
+    const { rows } = await pool.query(
+      `SELECT p.id, p.name, p.description, p.prize_type AS "prizeType",
+              p.cards_required AS "cardsRequired", p.coins_required AS "coinsRequired",
+              p.is_active AS "isActive", p.sort_order AS "sortOrder",
+              p.category_id AS "categoryId",
+              c.name AS "categoryName", c.emoji AS "categoryEmoji",
+              c.sort_order AS "categorySortOrder",
+              p.external_product_id   AS "externalProductId",
+              p.external_product_name AS "externalProductName",
+              p.external_qty          AS "externalQty",
+              p.external_items        AS "externalItems"
+       FROM prizes p
+       LEFT JOIN prize_categories c ON c.id = p.category_id
+       ORDER BY COALESCE(c.sort_order, 9999), p.coins_required, p.cards_required, p.sort_order, p.id`
+    );
     res.json(rows);
   } catch (err) { next(err); }
 });
@@ -83,6 +99,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
     const body = req.body as {
       name: string; description?: string; prizeType: string;
       cardsRequired?: number; coinsRequired?: number; sortOrder?: number;
+      categoryId?: number | null;
       externalItems?: unknown;
       externalProductId?: string | null;
       externalProductName?: string | null;
@@ -105,14 +122,16 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
     // и любой существующий код увидят первый товар без правок.
     const head = items[0] ?? null;
 
+    const categoryId = Number.isFinite(body.categoryId as number) ? Number(body.categoryId) : null;
     const { rows } = await pool.query(
       `INSERT INTO prizes (name, description, prize_type, cards_required, coins_required, sort_order,
-                           external_product_id, external_product_name, external_qty, external_items)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+                           category_id, external_product_id, external_product_name, external_qty, external_items)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
        RETURNING ${PRIZE_SELECT.replace(/^[\s]*SELECT /, '')}`,
       [
         body.name.trim(), body.description?.trim() || null, body.prizeType,
         cards ?? 0, coins ?? 0, body.sortOrder ?? 999,
+        categoryId,
         head?.productId ?? null,
         head?.name ?? null,
         head?.qty ?? 1,
@@ -131,6 +150,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
       name?: string; description?: string | null; prizeType?: string;
       cardsRequired?: number; coinsRequired?: number;
       isActive?: boolean; sortOrder?: number;
+      categoryId?: number | null;
       externalItems?: unknown;
       externalProductId?: string | null;
       externalProductName?: string | null;
@@ -152,6 +172,10 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     if (body.coinsRequired !== undefined) { vals.push(body.coinsRequired); sets.push(`coins_required = $${vals.length}`); }
     if (body.isActive !== undefined) { vals.push(body.isActive); sets.push(`is_active = $${vals.length}`); }
     if (body.sortOrder !== undefined) { vals.push(body.sortOrder); sets.push(`sort_order = $${vals.length}`); }
+    if (body.categoryId !== undefined) {
+      const cid = Number.isFinite(body.categoryId as number) ? Number(body.categoryId) : null;
+      vals.push(cid); sets.push(`category_id = $${vals.length}`);
+    }
 
     // items берём либо из externalItems[], либо из старых полей (back-compat).
     // Если передали явно — пишем И в JSONB И в old fields (синхронизация).

@@ -10,13 +10,22 @@ export interface ExchangeWithDelivery extends StoreExchange {
   externalDocAt?: Date | null;
 }
 
-/** Все активные призы каталога */
+/** Все активные призы каталога — с полями категории для группировки витрины.
+ *  Порядок: категория (по её sort_order) → цена ↑ → sort_order → id.
+ *  Финальную сортировку «по цене внутри категории» под выбранную валюту
+ *  делает клиент (карточки vs монеты), здесь — стабильный базовый порядок. */
 export async function getPrizes(): Promise<Prize[]> {
   const { rows } = await pool.query<Prize>(
-    `SELECT id, name, description, prize_type AS "prizeType",
-            cards_required AS "cardsRequired", coins_required AS "coinsRequired",
-            is_active AS "isActive", sort_order AS "sortOrder"
-     FROM prizes WHERE is_active = true ORDER BY sort_order`
+    `SELECT p.id, p.name, p.description, p.prize_type AS "prizeType",
+            p.cards_required AS "cardsRequired", p.coins_required AS "coinsRequired",
+            p.is_active AS "isActive", p.sort_order AS "sortOrder",
+            p.category_id AS "categoryId",
+            c.name AS "categoryName", c.emoji AS "categoryEmoji",
+            c.sort_order AS "categorySortOrder"
+     FROM prizes p
+     LEFT JOIN prize_categories c ON c.id = p.category_id
+     WHERE p.is_active = true
+     ORDER BY COALESCE(c.sort_order, 9999), p.coins_required, p.cards_required, p.sort_order, p.id`
   );
   return rows;
 }
