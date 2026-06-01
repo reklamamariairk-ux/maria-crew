@@ -191,13 +191,25 @@ export async function searchCatalog(query: string, limit = 20): Promise<CatalogI
         END AS rank
      FROM one_c_nomenclature_cache
      WHERE (code ILIKE '%' || $1 || '%' OR name ILIKE '%' || $1 || '%')
+       -- Блэклист только НЕпищевого хлама. Раньше исключали 'Полуфабрикат%' и
+       -- 'Сырье%' — а в 1С ~290 реальных пирожков/тортов/эклеров помечены видом
+       -- «Полуфабрикат (21)», и они пропадали из подбора призов. Теперь прячем
+       -- только то, что точно нельзя подарить (инвентарь/тара/оргтехника/…),
+       -- а всю готовую еду (Продукция, Комплект, Полуфабрикат, Товары для
+       -- праздника, Кругляш, наборы) показываем.
        AND (kind IS NULL OR (
-         kind NOT ILIKE 'Сырье%' AND
-         kind NOT ILIKE 'Полуфабрикат%' AND
+         kind NOT ILIKE 'Оргтехника%' AND
+         kind NOT ILIKE 'Тара%' AND
+         kind NOT ILIKE 'Хоз инвентарь%' AND
+         kind NOT ILIKE 'Кухонный инвентарь%' AND
+         kind NOT ILIKE 'Спецодежда%' AND
          kind NOT ILIKE 'Оборудование%' AND
-         kind NOT ILIKE 'Материал%' AND
-         kind NOT ILIKE 'МБП%' AND
-         kind NOT ILIKE 'Инвентарь%'
+         kind NOT ILIKE 'Запасные части%' AND
+         kind NOT ILIKE 'Топливо%' AND
+         kind NOT ILIKE 'Обслуживание%' AND
+         kind NOT ILIKE 'Прочие материалы%' AND
+         kind NOT ILIKE 'Сырье%' AND
+         kind NOT ILIKE 'МБП%'
        ))
      ORDER BY rank, name
      LIMIT $2`,
