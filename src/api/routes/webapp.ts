@@ -748,24 +748,24 @@ router.post('/messages/new', async (req: Request, res: Response, next: NextFunct
       fileName: body.fileName,
     });
     res.json(result);
-    // Уведомляем владельца в TG (async, не блокирует ответ)
-    notifyOwnerOfNewChat(auth.employee.name, auth.employee.id, result.requestId, body.text || '', body.fileType).catch(() => {});
+    // Уведомляем менеджеров в TG (async, не блокирует ответ)
+    notifyManagersOfEmployeeMessage(auth.employee.name, body.text || '', body.fileType, true).catch(() => {});
   } catch (err) { next(err); }
 });
 
-async function notifyOwnerOfNewChat(empName: string, empId: number, reqId: number, text: string, fileType?: string): Promise<void> {
-  const ownerId = (process.env.OWNER_TELEGRAM_ID ?? '').trim();
-  if (!ownerId) return;
-  const { sendBroadcast } = await import('../../bot/notifications/sender');
+// Уведомление менеджерам о сообщении сотрудника (новый диалог или ответ в треде).
+// Раньше шло только на OWNER_TELEGRAM_ID, которого нет в env → не уходило никому.
+async function notifyManagersOfEmployeeMessage(empName: string, text: string, fileType: string | undefined, isNew: boolean): Promise<void> {
+  const { notifyAllManagers } = await import('../../bot/notifications/sender');
   const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const fileLabel = fileType === 'photo' ? '📷 фото' : fileType === 'video' ? '🎬 видео' : fileType === 'document' ? '📎 файл' : '';
   const preview = text.trim() ? esc(text.slice(0, 100)) : fileLabel;
   const html =
-    `📨 <b>Новое сообщение от сотрудника</b>\n\n` +
+    `📨 <b>${isNew ? 'Новое сообщение от сотрудника' : 'Ответ сотрудника в чате'}</b>\n\n` +
     `От: <b>${esc(empName)}</b>\n` +
     `Сообщение: ${preview}\n\n` +
     `Открыть в админке: https://crew.145-223-121-47.sslip.io/`;
-  await sendBroadcast([ownerId], html).catch(() => {});
+  await notifyAllManagers(html);
 }
 
 // GET /api/webapp/messages/unread-count — badge на иконке «Сообщения»
@@ -815,6 +815,8 @@ router.post('/messages/:id/send', async (req: Request, res: Response, next: Next
     });
     if (!result) { res.status(404).json({ error: 'Запрос не найден или нет доступа' }); return; }
     res.json(result);
+    // Уведомляем менеджеров об ответе сотрудника в треде (async)
+    notifyManagersOfEmployeeMessage(auth.employee.name, body.text || '', body.fileType, false).catch(() => {});
   } catch (err) { next(err); }
 });
 

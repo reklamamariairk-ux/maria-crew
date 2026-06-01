@@ -21,6 +21,27 @@ async function send(telegramId: bigint | string, html: string): Promise<void> {
   }
 }
 
+/** Telegram-id всех активных менеджеров/админов — получатели заявок на призы
+ *  и сообщений сотрудников. Шлём всем, а не менеджеру конкретной точки: из 18
+ *  точек менеджер привязан лишь к одной (Офис), иначе заявки/сообщения с
+ *  остальных 17 точек не уведомляли никого. */
+async function getManagerTelegramIds(): Promise<string[]> {
+  const { rows } = await pool.query<{ telegramId: string }>(
+    `SELECT DISTINCT telegram_id::text AS "telegramId"
+       FROM employees
+      WHERE is_active = true
+        AND telegram_id IS NOT NULL
+        AND role IN ('manager', 'admin')`
+  );
+  return rows.map(r => r.telegramId);
+}
+
+/** Рассылает HTML-уведомление всем менеджерам/админам (через send → с parse_mode). */
+export async function notifyAllManagers(html: string): Promise<void> {
+  const ids = await getManagerTelegramIds();
+  await Promise.allSettled(ids.map(id => send(id, html)));
+}
+
 /** Получает telegram_id сотрудника по его id */
 async function getEmployeeTelegramId(employeeId: number): Promise<string | null> {
   const { rows } = await pool.query<{ telegramId: string }>(
@@ -255,7 +276,7 @@ export async function notifyAdminNewExchange(
   );
   if (!rows[0]) return;
 
-  const { employeeName, storeName, storeId, prizeName, cardsSpent, coinsSpent } = rows[0];
+  const { employeeName, storeName, prizeName, cardsSpent, coinsSpent } = rows[0];
 
   const costParts: string[] = [];
   if (cardsSpent > 0) costParts.push(`${cardsSpent} карт.`);
@@ -268,19 +289,9 @@ export async function notifyAdminNewExchange(
     `Точка: ${esc(storeName)}\n` +
     `Приз: «${esc(prizeName)}»${cost}`;
 
-  const { rows: admins } = await pool.query<{ telegramId: string }>(
-    `SELECT DISTINCT telegram_id::text AS "telegramId"
-     FROM employees
-     WHERE is_active = true
-       AND telegram_id IS NOT NULL
-       AND (
-         (store_id = $1 AND role = 'manager')
-         OR role = 'admin'
-       )`,
-    [storeId]
-  );
-
-  await Promise.allSettled(admins.map(a => send(a.telegramId, text)));
+  // Шлём всем активным менеджерам/админам (см. getManagerTelegramIds).
+  const recipientIds = await getManagerTelegramIds();
+  await Promise.allSettled(recipientIds.map(id => send(id, text)));
 }
 
 /** Отправить алерт владельцу системы (в Telegram).
