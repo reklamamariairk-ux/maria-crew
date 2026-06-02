@@ -12,8 +12,32 @@ import type {
 // ─── Формулы (чистые функции) ────────────────────────────────────────────────
 
 /**
+ * Линейный балл с порогом и штрафом.
+ *   value ≥ threshold → +вес × (value − threshold) / (100 − threshold)  [max +вес при 100]
+ *   value < threshold → −вес × (threshold − value) / threshold           [max −вес при 0]
+ *   value == null или weight == 0 → 0 (нейтрально)
+ *
+ * Используется для тайного покупателя и чек-листа. Тайного можно временно
+ * отключить через mystery_shopper_weight=0 (тогда штрафа тоже не будет).
+ */
+function thresholdScore(value: number | null, threshold: number, weight: number): number {
+  if (value === null || weight === 0) return 0;
+  if (value >= threshold) {
+    const room = 100 - threshold;
+    return room > 0 ? ((value - threshold) / room) * weight : weight;
+  }
+  return threshold > 0 ? -((threshold - value) / threshold) * weight : 0;
+}
+
+/**
  * Рейтинг сотрудника (MVP Score).
- * Веса берутся из БД (mvp_config); дефолт: тайный 30%, отзывы 25%, чек-лист 25%, план 20%.
+ * - Тайный покупатель: порог 80 (настраивается), выше — плюс до +вес, ниже — минус.
+ * - Чек-лист: порог 70 (настраивается), выше — плюс до +вес, ниже — минус.
+ * - Отзывы: +N за отзыв, потолок reviewsMax (минусов нет).
+ * - План выручки: +(% / 100) × weightFactor, потолок revenueMax (минусов нет).
+ *
+ * Результат МОЖЕТ быть отрицательным (если штрафы перевесят плюсы).
+ * Это автоматически режет шансы на MVP и карточки.
  */
 export function calcMvpScore(
   m: {
@@ -22,12 +46,23 @@ export function calcMvpScore(
     checklistPercent: number | null;
     revenuePercent: number | null;
   },
-  cfg?: Pick<MvpConfig, 'mysteryShopperWeight' | 'reviewsPerCard' | 'reviewsMax' | 'checklistWeight' | 'revenueWeightFactor' | 'revenueMax'>
+  cfg?: Pick<
+    MvpConfig,
+    | 'mysteryShopperWeight' | 'mysteryShopperThreshold'
+    | 'reviewsPerCard' | 'reviewsMax'
+    | 'checklistWeight' | 'checklistThreshold'
+    | 'revenueWeightFactor' | 'revenueMax'
+  >
 ): number {
-  const w = cfg ?? { mysteryShopperWeight: 30, reviewsPerCard: 5, reviewsMax: 25, checklistWeight: 25, revenueWeightFactor: 20, revenueMax: 25 };
-  const mystery   = m.mysteryShopperScore !== null ? (m.mysteryShopperScore / 100) * w.mysteryShopperWeight : 0;
+  const w = cfg ?? {
+    mysteryShopperWeight: 0, mysteryShopperThreshold: 80,
+    reviewsPerCard: 5, reviewsMax: 25,
+    checklistWeight: 25, checklistThreshold: 70,
+    revenueWeightFactor: 20, revenueMax: 25,
+  };
+  const mystery   = thresholdScore(m.mysteryShopperScore, w.mysteryShopperThreshold, w.mysteryShopperWeight);
   const reviews   = Math.min(m.reviewsCount * w.reviewsPerCard, w.reviewsMax);
-  const checklist = m.checklistPercent !== null ? (m.checklistPercent / 100) * w.checklistWeight : 0;
+  const checklist = thresholdScore(m.checklistPercent, w.checklistThreshold, w.checklistWeight);
   const revenue   = m.revenuePercent !== null ? Math.min((m.revenuePercent / 100) * w.revenueWeightFactor, w.revenueMax) : 0;
   return Math.round((mystery + reviews + checklist + revenue) * 100) / 100;
 }

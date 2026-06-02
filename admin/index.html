@@ -1078,11 +1078,16 @@
       <div class="card card-pad" style="max-width:560px">
         <p class="section-title">Формула баллов сотрудника</p>
         <p class="text-muted" style="font-size:13px;margin-bottom:16px">
-          Баллы = (тайный покупатель / 100 × <strong>Вес ТП</strong>) + min(отзывы × <strong>Монет/отзыв</strong>, <strong>Макс. отзывов</strong>) + (чек-лист / 100 × <strong>Вес ЧЛ</strong>) + min(план / 100 × <strong>Вес план</strong>, <strong>Макс. план</strong>)
+          <b>Тайный</b> и <b>чек-лист</b> — с порогом: выше — плюс к баллам, ниже — минус (линейно от веса).<br>
+          <b>Отзывы</b> и <b>план</b> — только плюс. Если итог отрицательный — сотрудник не претендует на MVP.<br>
+          <i>Чтобы выключить тайного — поставь Вес ТП = 0.</i>
         </p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
           <label>Вес Тайного покупателя (0–100)
             <input type="number" id="cfg-mystery" class="input" min="0" max="100" step="0.5">
+          </label>
+          <label>Порог Тайного (% для нуля)
+            <input type="number" id="cfg-mystery-threshold" class="input" min="0" max="100" step="0.5">
           </label>
           <label>Монет за 1 именной отзыв
             <input type="number" id="cfg-reviews-per-card" class="input" min="0" max="50" step="0.5">
@@ -1092,6 +1097,9 @@
           </label>
           <label>Вес Чек-листа (0–100)
             <input type="number" id="cfg-checklist" class="input" min="0" max="100" step="0.5">
+          </label>
+          <label>Порог Чек-листа (% для нуля)
+            <input type="number" id="cfg-checklist-threshold" class="input" min="0" max="100" step="0.5">
           </label>
           <label>Вес Выполнения плана (0–100)
             <input type="number" id="cfg-revenue-factor" class="input" min="0" max="100" step="0.5">

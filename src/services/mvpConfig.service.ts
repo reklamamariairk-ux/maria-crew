@@ -3,9 +3,11 @@ import { pool } from '../db/pool';
 export interface MvpConfig {
   id: number;
   mysteryShopperWeight: number;
+  mysteryShopperThreshold: number;
   reviewsPerCard: number;
   reviewsMax: number;
   checklistWeight: number;
+  checklistThreshold: number;
   revenueWeightFactor: number;
   revenueMax: number;
   mvpCoinReward: number;
@@ -19,10 +21,12 @@ const CACHE_TTL_MS = 60_000;
 
 const DEFAULT_CONFIG: MvpConfig = {
   id: 1,
-  mysteryShopperWeight: 30,
+  mysteryShopperWeight: 0,
+  mysteryShopperThreshold: 80,
   reviewsPerCard: 5,
   reviewsMax: 25,
   checklistWeight: 25,
+  checklistThreshold: 70,
   revenueWeightFactor: 20,
   revenueMax: 25,
   mvpCoinReward: 0,
@@ -39,9 +43,11 @@ export async function getMvpConfig(): Promise<MvpConfig> {
     const { rows } = await pool.query<{
       id: number;
       mysteryShopperWeight: string;
+      mysteryShopperThreshold: string | null;
       reviewsPerCard: string;
       reviewsMax: string;
       checklistWeight: string;
+      checklistThreshold: string | null;
       revenueWeightFactor: string;
       revenueMax: string;
       mvpCoinReward: number | string | null;
@@ -55,9 +61,11 @@ export async function getMvpConfig(): Promise<MvpConfig> {
     cached = {
       id: r.id,
       mysteryShopperWeight: parseFloat(r.mysteryShopperWeight),
+      mysteryShopperThreshold: r.mysteryShopperThreshold != null ? parseFloat(r.mysteryShopperThreshold) : 80,
       reviewsPerCard: parseFloat(r.reviewsPerCard),
       reviewsMax: parseFloat(r.reviewsMax),
       checklistWeight: parseFloat(r.checklistWeight),
+      checklistThreshold: r.checklistThreshold != null ? parseFloat(r.checklistThreshold) : 70,
       revenueWeightFactor: parseFloat(r.revenueWeightFactor),
       revenueMax: parseFloat(r.revenueMax),
       mvpCoinReward: r.mvpCoinReward != null ? Number(r.mvpCoinReward) : 0,
@@ -79,14 +87,16 @@ export async function updateMvpConfig(
   const vals: number[] = [];
 
   const map: Record<string, keyof typeof data> = {
-    mystery_shopper_weight: 'mysteryShopperWeight',
-    reviews_per_card:       'reviewsPerCard',
-    reviews_max:            'reviewsMax',
-    checklist_weight:       'checklistWeight',
-    revenue_weight_factor:  'revenueWeightFactor',
-    revenue_max:            'revenueMax',
-    mvp_coin_reward:        'mvpCoinReward',
-    top_store_coin_reward:  'topStoreCoinReward',
+    mystery_shopper_weight:    'mysteryShopperWeight',
+    mystery_shopper_threshold: 'mysteryShopperThreshold',
+    reviews_per_card:          'reviewsPerCard',
+    reviews_max:               'reviewsMax',
+    checklist_weight:          'checklistWeight',
+    checklist_threshold:       'checklistThreshold',
+    revenue_weight_factor:     'revenueWeightFactor',
+    revenue_max:               'revenueMax',
+    mvp_coin_reward:           'mvpCoinReward',
+    top_store_coin_reward:     'topStoreCoinReward',
   };
 
   for (const [col, key] of Object.entries(map)) {

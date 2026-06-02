@@ -14,8 +14,10 @@ router.get('/mvp', async (_req: Request, res: Response, next: NextFunction): Pro
 // PUT /api/config/mvp
 router.put('/mvp', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const allowedWeights = ['mysteryShopperWeight', 'reviewsPerCard', 'reviewsMax',
-                     'checklistWeight', 'revenueWeightFactor', 'revenueMax'] as const;
+    const allowedWeights = ['mysteryShopperWeight', 'mysteryShopperThreshold',
+                     'reviewsPerCard', 'reviewsMax',
+                     'checklistWeight', 'checklistThreshold',
+                     'revenueWeightFactor', 'revenueMax'] as const;
     const allowedCoins = ['mvpCoinReward', 'topStoreCoinReward'] as const;
     const body = req.body as Record<string, unknown>;
     const data: Record<string, number> = {};

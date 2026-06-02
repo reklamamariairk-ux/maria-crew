@@ -3248,12 +3248,14 @@ async function loadQuizAnalytics() {
 async function loadMvpConfig() {
   const cfg = await api('GET', '/config/mvp');
   if (!cfg) return;
-  document.getElementById('cfg-mystery').value         = cfg.mysteryShopperWeight;
-  document.getElementById('cfg-reviews-per-card').value = cfg.reviewsPerCard;
-  document.getElementById('cfg-reviews-max').value     = cfg.reviewsMax;
-  document.getElementById('cfg-checklist').value       = cfg.checklistWeight;
-  document.getElementById('cfg-revenue-factor').value  = cfg.revenueWeightFactor;
-  document.getElementById('cfg-revenue-max').value     = cfg.revenueMax;
+  document.getElementById('cfg-mystery').value           = cfg.mysteryShopperWeight;
+  document.getElementById('cfg-mystery-threshold').value = cfg.mysteryShopperThreshold ?? 80;
+  document.getElementById('cfg-reviews-per-card').value  = cfg.reviewsPerCard;
+  document.getElementById('cfg-reviews-max').value       = cfg.reviewsMax;
+  document.getElementById('cfg-checklist').value         = cfg.checklistWeight;
+  document.getElementById('cfg-checklist-threshold').value = cfg.checklistThreshold ?? 70;
+  document.getElementById('cfg-revenue-factor').value    = cfg.revenueWeightFactor;
+  document.getElementById('cfg-revenue-max').value       = cfg.revenueMax;
   document.getElementById('cfg-mvp-coins').value       = cfg.mvpCoinReward ?? 0;
   document.getElementById('cfg-top-store-coins').value = cfg.topStoreCoinReward ?? 0;
   const upd = document.getElementById('cfg-last-updated');
@@ -3264,12 +3266,14 @@ async function loadMvpConfig() {
 
 async function saveMvpConfig() {
   const weights = {
-    mysteryShopperWeight: parseFloat(document.getElementById('cfg-mystery').value),
-    reviewsPerCard:       parseFloat(document.getElementById('cfg-reviews-per-card').value),
-    reviewsMax:           parseFloat(document.getElementById('cfg-reviews-max').value),
-    checklistWeight:      parseFloat(document.getElementById('cfg-checklist').value),
-    revenueWeightFactor:  parseFloat(document.getElementById('cfg-revenue-factor').value),
-    revenueMax:           parseFloat(document.getElementById('cfg-revenue-max').value),
+    mysteryShopperWeight:    parseFloat(document.getElementById('cfg-mystery').value),
+    mysteryShopperThreshold: parseFloat(document.getElementById('cfg-mystery-threshold').value),
+    reviewsPerCard:          parseFloat(document.getElementById('cfg-reviews-per-card').value),
+    reviewsMax:              parseFloat(document.getElementById('cfg-reviews-max').value),
+    checklistWeight:         parseFloat(document.getElementById('cfg-checklist').value),
+    checklistThreshold:      parseFloat(document.getElementById('cfg-checklist-threshold').value),
+    revenueWeightFactor:     parseFloat(document.getElementById('cfg-revenue-factor').value),
+    revenueMax:              parseFloat(document.getElementById('cfg-revenue-max').value),
   };
   if (Object.values(weights).some(v => isNaN(v) || v < 0 || v > 100)) {
     toast('Веса должны быть от 0 до 100'); return;
