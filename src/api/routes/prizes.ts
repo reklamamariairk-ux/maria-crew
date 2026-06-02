@@ -203,20 +203,13 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
   } catch (err) { next(err); }
 });
 
-// DELETE /api/prizes/:id — удалить (только если ни одной заявки не было)
+// DELETE /api/prizes/:id — удалить ВСЕГДА, даже если на приз были заявки.
+// store_exchanges.prize_id → ON DELETE SET NULL (миграция 054): заявки
+// отвязываются, а название/тип приза сохранены снапшотом в самой заявке,
+// поэтому история обменов не теряется. Доступно всем админам (см. router.ts).
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = parseInt(req.params.id, 10);
-    const { rows: usage } = await pool.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM store_exchanges WHERE prize_id = $1`,
-      [id]
-    );
-    if (parseInt(usage[0]?.count ?? '0', 10) > 0) {
-      res.status(409).json({
-        error: 'Приз нельзя удалить — на него есть заявки. Сделай его «Скрытым» через переключатель.'
-      });
-      return;
-    }
     const { rowCount } = await pool.query(`DELETE FROM prizes WHERE id = $1`, [id]);
     if (!rowCount) { res.status(404).json({ error: 'Приз не найден' }); return; }
     res.json({ ok: true });

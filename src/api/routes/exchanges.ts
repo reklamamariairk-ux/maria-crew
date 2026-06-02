@@ -30,13 +30,14 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
               se.external_doc_error  AS "externalDocError",
               se.external_doc_at     AS "externalDocAt",
               e.name AS "employeeName", s.name AS "storeName",
-              p.name AS "prizeName", p.prize_type AS "prizeType",
+              COALESCE(p.name, se.prize_name) AS "prizeName",
+              COALESCE(p.prize_type, se.prize_type) AS "prizeType",
               p.external_product_id   AS "prizeExternalProductId",
               p.external_product_name AS "prizeExternalProductName"
        FROM store_exchanges se
        JOIN employees e ON e.id = se.employee_id
        JOIN stores s ON s.id = e.store_id
-       JOIN prizes p ON p.id = se.prize_id
+       LEFT JOIN prizes p ON p.id = se.prize_id
        ${where}
        ORDER BY se.created_at DESC LIMIT 100`,
       params
@@ -55,8 +56,8 @@ router.post('/:id/retry-1c', async (req: Request, res: Response, next: NextFunct
     if (result.externalDocStatus === 'created' || result.externalDocStatus === 'mock_created') {
       // Перешли в fulfilled — уведомляем сотрудника
       pool.query<{ employeeId: number; prizeName: string }>(
-        `SELECT se.employee_id AS "employeeId", p.name AS "prizeName"
-         FROM store_exchanges se JOIN prizes p ON p.id = se.prize_id
+        `SELECT se.employee_id AS "employeeId", COALESCE(p.name, se.prize_name) AS "prizeName"
+         FROM store_exchanges se LEFT JOIN prizes p ON p.id = se.prize_id
          WHERE se.id = $1`,
         [exchangeId]
       ).then(({ rows }) => {
@@ -96,8 +97,8 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     const finalStatus = exchange.status;
     if (finalStatus === 'fulfilled' || finalStatus === 'rejected') {
       pool.query<{ employeeId: number; prizeName: string }>(
-        `SELECT se.employee_id AS "employeeId", p.name AS "prizeName"
-         FROM store_exchanges se JOIN prizes p ON p.id = se.prize_id
+        `SELECT se.employee_id AS "employeeId", COALESCE(p.name, se.prize_name) AS "prizeName"
+         FROM store_exchanges se LEFT JOIN prizes p ON p.id = se.prize_id
          WHERE se.id = $1`,
         [parseInt(req.params.id, 10)]
       ).then(({ rows }) => {

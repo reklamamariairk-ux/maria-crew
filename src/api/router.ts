@@ -83,8 +83,10 @@ router.use('/quiz',        denyForCoinAdmin, quizRoutes);
 router.use('/challenges',  denyForCoinAdmin, challengeRoutes);
 router.use('/cards',       denyForCoinAdmin, cardRoutes);
 router.use('/heroes',      denyForCoinAdmin, heroRoutes);
-router.use('/prizes',      denyForCoinAdmin, prizeRoutes);
-router.use('/categories',  denyForCoinAdmin, categoryRoutes);
+// Призы и категории доступны всем админам (включая coin_admin) — по требованию
+// бизнеса coin_admin управляет витриной призов наравне с editor.
+router.use('/prizes',      prizeRoutes);
+router.use('/categories',  categoryRoutes);
 router.use('/catalog',     denyForCoinAdmin, catalogRoutes);
 router.use('/requests',    denyForCoinAdmin, requestsRoutes);
 router.use('/audit',       denyForCoinAdmin, auditRoutes);

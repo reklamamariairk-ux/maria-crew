@@ -98,15 +98,15 @@ export async function requestExchange(
     // Создаём запись обмена
     const { rows } = await client.query<StoreExchange>(
       `INSERT INTO store_exchanges
-         (employee_id, prize_id, cards_spent, coins_spent, card_ids)
-       VALUES ($1, $2, $3, $4, $5)
+         (employee_id, prize_id, cards_spent, coins_spent, card_ids, prize_name, prize_type)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id, employee_id AS "employeeId", prize_id AS "prizeId",
                  cards_spent AS "cardsSpent", coins_spent AS "coinsSpent",
                  card_ids AS "cardIds", status, notes,
                  processed_by AS "processedBy", created_at AS "createdAt",
                  processed_at AS "processedAt"`,
       [employeeId, prizeId, prize.cardsRequired, prize.coinsRequired,
-       spentCardIds.length > 0 ? spentCardIds : null]
+       spentCardIds.length > 0 ? spentCardIds : null, prize.name, prize.prizeType]
     );
     const exchange = rows[0];
 
@@ -235,11 +235,11 @@ export async function tryPushDelivery(
     `SELECT se.employee_id   AS "employeeId",
             e.phone          AS "phone",
             COALESCE(p.external_items, '[]'::jsonb) AS "externalItems",
-            p.name           AS "prizeName",
+            COALESCE(p.name, se.prize_name) AS "prizeName",
             se.status        AS "currentStatus"
      FROM store_exchanges se
      JOIN employees e ON e.id = se.employee_id
-     JOIN prizes p ON p.id = se.prize_id
+     LEFT JOIN prizes p ON p.id = se.prize_id
      WHERE se.id = $1`,
     [exchangeId]
   );
@@ -362,9 +362,10 @@ export async function getExchangeHistory(
             se.card_ids AS "cardIds", se.status, se.notes,
             se.processed_by AS "processedBy", se.created_at AS "createdAt",
             se.processed_at AS "processedAt",
-            p.name AS "prizeName", p.prize_type AS "prizeType"
+            COALESCE(p.name, se.prize_name) AS "prizeName",
+            COALESCE(p.prize_type, se.prize_type) AS "prizeType"
      FROM store_exchanges se
-     JOIN prizes p ON p.id = se.prize_id
+     LEFT JOIN prizes p ON p.id = se.prize_id
      WHERE se.employee_id = $1
      ORDER BY se.created_at DESC
      LIMIT $2`,

@@ -264,13 +264,13 @@ export async function notifyAdminNewExchange(
        e.name           AS "employeeName",
        s.name           AS "storeName",
        e.store_id       AS "storeId",
-       p.name           AS "prizeName",
+       COALESCE(p.name, se.prize_name) AS "prizeName",
        se.cards_spent   AS "cardsSpent",
        se.coins_spent   AS "coinsSpent"
      FROM store_exchanges se
      JOIN employees e  ON e.id  = se.employee_id
      JOIN stores    s  ON s.id  = e.store_id
-     JOIN prizes    p  ON p.id  = se.prize_id
+     LEFT JOIN prizes p  ON p.id  = se.prize_id
      WHERE se.id = $1`,
     [exchangeId]
   );

@@ -23,7 +23,7 @@ const ROLE_LABEL = {
 // Единая точка истины: какие вкладки доступны какой роли.
 // Используется и в applyRoleVisibility(), и в switchTab() — чтобы UI и навигация не разошлись.
 const SUPERADMIN_ONLY_TABS = new Set(['adminUsers', 'settings']);
-const COIN_ADMIN_TABS = new Set(['dashboard', 'coins', 'employees']);
+const COIN_ADMIN_TABS = new Set(['dashboard', 'coins', 'employees', 'prizes']);
 const EDITOR_FORBIDDEN_TABS = new Set(['coins']);
 
 function tabAllowed(tab, role) {
@@ -2558,7 +2558,7 @@ async function savePrize(id, btn) {
 async function deletePrize(id) {
   if (!await confirmDialog({
     title: 'Удалить приз?',
-    message: 'Если на приз были заявки, удалить не получится — используй переключатель «Скрыть».',
+    message: 'Приз будет удалён из витрины. Прошлые заявки на него сохранятся в истории (с названием), но сам приз исчезнет безвозвратно.',
     confirmText: 'Удалить',
     danger: true,
   })) return;
