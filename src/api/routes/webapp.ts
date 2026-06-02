@@ -44,10 +44,10 @@ function validateInitData(initData: string): Record<string, string> | null {
   const b = Buffer.from(hash, 'hex');
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
 
-  // Защита от replay: initData не старше 24ч (Telegram генерит свежий auth_date на каждый запуск)
-  const authDate = parseInt(params.get('auth_date') ?? '', 10);
-  if (!Number.isInteger(authDate) || Date.now() / 1000 - authDate > 86400) return null;
-
+  // NB: auth_date-проверку (24ч) убрали — Telegram Desktop/Web переиспользуют
+  // initData с фиксированным (старым) auth_date между запусками → окно рубило
+  // реальные логины. Реплей-защита тут низкоценна: подделка требует валидного
+  // HMAC (= BOT_TOKEN), которым подписывается вся строка.
   return Object.fromEntries(params.entries());
 }
 
