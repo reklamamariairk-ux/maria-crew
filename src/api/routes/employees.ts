@@ -344,13 +344,19 @@ router.post('/bulk-coins', requireRole('superadmin', 'coin_admin'), async (req: 
     const results = await Promise.all(employeeIds.map(async (employeeId) => {
       try {
         if (reason === 'manual' && typeof amount === 'number' && amount < 0) {
+          // Защита от ухода баланса ниже 0: списываем максимум сколько есть (как /award)
+          const balance = await getBalance(employeeId);
+          if (balance === 0) {
+            return { employeeId, ok: false, error: 'Баланс 0 — нечего списывать' };
+          }
+          const adjusted = -Math.min(Math.abs(amount), balance);
           await pool.query(
             `INSERT INTO coin_transactions (employee_id, amount, reason, note)
              VALUES ($1, $2, 'manual', $3)`,
-            [employeeId, amount, note ?? null]
+            [employeeId, adjusted, note ?? null]
           );
-          notifyCoinAward(employeeId, amount, 'manual', note).catch(() => {});
-          return { employeeId, ok: true, amount };
+          notifyCoinAward(employeeId, adjusted, 'manual', note).catch(() => {});
+          return { employeeId, ok: true, amount: adjusted };
         }
         const tx = await earn({
           employeeId, reason: reason as Parameters<typeof earn>[0]['reason'], amount, note,

@@ -645,7 +645,7 @@ router.post('/feedback', async (req: Request, res: Response, next: NextFunction)
       (screen ? `<b>Экран:</b> ${escHtml(screen)}\n` : '') +
       `\n<b>Сообщение:</b>\n${escHtml(message.trim())}`;
 
-    const result = await sendBroadcast([ownerId], text);
+    const result = await sendBroadcast([ownerId], text, { parseMode: 'HTML' });
     res.json({ ok: true, delivered: result.sent > 0 });
   } catch (err) { next(err); }
 });

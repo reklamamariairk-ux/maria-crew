@@ -73,7 +73,10 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction): P
       [id]
     );
     res.json({ ok: true });
-    logAudit('card_revoke', { cardId: id, employeeId: rows[0].employeeId, heroId: rows[0].heroId }).catch(() => {});
+    // rows[0] может быть пустым при гонке (карту удалили между SELECT и DELETE) — не роняем обработчик
+    if (rows[0]) {
+      logAudit('card_revoke', { cardId: id, employeeId: rows[0].employeeId, heroId: rows[0].heroId }).catch(() => {});
+    }
   } catch (err) { next(err); }
 });
 

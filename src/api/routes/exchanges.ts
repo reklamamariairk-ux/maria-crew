@@ -14,9 +14,17 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
     const conditions: string[] = [];
     const params: (string | number)[] = [];
 
-    if (status)     { params.push(status);     conditions.push(`se.status = $${params.length}`); }
-    if (storeId)    { params.push(storeId);    conditions.push(`e.store_id = $${params.length}`); }
-    if (employeeId) { params.push(employeeId); conditions.push(`se.employee_id = $${params.length}`); }
+    if (status) { params.push(status); conditions.push(`se.status = $${params.length}`); }
+    if (storeId) {
+      const sid = parseInt(storeId, 10);
+      if (!Number.isInteger(sid)) { res.status(400).json({ error: 'storeId должен быть числом' }); return; }
+      params.push(sid); conditions.push(`e.store_id = $${params.length}`);
+    }
+    if (employeeId) {
+      const eid = parseInt(employeeId, 10);
+      if (!Number.isInteger(eid)) { res.status(400).json({ error: 'employeeId должен быть числом' }); return; }
+      params.push(eid); conditions.push(`se.employee_id = $${params.length}`);
+    }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const { rows } = await pool.query(

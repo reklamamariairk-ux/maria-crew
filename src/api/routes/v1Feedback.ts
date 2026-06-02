@@ -61,7 +61,7 @@ router.post('/', employeeAuth, rateLimit(10, 60 * 60 * 1000), async (req: Reques
       `<b>UA:</b> <code>${esc(userAgent.slice(0, 100))}</code>\n\n` +
       `<b>Сообщение:</b>\n${esc(message.trim())}`;
 
-    const result = await sendBroadcast([ownerId], text);
+    const result = await sendBroadcast([ownerId], text, { parseMode: 'HTML' });
     res.json({ ok: true, delivered: result.sent > 0 });
   } catch (err) { next(err); }
 });

@@ -37,18 +37,21 @@ export async function digestPendingExchanges(
   // Группируем заявки по storeId
   const pendingMap = new Map(pendingByStore.map(p => [p.storeId, p]));
 
+  // Имена точек идут в HTML-сообщение — экранируем, иначе «<»/«&» дают Telegram 400
+  const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
   let sent = 0;
   for (const r of recipients) {
     let text = '';
     if (r.role === 'admin') {
       // Админ видит все точки
-      const lines = pendingByStore.map(p => `• <b>${p.storeName}</b>: ${p.pendingCount} ${plur(p.pendingCount)}`);
+      const lines = pendingByStore.map(p => `• <b>${esc(p.storeName)}</b>: ${p.pendingCount} ${plur(p.pendingCount)}`);
       text = `📋 <b>Незакрытые заявки старше 24 часов</b>\n\n${lines.join('\n')}\n\n` +
              `Открой Admin Panel → раздел «Заявки», чтобы подтвердить или отклонить.`;
     } else if (r.storeId && pendingMap.has(r.storeId)) {
       const p = pendingMap.get(r.storeId)!;
       text = `📋 <b>Не подтверждено заявок: ${p.pendingCount} ${plur(p.pendingCount)}</b>\n\n` +
-             `На твоей точке (<b>${p.storeName}</b>) есть запросы на призы старше 24 часов.\n` +
+             `На твоей точке (<b>${esc(p.storeName)}</b>) есть запросы на призы старше 24 часов.\n` +
              `Подтверди или отклони их в Admin Panel → «Заявки».`;
     }
     if (text) {

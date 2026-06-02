@@ -52,13 +52,15 @@ export async function weeklyDigest(
   if (topCards.length === 0 && topCoins.length === 0) return;
 
   const MEDALS = ['🥇', '🥈', '🥉', '4.', '5.'];
+  // Имена сотрудников/точек идут в HTML — экранируем («<»/«&» иначе роняют дайджест Telegram 400)
+  const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   let text = `📊 <b>Итоги недели — ${monthName(month, true)} ${year}</b>\n\n`;
 
   if (topCards.length > 0) {
     text += `🃏 <b>Больше всего карточек в этом месяце:</b>\n`;
     topCards.forEach((r, i) => {
-      text += `${MEDALS[i]} ${r.name} (${r.storeName}) — ${r.cards} карт.\n`;
+      text += `${MEDALS[i]} ${esc(r.name)} (${esc(r.storeName)}) — ${r.cards} карт.\n`;
     });
     text += '\n';
   }
@@ -66,7 +68,7 @@ export async function weeklyDigest(
   if (topCoins.length > 0) {
     text += `💰 <b>Больше всего монет заработали:</b>\n`;
     topCoins.forEach((r, i) => {
-      text += `${MEDALS[i]} ${r.name} (${r.storeName}) — ${r.earned} монет\n`;
+      text += `${MEDALS[i]} ${esc(r.name)} (${esc(r.storeName)}) — ${r.earned} монет\n`;
     });
     text += '\n';
   }

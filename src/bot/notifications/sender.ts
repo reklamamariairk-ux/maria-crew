@@ -407,17 +407,20 @@ export async function sendLoginPin(telegramId: string, pin: string): Promise<boo
  *  часть упадёт с 429 (rate limit). */
 export async function sendBroadcast(
   telegramIds: string[],
-  message: string
+  message: string,
+  options?: { parseMode?: 'HTML' }
 ): Promise<{ sent: number; failed: number }> {
   if (!_bot) return { sent: 0, failed: telegramIds.length };
   const BATCH = 25;
   const PAUSE_MS = 1100;
+  // По умолчанию plain text (для /api/notify). HTML-вызовы передают parseMode явно.
+  const sendOpts = options?.parseMode ? { parse_mode: options.parseMode } : undefined;
 
   let sent = 0, failed = 0;
   for (let i = 0; i < telegramIds.length; i += BATCH) {
     const batch = telegramIds.slice(i, i + BATCH);
     const results = await Promise.allSettled(
-      batch.map(tgId => _bot!.api.sendMessage(tgId, message))
+      batch.map(tgId => _bot!.api.sendMessage(tgId, message, sendOpts))
     );
     sent   += results.filter(r => r.status === 'fulfilled').length;
     failed += results.filter(r => r.status === 'rejected').length;
