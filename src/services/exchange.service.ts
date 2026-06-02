@@ -363,7 +363,7 @@ export async function getExchangeHistory(
             se.processed_by AS "processedBy", se.created_at AS "createdAt",
             se.processed_at AS "processedAt",
             COALESCE(p.name, se.prize_name) AS "prizeName",
-            COALESCE(p.prize_type, se.prize_type) AS "prizeType"
+            COALESCE(p.prize_type::text, se.prize_type) AS "prizeType"
      FROM store_exchanges se
      LEFT JOIN prizes p ON p.id = se.prize_id
      WHERE se.employee_id = $1

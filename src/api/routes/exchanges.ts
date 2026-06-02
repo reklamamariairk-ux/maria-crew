@@ -31,7 +31,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
               se.external_doc_at     AS "externalDocAt",
               e.name AS "employeeName", s.name AS "storeName",
               COALESCE(p.name, se.prize_name) AS "prizeName",
-              COALESCE(p.prize_type, se.prize_type) AS "prizeType",
+              COALESCE(p.prize_type::text, se.prize_type) AS "prizeType",
               p.external_product_id   AS "prizeExternalProductId",
               p.external_product_name AS "prizeExternalProductName"
        FROM store_exchanges se
