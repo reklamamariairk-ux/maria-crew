@@ -287,7 +287,7 @@ async function main() {
     console.log(`[bot] ✓ Webhook: ${webhookUrl}`);
 
     // Постоянная кнопка меню внизу чата — открывает Mini App без команд
-    const webappUrl = `${serviceUrl}/webapp`;
+    const webappUrl = `${serviceUrl}/webapp/`;
     await bot.api.setMyDefaultAdministratorRights().catch(() => {});
     await bot.api.setChatMenuButton({
       menu_button: { type: 'web_app', text: '🍰 Maria Crew', web_app: { url: webappUrl } },
