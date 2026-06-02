@@ -85,7 +85,10 @@ export function newTestPool(): { pool: TestPool; db: IMemoryDb } {
       cards_required INT NOT NULL DEFAULT 0,
       coins_required INT NOT NULL DEFAULT 0,
       is_active BOOLEAN NOT NULL DEFAULT true,
-      sort_order INT DEFAULT 0
+      sort_order INT DEFAULT 0,
+      external_items JSONB,
+      external_product_id TEXT,
+      external_product_name TEXT
     );
 
     CREATE TABLE IF NOT EXISTS store_exchanges (
@@ -95,9 +98,15 @@ export function newTestPool(): { pool: TestPool; db: IMemoryDb } {
       cards_spent INT NOT NULL DEFAULT 0,
       coins_spent INT NOT NULL DEFAULT 0,
       card_ids INT[],
+      prize_name TEXT,
+      prize_type TEXT,
       status TEXT NOT NULL DEFAULT 'pending',
       notes TEXT,
       processed_by INT,
+      external_doc_id TEXT,
+      external_doc_status TEXT,
+      external_doc_error TEXT,
+      external_doc_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       processed_at TIMESTAMPTZ
     );
