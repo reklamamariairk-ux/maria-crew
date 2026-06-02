@@ -12,6 +12,7 @@ export type AuditAction =
   | 'employee_activate'
   | 'metrics_save'
   | 'metrics_process'
+  | 'store_ratings_save'
   | 'rating_score_set'
   | 'rating_mvp_set'
   | 'rating_top_set'

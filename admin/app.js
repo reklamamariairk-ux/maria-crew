@@ -379,13 +379,24 @@ async function loadStores() {
 // Заполняет все селекторы точек: основной в сайдбаре + inline-пикеры
 // в Метриках и Рейтингах. Все они синхронизируются с state.storeId.
 function populateStoreSelectors() {
-  const ids = ['store-select', 'metrics-store-picker', 'leaderboard-store-picker'];
-  for (const id of ids) {
-    const sel = document.getElementById(id);
-    if (!sel) continue;
+  // Селекторы где «нет выбора» = подсказка («Выбери точку»)
+  const promptIds = ['store-select', 'leaderboard-store-picker'];
+  // Селекторы где «нет выбора» = режим «Все точки» (агрегатный)
+  const allIds = ['metrics-store-picker'];
+
+  const buildOptions = (firstLabel) => {
     const current = state.storeId ? String(state.storeId) : '';
-    sel.innerHTML = '<option value="">— Выбери точку —</option>'
+    return `<option value="">${firstLabel}</option>`
       + state.stores.map(s => `<option value="${s.id}"${String(s.id) === current ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
+  };
+
+  for (const id of promptIds) {
+    const sel = document.getElementById(id);
+    if (sel) sel.innerHTML = buildOptions('— Выбери точку —');
+  }
+  for (const id of allIds) {
+    const sel = document.getElementById(id);
+    if (sel) sel.innerHTML = buildOptions('— Все точки —');
   }
   // Селектор точки в форме добавления сотрудника
   const newEmpStore = document.getElementById('new-emp-store');
@@ -520,22 +531,83 @@ function updatePeriodLabels() {
 }
 
 // ── Метрики ───────────────────────────────────────────────────────────────────
+// Состояние сортировки таблиц метрик
+const metricsSortState = { col: 'name', dir: 'asc' };
+const storeRatingsSortState = { col: 'storeName', dir: 'asc' };
+let metricsAllRows = []; // [{employeeId, employeeName, storeId, storeName, isActive, mysteryShopperScore, ...}]
+let storeRatingsRows = []; // [{storeId, storeName, avgRatingScore, revenuePercent}]
+
 async function loadMetrics() {
   const tbody = document.getElementById('metrics-tbody');
-  if (!state.storeId) {
-    tbody.innerHTML = emptyRow(5, 'store', 'Выбери точку в селекторе сверху или в боковой панели слева');
-    document.getElementById('metrics-store-ratings').classList.add('hidden');
-    renderIcons();
+  const singleBlock = document.getElementById('metrics-store-ratings');
+  const allBlock = document.getElementById('metrics-store-ratings-all');
+  const storeCol = document.querySelectorAll('#metrics-table th.col-store');
+
+  if (state.storeId) {
+    // Режим «Одна точка» — старое поведение
+    singleBlock.classList.remove('hidden');
+    allBlock.classList.add('hidden');
+    storeCol.forEach(th => th.classList.add('hidden'));
+    await loadMetricsSingleStore(state.storeId);
     return;
   }
 
-  document.getElementById('metrics-store-ratings').classList.remove('hidden');
+  // Режим «Все точки»
+  singleBlock.classList.add('hidden');
+  allBlock.classList.remove('hidden');
+  storeCol.forEach(th => th.classList.remove('hidden'));
+
+  tbody.innerHTML = skeletonRows(6, 5);
+
+  // Параллельно: метрики всех сотрудников, ratings точек, список всех сотрудников
+  const [metricsRows, ratingsRows, allEmployees] = await Promise.all([
+    api('GET', `/metrics?year=${state.year}&month=${state.month}`),
+    api('GET', `/metrics/store-ratings?year=${state.year}&month=${state.month}`),
+    api('GET', '/employees'),
+  ]);
+
+  // Объединяем сотрудников с их метриками (могут быть сотрудники без записи в monthly_metrics)
+  const metricMap = {};
+  (metricsRows || []).forEach(r => metricMap[r.employeeId] = r);
+  const storeMap = Object.fromEntries(state.stores.map(s => [s.id, s.name]));
+
+  metricsAllRows = (allEmployees || []).map(e => {
+    const m = metricMap[e.id] || {};
+    return {
+      employeeId: e.id,
+      name: e.name,
+      storeId: e.storeId ?? null,
+      storeName: storeMap[e.storeId] || '—',
+      isActive: e.isActive,
+      mysteryShopperScore: m.mysteryShopperScore ?? null,
+      reviewsCount: m.reviewsCount ?? 0,
+      checklistPercent: m.checklistPercent ?? null,
+      revenuePercent: m.revenuePercent ?? null,
+    };
+  });
+
+  storeRatingsRows = (ratingsRows || []).map(r => ({
+    storeId: r.storeId,
+    storeName: r.storeName,
+    avgRatingScore: r.avgRatingScore !== null && r.avgRatingScore !== undefined ? Number(r.avgRatingScore) : null,
+    revenuePercent: r.revenuePercent !== null && r.revenuePercent !== undefined ? Number(r.revenuePercent) : null,
+  }));
+
+  renderMetricsTable();
+  renderStoreRatingsTable();
+  attachSortHandlers();
+  renderIcons();
+}
+
+async function loadMetricsSingleStore(storeId) {
+  const tbody = document.getElementById('metrics-tbody');
   tbody.innerHTML = skeletonRows(5, 5);
 
-  const rows = await api('GET', `/metrics?storeId=${state.storeId}&year=${state.year}&month=${state.month}`);
-  const employees = await api('GET', `/stores/${state.storeId}/employees`);
+  const [rows, employees] = await Promise.all([
+    api('GET', `/metrics?storeId=${storeId}&year=${state.year}&month=${state.month}`),
+    api('GET', `/stores/${storeId}/employees`),
+  ]);
 
-  // Объединяем сотрудников с их метриками
   const metricMap = {};
   (rows || []).forEach(r => metricMap[r.employeeId] = r);
 
@@ -551,38 +623,166 @@ async function loadMetrics() {
     return a.isActive ? -1 : 1;
   });
 
-  tbody.innerHTML = sorted.map(e => {
+  metricsAllRows = sorted.map(e => {
     const m = metricMap[e.id] || {};
-    const nameCell = e.isActive
-      ? `<strong>${esc(e.name)}</strong>`
-      : `<strong style="color:var(--muted)">${esc(e.name)}</strong> <span class="badge badge-neutral" style="font-size:11px">скрыт</span>`;
-    return `<tr data-employee-id="${e.id}">
-      <td>${nameCell}</td>
-      <td><input type="number" class="m-mystery" min="0" max="100" step="0.1" value="${m.mysteryShopperScore ?? ''}" placeholder="—"></td>
-      <td><input type="number" class="m-reviews" min="0" max="10" step="1" value="${m.reviewsCount ?? 0}"></td>
-      <td><input type="number" class="m-checklist" min="0" max="100" step="0.1" value="${m.checklistPercent ?? ''}" placeholder="—"></td>
-      <td><input type="number" class="m-revenue" min="0" max="300" step="0.1" value="${m.revenuePercent ?? ''}" placeholder="—"></td>
-    </tr>`;
-  }).join('');
+    return {
+      employeeId: e.id,
+      name: e.name,
+      storeId,
+      storeName: '',
+      isActive: e.isActive,
+      mysteryShopperScore: m.mysteryShopperScore ?? null,
+      reviewsCount: m.reviewsCount ?? 0,
+      checklistPercent: m.checklistPercent ?? null,
+      revenuePercent: m.revenuePercent ?? null,
+    };
+  });
+
+  // В single-mode сортируем по имени по умолчанию (активные сверху)
+  metricsSortState.col = 'name';
+  metricsSortState.dir = 'asc';
+  renderMetricsTable();
+  attachSortHandlers();
   renderIcons();
 }
 
-async function saveMetrics() {
-  if (!state.storeId) { toast('Выберите точку'); return; }
+function renderMetricsTable() {
+  const tbody = document.getElementById('metrics-tbody');
+  const showStore = !state.storeId;
+  const colspan = showStore ? 6 : 5;
 
+  const sorted = sortRows(metricsAllRows, metricsSortState);
+  // Активные сверху всегда, потом по выбранной сортировке
+  sorted.sort((a, b) => {
+    if (a.isActive === b.isActive) return 0;
+    return a.isActive ? -1 : 1;
+  });
+
+  if (sorted.length === 0) {
+    tbody.innerHTML = emptyRow(colspan, 'users', 'Нет сотрудников');
+    return;
+  }
+
+  tbody.innerHTML = sorted.map(r => {
+    const nameCell = r.isActive
+      ? `<strong>${esc(r.name)}</strong>`
+      : `<strong style="color:var(--muted)">${esc(r.name)}</strong> <span class="badge badge-neutral" style="font-size:11px">скрыт</span>`;
+    const storeCell = showStore ? `<td>${esc(r.storeName)}</td>` : '';
+    return `<tr data-employee-id="${r.employeeId}" data-store-id="${r.storeId ?? ''}">
+      <td>${nameCell}</td>
+      ${storeCell}
+      <td><input type="number" class="m-mystery"   min="0" max="100" step="0.1" value="${r.mysteryShopperScore ?? ''}" placeholder="—"></td>
+      <td><input type="number" class="m-reviews"   min="0" max="10"  step="1"   value="${r.reviewsCount ?? 0}"></td>
+      <td><input type="number" class="m-checklist" min="0" max="100" step="0.1" value="${r.checklistPercent ?? ''}" placeholder="—"></td>
+      <td><input type="number" class="m-revenue"   min="0" max="300" step="0.1" value="${r.revenuePercent ?? ''}" placeholder="—"></td>
+    </tr>`;
+  }).join('');
+  updateSortIndicators('#metrics-table', metricsSortState);
+}
+
+function renderStoreRatingsTable() {
+  const tbody = document.getElementById('store-ratings-tbody');
+  if (!tbody) return;
+  const sorted = sortRows(storeRatingsRows, storeRatingsSortState);
+  tbody.innerHTML = sorted.map(r => `
+    <tr data-store-id="${r.storeId}">
+      <td><strong>${esc(r.storeName)}</strong></td>
+      <td><input type="number" class="sr-rating"  min="0" max="5"   step="0.01" value="${r.avgRatingScore ?? ''}" placeholder="—"></td>
+      <td><input type="number" class="sr-revenue" min="0" max="200" step="0.1"  value="${r.revenuePercent ?? ''}" placeholder="—"></td>
+    </tr>`).join('');
+  updateSortIndicators('#store-ratings-table', storeRatingsSortState);
+}
+
+function sortRows(rows, st) {
+  const dir = st.dir === 'desc' ? -1 : 1;
+  return rows.slice().sort((a, b) => {
+    const av = a[st.col], bv = b[st.col];
+    // null/undefined всегда в конец
+    if (av === null || av === undefined) return 1;
+    if (bv === null || bv === undefined) return -1;
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+    return String(av).localeCompare(String(bv), 'ru') * dir;
+  });
+}
+
+function attachSortHandlers() {
+  document.querySelectorAll('#metrics-table th[data-sort]').forEach(th => {
+    th.onclick = () => {
+      const col = th.dataset.sort;
+      if (metricsSortState.col === col) {
+        metricsSortState.dir = metricsSortState.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        metricsSortState.col = col; metricsSortState.dir = 'asc';
+      }
+      // Перед сортировкой синхронизуем то что в инпутах с массивом
+      collectCurrentEdits();
+      renderMetricsTable();
+    };
+  });
+  document.querySelectorAll('#store-ratings-table th[data-sort]').forEach(th => {
+    th.onclick = () => {
+      const col = th.dataset.sort;
+      if (storeRatingsSortState.col === col) {
+        storeRatingsSortState.dir = storeRatingsSortState.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        storeRatingsSortState.col = col; storeRatingsSortState.dir = 'asc';
+      }
+      collectCurrentStoreRatingEdits();
+      renderStoreRatingsTable();
+    };
+  });
+}
+
+function updateSortIndicators(tableSel, st) {
+  document.querySelectorAll(`${tableSel} th[data-sort]`).forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+    if (th.dataset.sort === st.col) th.classList.add(st.dir === 'asc' ? 'sort-asc' : 'sort-desc');
+  });
+}
+
+// Перед сортировкой/пересортировкой — забираем то что админ уже ввёл в инпуты,
+// чтобы не потерять несохранённые правки.
+function collectCurrentEdits() {
+  const rowMap = new Map(metricsAllRows.map(r => [r.employeeId, r]));
+  document.querySelectorAll('#metrics-tbody tr[data-employee-id]').forEach(tr => {
+    const eid = parseInt(tr.dataset.employeeId);
+    const r = rowMap.get(eid);
+    if (!r) return;
+    const num = sel => { const v = tr.querySelector(sel).value; return v === '' ? null : parseFloat(v); };
+    r.mysteryShopperScore = num('.m-mystery');
+    r.reviewsCount        = parseInt(tr.querySelector('.m-reviews').value) || 0;
+    r.checklistPercent    = num('.m-checklist');
+    r.revenuePercent      = num('.m-revenue');
+  });
+}
+
+function collectCurrentStoreRatingEdits() {
+  const map = new Map(storeRatingsRows.map(r => [r.storeId, r]));
+  document.querySelectorAll('#store-ratings-tbody tr[data-store-id]').forEach(tr => {
+    const sid = parseInt(tr.dataset.storeId);
+    const r = map.get(sid);
+    if (!r) return;
+    const num = sel => { const v = tr.querySelector(sel).value; return v === '' ? null : parseFloat(v); };
+    r.avgRatingScore = num('.sr-rating');
+    r.revenuePercent = num('.sr-revenue');
+  });
+}
+
+async function saveMetrics() {
   const rows = document.querySelectorAll('#metrics-tbody tr[data-employee-id]');
   const batch = [];
   rows.forEach(row => {
     const id = parseInt(row.dataset.employeeId);
+    const storeId = parseInt(row.dataset.storeId) || state.storeId;
+    if (!storeId) return; // сотрудник без точки — пропускаем
     const val = sel => { const v = row.querySelector(sel).value; return v === '' ? undefined : parseFloat(v); };
     const mystery   = val('.m-mystery');
     const reviews   = parseInt(row.querySelector('.m-reviews').value) || 0;
     const checklist = val('.m-checklist');
     const revenue   = val('.m-revenue');
-    // Пустую строку не сохраняем (все 4 поля пустые/0)
     if (mystery === undefined && reviews === 0 && checklist === undefined && revenue === undefined) return;
     batch.push({
-      employeeId: id, storeId: state.storeId, year: state.year, month: state.month,
+      employeeId: id, storeId, year: state.year, month: state.month,
       mysteryShopperScore: mystery,
       reviewsCount: reviews,
       checklistPercent: checklist,
@@ -599,30 +799,71 @@ async function saveMetrics() {
   } catch (e) { toastError(e); }
 }
 
+async function saveStoreRatings() {
+  collectCurrentStoreRatingEdits();
+  const items = storeRatingsRows
+    .filter(r => r.avgRatingScore !== null || r.revenuePercent !== null)
+    .map(r => ({ storeId: r.storeId, avgRatingScore: r.avgRatingScore, revenuePercent: r.revenuePercent }));
+  if (items.length === 0) { toast('Нечего сохранять'); return; }
+  try {
+    await api('POST', '/metrics/store-ratings', { year: state.year, month: state.month, items });
+    toast(`✅ Сохранено: ${items.length} точек`);
+  } catch (e) { toastError(e); }
+}
+
 async function processMonth() {
-  if (!state.storeId) { toast('Выберите точку'); return; }
   if (!await confirmDialog({
     title: `Обработать ${MONTH_NAMES[state.month]} ${state.year}?`,
-    message: 'Если ты ставил баллы вручную во вкладке «Рейтинги» — отмени и не запускай автообработку. Карточки за метрики и за лучшего сотрудника можно выдать вручную во вкладке «Карточки».',
-    warning: 'Автообработка ПЕРЕЗАПИШЕТ баллы и статус «Лучший сотрудник», выставленные вручную, на значения, рассчитанные по метрикам.',
+    message: state.storeId
+      ? 'Обработается одна выбранная точка. Если ставил баллы вручную в «Рейтингах» — они будут перезаписаны.'
+      : 'Обработаются ВСЕ активные точки разом. MVP/карточки/монеты начислятся всем по формуле из «Настройки → MVP».',
+    warning: 'Автообработка ПЕРЕЗАПИШЕТ баллы и статус «Лучший сотрудник», выставленные вручную.',
     confirmText: 'Обработать месяц',
     danger: true,
   })) return;
 
-  const avgRatingScore = parseFloat(document.getElementById('store-rating-score').value) || 0;
-  const revenuePercent = parseFloat(document.getElementById('store-revenue-percent').value) || 0;
+  // Сначала сохраняем несохранённые правки метрик точек, чтобы они попали в расчёт.
+  if (!state.storeId) {
+    collectCurrentStoreRatingEdits();
+    const items = storeRatingsRows
+      .filter(r => r.avgRatingScore !== null || r.revenuePercent !== null)
+      .map(r => ({ storeId: r.storeId, avgRatingScore: r.avgRatingScore, revenuePercent: r.revenuePercent }));
+    if (items.length > 0) {
+      try {
+        await api('POST', '/metrics/store-ratings', { year: state.year, month: state.month, items });
+      } catch (e) { toastError(e); return; }
+    }
+  }
+
+  let storeRatings;
+  if (state.storeId) {
+    const avgRatingScore = parseFloat(document.getElementById('store-rating-score').value) || 0;
+    const revenuePercent = parseFloat(document.getElementById('store-revenue-percent').value) || 0;
+    storeRatings = [{ storeId: state.storeId, avgRatingScore, revenuePercent }];
+  } else {
+    // В режиме «Все точки» rating'и читаются из БД самим бэкендом (storeRatings необязателен —
+    // см. processMonthAllStores fallback к store_monthly_stats). Дополнительно прокидываем
+    // массив из UI, чтобы свежие правки точно учлись даже если сохранение выше упало.
+    storeRatings = storeRatingsRows
+      .filter(r => r.avgRatingScore !== null || r.revenuePercent !== null)
+      .map(r => ({ storeId: r.storeId, avgRatingScore: r.avgRatingScore ?? 0, revenuePercent: r.revenuePercent ?? 0 }));
+  }
 
   const btn = document.getElementById('process-btn');
   btn.disabled = true; btn.textContent = '⏳ Обработка...';
 
   try {
     const result = await api('POST', '/metrics/process', {
-      year: state.year, month: state.month,
-      storeRatings: [{ storeId: state.storeId, avgRatingScore, revenuePercent }],
+      year: state.year, month: state.month, storeRatings,
     });
-    const processed = result.results?.[0];
-    const mvp = processed?.employees?.find(e => e.isMvp);
-    toast(`✅ Готово! Лучший сотрудник: ${mvp?.name ?? '—'} (${mvp?.mvpScore?.toFixed(2) ?? '—'} б.)`);
+    if (state.storeId) {
+      const processed = result.results?.find(r => r.storeId === state.storeId);
+      const mvp = processed?.employees?.find(e => e.isMvp);
+      toast(`✅ Готово! Лучший сотрудник: ${mvp?.name ?? '—'} (${mvp?.mvpScore?.toFixed(2) ?? '—'} б.)`);
+    } else {
+      const topStore = result.results?.find(r => r.topStore);
+      toast(`✅ Обработано точек: ${result.processed}. Топ-точка: ${topStore?.storeId ? (state.stores.find(s => s.id === topStore.storeId)?.name ?? topStore.storeId) : '—'} (${topStore?.storeScore?.toFixed(2) ?? '—'} б.)`);
+    }
     loadMetrics();
   } catch (e) { toastError(e); }
   finally { btn.disabled = false; btn.textContent = '⚡ Обработать месяц (баллы + карточки + уведомления)'; }

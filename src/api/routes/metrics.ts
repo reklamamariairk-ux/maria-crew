@@ -8,21 +8,86 @@ import type { MonthlyMetricsInput } from '../../types';
 const router = Router();
 
 // GET /api/metrics?storeId=&year=&month=
+// storeId опциональный — без него отдаёт всех сотрудников всех точек за период.
 router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { storeId, year, month } = req.query as Record<string, string>;
-    if (!storeId || !year || !month) {
-      res.status(400).json({ error: 'storeId, year, month обязательны' }); return;
+    if (!year || !month) {
+      res.status(400).json({ error: 'year, month обязательны' }); return;
+    }
+    const params: unknown[] = [year, month];
+    let where = 'mm.year = $1 AND mm.month = $2';
+    if (storeId) {
+      params.push(storeId);
+      where += ` AND mm.store_id = $${params.length}`;
     }
     const { rows } = await pool.query(
-      `SELECT mm.*, e.name AS "employeeName", e.is_active AS "isActive"
+      `SELECT mm.*, e.name AS "employeeName", e.is_active AS "isActive",
+              s.name AS "storeName"
        FROM monthly_metrics mm
        JOIN employees e ON e.id = mm.employee_id
-       WHERE mm.store_id = $1 AND mm.year = $2 AND mm.month = $3
-       ORDER BY e.is_active DESC, e.name`,
-      [storeId, year, month]
+       LEFT JOIN stores s ON s.id = mm.store_id
+       WHERE ${where}
+       ORDER BY e.is_active DESC, s.name, e.name`,
+      params
     );
     res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// GET /api/metrics/store-ratings?year=&month=
+// Возвращает по всем активным точкам avgRatingScore и revenuePercent (для редактирования
+// в режиме «Все точки» в Метриках). Точки без записи отдаются с null-значениями.
+router.get('/store-ratings', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { year, month } = req.query as Record<string, string>;
+    if (!year || !month) {
+      res.status(400).json({ error: 'year, month обязательны' }); return;
+    }
+    const { rows } = await pool.query(
+      `SELECT s.id AS "storeId", s.name AS "storeName",
+              sms.avg_rating_score AS "avgRatingScore",
+              sms.revenue_percent AS "revenuePercent",
+              sms.total_score AS "totalScore",
+              sms.rank AS "rank",
+              COALESCE(sms.is_top, false) AS "isTop"
+       FROM stores s
+       LEFT JOIN store_monthly_stats sms
+         ON sms.store_id = s.id AND sms.year = $1 AND sms.month = $2
+       WHERE s.is_active = true
+       ORDER BY s.name`,
+      [year, month]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// POST /api/metrics/store-ratings
+// Body: { year, month, items: [{ storeId, avgRatingScore, revenuePercent }] }
+// Сохраняет ТОЛЬКО метрики точки (без процессинга MVP/карточек) — для подготовки
+// данных перед «Обработать месяц».
+router.post('/store-ratings', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { year, month, items } = req.body as {
+      year: number; month: number;
+      items: Array<{ storeId: number; avgRatingScore: number | null; revenuePercent: number | null }>;
+    };
+    if (!year || !month || !Array.isArray(items)) {
+      res.status(400).json({ error: 'year, month, items обязательны' }); return;
+    }
+    for (const it of items) {
+      await pool.query(
+        `INSERT INTO store_monthly_stats
+            (store_id, year, month, avg_rating_score, revenue_percent)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (store_id, year, month) DO UPDATE SET
+            avg_rating_score = EXCLUDED.avg_rating_score,
+            revenue_percent  = EXCLUDED.revenue_percent`,
+        [it.storeId, year, month, it.avgRatingScore ?? null, it.revenuePercent ?? null]
+      );
+    }
+    res.json({ ok: true, saved: items.length });
+    logAudit('store_ratings_save', { year, month, count: items.length }).catch(() => {});
   } catch (err) { next(err); }
 });
 

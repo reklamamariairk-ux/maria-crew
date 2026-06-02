@@ -231,6 +231,7 @@
         </div>
       </div>
 
+      <!-- Режим «Одна точка»: верхний блок данных по выбранной точке -->
       <div id="metrics-store-ratings" class="hidden card card-pad" style="margin-bottom:18px">
         <p class="section-title">Данные по точке (для расчёта рейтинга)</p>
         <div class="form-row" style="margin-bottom:0">
@@ -248,19 +249,43 @@
         </div>
       </div>
 
+      <!-- Режим «Все точки»: метрики точек редактируются ниже отдельной таблицей -->
+      <div id="metrics-store-ratings-all" class="hidden card card-pad" style="margin-bottom:18px">
+        <p class="section-title">Метрики точек (для расчёта рейтинга точки)</p>
+        <p class="text-muted" style="font-size:13px;margin:0 0 10px">
+          Рейтинг отзовиков 0–5 + % выполнения плана выручки <b>по каждой точке</b>. Усреднение тайного/чек-листа берётся из таблицы сотрудников ниже.
+        </p>
+        <div class="table-wrap">
+          <table id="store-ratings-table">
+            <thead>
+              <tr>
+                <th data-sort="storeName" class="sortable">Точка</th>
+                <th data-sort="avgRatingScore" class="sortable num">Рейтинг отзовиков (0–5)</th>
+                <th data-sort="revenuePercent" class="sortable num">% выполнения плана</th>
+              </tr>
+            </thead>
+            <tbody id="store-ratings-tbody"></tbody>
+          </table>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn btn-ghost" onclick="saveStoreRatings()"><i data-lucide="save"></i> Сохранить метрики точек</button>
+        </div>
+      </div>
+
       <div class="table-wrap">
         <table id="metrics-table">
           <thead>
             <tr>
-              <th>Сотрудник</th>
-              <th>Тайный покуп. (0–100)</th>
-              <th>Отзывов</th>
-              <th>Чек-лист %</th>
-              <th>План %</th>
+              <th data-sort="name" class="sortable">Сотрудник</th>
+              <th data-sort="storeName" class="sortable col-store hidden">Точка</th>
+              <th data-sort="mysteryShopperScore" class="sortable num">Тайный покуп. (0–100)</th>
+              <th data-sort="reviewsCount" class="sortable num">Отзывов</th>
+              <th data-sort="checklistPercent" class="sortable num">Чек-лист %</th>
+              <th data-sort="revenuePercent" class="sortable num">План %</th>
             </tr>
           </thead>
           <tbody id="metrics-tbody">
-            <tr><td colspan="5" class="empty">Выберите точку</td></tr>
+            <tr><td colspan="6" class="empty">Выберите точку или режим «Все точки»</td></tr>
           </tbody>
         </table>
       </div>

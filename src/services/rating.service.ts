@@ -379,7 +379,7 @@ export async function getEmployeeLeaderboard(
      LEFT JOIN monthly_metrics mm
        ON mm.employee_id = e.id AND mm.year = $1 AND mm.month = $2
      ${where}
-     ORDER BY e.is_active DESC, s.name, mm.mvp_score DESC NULLS LAST, e.name`,
+     ORDER BY e.is_active DESC, mm.mvp_score DESC NULLS LAST, e.name`,
     params
   );
   return rows;
