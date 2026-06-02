@@ -26,7 +26,7 @@ const TABLES = [
   'quiz_attempts',
   'quiz_sessions',
   'seasonal_challenge_entries',
-  'audit_log',
+  'admin_audit_log',
   'notifications',
   'auth_pins',
   'device_tokens',
