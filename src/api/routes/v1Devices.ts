@@ -32,7 +32,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
 // DELETE /api/v1/devices/:token — удаление токена (logout / приложение удалено)
 router.delete('/:token', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    await unregisterDeviceToken(req.params.token);
+    await unregisterDeviceToken(req.params.token, req.employeeId!);
     res.json({ ok: true });
   } catch (err) { next(err); }
 });

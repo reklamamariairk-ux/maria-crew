@@ -42,8 +42,9 @@ export async function registerDeviceToken(
   );
 }
 
-export async function unregisterDeviceToken(token: string): Promise<void> {
-  await pool.query(`DELETE FROM device_tokens WHERE token = $1`, [token]);
+// Скоуп по владельцу (employeeId) — чтобы нельзя было отписать чужой токен (IDOR).
+export async function unregisterDeviceToken(token: string, employeeId: number): Promise<void> {
+  await pool.query(`DELETE FROM device_tokens WHERE token = $1 AND employee_id = $2`, [token, employeeId]);
 }
 
 export interface PushPayload {

@@ -39,7 +39,16 @@ function validateInitData(initData: string): Record<string, string> | null {
     .digest();
   const computed = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
-  return computed === hash ? Object.fromEntries(params.entries()) : null;
+  // Constant-time сравнение подписи (как везде в проекте — timingSafeEqual)
+  const a = Buffer.from(computed, 'hex');
+  const b = Buffer.from(hash, 'hex');
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+
+  // Защита от replay: initData не старше 24ч (Telegram генерит свежий auth_date на каждый запуск)
+  const authDate = parseInt(params.get('auth_date') ?? '', 10);
+  if (!Number.isInteger(authDate) || Date.now() / 1000 - authDate > 86400) return null;
+
+  return Object.fromEntries(params.entries());
 }
 
 function parseTgUser(data: Record<string, string>): { id: number; username?: string; firstName: string; lastName?: string; photoUrl?: string } | null {
