@@ -806,6 +806,23 @@ async function saveMetrics() {
   } catch (e) { toastError(e); }
 }
 
+async function refreshGis2Ratings() {
+  try {
+    const res = await api('POST', '/stores/refresh-gis2-ratings', { year: state.year, month: state.month });
+    if (!res.ok) {
+      toast(`⚠️ ${res.failed?.[0]?.reason || 'Не удалось обновить'}`);
+      return;
+    }
+    const parts = [
+      `✅ Обновлено: ${res.updated}/${res.total}`,
+      res.skippedNoId ? `${res.skippedNoId} без 2ГИС ID` : '',
+      res.failed?.length ? `${res.failed.length} ошибок` : '',
+    ].filter(Boolean).join(' · ');
+    toast(parts);
+    loadMetrics();
+  } catch (e) { toastError(e); }
+}
+
 async function saveStoreRatings() {
   collectCurrentStoreRatingEdits();
   const items = storeRatingsRows

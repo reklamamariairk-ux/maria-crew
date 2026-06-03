@@ -13,6 +13,7 @@ import { markCronRun } from '../diagnostics';
 import { alertOwner } from '../bot/notifications/sender';
 import { refreshCatalog, isProxyConfigured } from '../services/oneCCatalog.service';
 import { remindUnansweredRequests } from '../services/request.service';
+import { refreshGis2RatingsJob } from './jobs/refreshGis2Ratings';
 
 /** Обёртка над cron-задачей: ловит ошибки, обновляет статус, шлёт алерт владельцу */
 function safeRun(name: string, fn: () => Promise<void>, alertOnError = false): () => Promise<void> {
@@ -96,6 +97,12 @@ export function initScheduler(bot: Bot<BotContext>): void {
     console.log(`[scheduler] refreshOneCCatalog: загружено ${r.total} товаров`);
   }), { timezone: 'Asia/Irkutsk' });
 
+  // ── 3h. Ежедневное обновление рейтинга 2ГИС у всех точек (06:00 Иркутск) ─
+  // Без GIS2_API_KEY — пропуск с логом. Обновляет avg_rating_score за
+  // текущий период, пересчитывает total_score и rank всех точек.
+  cron.schedule('0 6 * * *', safeRun('refreshGis2Ratings', refreshGis2RatingsJob),
+    { timezone: 'Asia/Irkutsk' });
+
   // ── 3g. Напоминание о неотвеченных запросах (каждые 30 мин) ─────────────
   // Внутри запроса фильтр: прошло ≥ 2 часов И напоминания ещё не было.
   // Шлём один раз, дальше за пинками следит руководитель в админке.
@@ -120,5 +127,6 @@ export function initScheduler(bot: Bot<BotContext>): void {
   console.log('  • Каждый день 03:30     — чистка журнала >6 мес');
   console.log('  • Каждый день 10:00     — дайджест непогашенных заявок');
   console.log('  • Каждый день 04:00     — refresh кэша Номенклатуры 1С');
+  console.log('  • Каждый день 06:00     — refresh рейтингов 2ГИС');
   console.log('  • Каждые 30 минут       — напоминание о неотвеченных запросах (>2ч)');
 }

@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { logAudit } from '../../services/audit.service';
-import { fetchGis2Rating } from '../../services/gis2.service';
+import { fetchGis2Rating, refreshAllGis2Ratings } from '../../services/gis2.service';
 
 const router = Router();
 
@@ -111,6 +111,19 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     if (!rows[0]) { res.status(404).json({ error: 'Точка не найдена' }); return; }
     res.json(rows[0]);
     logAudit('store_update', { storeId: rows[0].id, changes: body }).catch(() => {});
+  } catch (err) { next(err); }
+});
+
+// POST /api/stores/refresh-gis2-ratings — массово обновить рейтинг 2ГИС у всех точек
+// Body опционально: { year, month }. Без них — текущий период.
+router.post('/refresh-gis2-ratings', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { year, month } = req.body as { year?: number; month?: number };
+    const result = await refreshAllGis2Ratings(year, month);
+    res.json(result);
+    logAudit('store_ratings_save', {
+      year: result.year, month: result.month, count: result.updated,
+    }).catch(() => {});
   } catch (err) { next(err); }
 });
 
