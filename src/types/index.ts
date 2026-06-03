@@ -119,6 +119,7 @@ export interface MonthlyMetrics {
   reviewsCount: number;
   checklistPercent: number | null;
   revenuePercent: number | null;
+  attestationPercent: number | null;
   mvpScore: number | null;
   isMvp: boolean;
   cardsAwarded: CardAwardLog[];
@@ -214,6 +215,7 @@ export interface MonthlyMetricsInput {
   reviewsCount?: number;
   checklistPercent?: number;
   revenuePercent?: number;
+  attestationPercent?: number;
 }
 
 export interface ProcessMonthResult {

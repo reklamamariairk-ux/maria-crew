@@ -282,10 +282,11 @@
               <th data-sort="reviewsCount" class="sortable num">Отзывов</th>
               <th data-sort="checklistPercent" class="sortable num">Чек-лист %</th>
               <th data-sort="revenuePercent" class="sortable num">План %</th>
+              <th data-sort="attestationPercent" class="sortable num">Аттестация %</th>
             </tr>
           </thead>
           <tbody id="metrics-tbody">
-            <tr><td colspan="6" class="empty">Выберите точку или режим «Все точки»</td></tr>
+            <tr><td colspan="7" class="empty">Выберите точку или режим «Все точки»</td></tr>
           </tbody>
         </table>
       </div>
@@ -460,13 +461,16 @@
             <select id="card-source" style="width:170px">
               <option value="manual">Вручную</option>
               <option value="mystery_shopper">Тайный покупатель</option>
-              <option value="review">Именной отзыв</option>
               <option value="checklist">Чек-лист 100%</option>
               <option value="plan">Выполнение плана</option>
+              <option value="certification">Аттестация</option>
               <option value="mvp">Лучший сотрудник месяца</option>
               <option value="team_bonus">Бонус лучшей точки</option>
               <option value="seasonal">Сезонный челлендж</option>
             </select>
+          </label>
+          <label>Месяц
+            <input type="month" id="card-month" style="width:160px">
           </label>
           <label style="flex-direction:row;align-items:center;gap:6px;font-weight:500">
             <input type="checkbox" id="card-mvp"> Карточка лучшего сотрудника
@@ -1136,7 +1140,7 @@
 
         <p class="section-title" style="margin-top:24px">Пороги выдачи карточек</p>
         <p class="text-muted" style="font-size:13px;margin-bottom:12px">
-          Карточка коллекционного героя выдаётся когда показатель сотрудника <b>не ниже</b> указанного значения. Карточка за «MVP месяца» выдаётся отдельно лучшему по баллам — она не настраивается.
+          Карточка коллекционного героя выдаётся когда показатель сотрудника <b>не ниже</b> указанного значения. За именные отзывы карточек НЕ выдаётся — только монеты (см. ниже). Карточка за «MVP месяца» — отдельно лучшему, по своим правилам.
         </p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
           <label>Тайный покупатель ≥ <span class="text-muted" style="font-size:11px">(0–100)</span>
@@ -1148,8 +1152,21 @@
           <label>План выручки ≥ % <span class="text-muted" style="font-size:11px">(0–300)</span>
             <input type="number" id="cfg-card-revenue" class="input" min="0" max="300" step="1" placeholder="105">
           </label>
-          <label>Макс. карточек за отзывы <span class="text-muted" style="font-size:11px">(0–20)</span>
-            <input type="number" id="cfg-card-reviews-max" class="input" min="0" max="20" step="1" placeholder="2">
+          <label>Аттестация ≥ % <span class="text-muted" style="font-size:11px">(0–100)</span>
+            <input type="number" id="cfg-card-attest" class="input" min="0" max="100" step="1" placeholder="80">
+          </label>
+        </div>
+
+        <p class="section-title" style="margin-top:24px">Пороги назначения «Лучший»</p>
+        <p class="text-muted" style="font-size:13px;margin-bottom:12px">
+          Лучший сотрудник в точке назначается только если его балл <b>строго больше</b> порога <b>и</b> он единственный с максимальным баллом (без ничьих). Лучшая точка — аналогично по своему порогу. Иначе никого не назначаем.
+        </p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <label>Минимальный балл MVP сотрудника
+            <input type="number" id="cfg-mvp-min" class="input" min="0" max="200" step="1" placeholder="80">
+          </label>
+          <label>Минимальный балл лучшей точки
+            <input type="number" id="cfg-top-store-min" class="input" min="0" max="200" step="1" placeholder="70">
           </label>
         </div>
 

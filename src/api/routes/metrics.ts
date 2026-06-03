@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
-import { upsertMetrics, processMonthAllStores } from '../../services/rating.service';
+import { upsertMetrics, processMonthAllStores, calcStoreScore } from '../../services/rating.service';
 import { notifyMvp, notifyTopStore, publishMonthResults } from '../../bot/notifications/sender';
 import { logAudit } from '../../services/audit.service';
 import type { MonthlyMetricsInput } from '../../types';
@@ -85,7 +85,47 @@ router.post('/store-ratings', async (req: Request, res: Response, next: NextFunc
             revenue_percent  = EXCLUDED.revenue_percent`,
         [it.storeId, year, month, it.avgRatingScore ?? null, it.revenuePercent ?? null]
       );
+
+      // Сразу пересчитываем total_score этой точки на основе средних
+      // метрик её сотрудников (по тайному + чек-листу) + переданных
+      // отзовиков/плана. Без этого админ правит данные в Метриках, идёт
+      // в Рейтинг, а total_score старый — выглядит как баг.
+      const { rows: empRows } = await pool.query<{ mysteryShopperScore: string | null; checklistPercent: string | null }>(
+        `SELECT mystery_shopper_score AS "mysteryShopperScore",
+                checklist_percent     AS "checklistPercent"
+         FROM monthly_metrics mm
+         JOIN employees e ON e.id = mm.employee_id
+         WHERE mm.store_id = $1 AND mm.year = $2 AND mm.month = $3 AND e.is_active = true`,
+        [it.storeId, year, month]
+      );
+      const numAvg = (vals: (number | null)[]): number | null => {
+        const v = vals.filter((x): x is number => typeof x === 'number' && Number.isFinite(x));
+        return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+      };
+      const avgMystery = numAvg(empRows.map(r => r.mysteryShopperScore !== null ? parseFloat(r.mysteryShopperScore) : null));
+      const avgChecklist = numAvg(empRows.map(r => r.checklistPercent !== null ? parseFloat(r.checklistPercent) : null));
+      const totalScore = calcStoreScore({
+        avgMysteryShoper: avgMystery,
+        avgRatingScore: it.avgRatingScore,
+        avgChecklist,
+        revenuePercent: it.revenuePercent,
+      });
+      await pool.query(
+        `UPDATE store_monthly_stats SET avg_mystery_shopper = $1, avg_checklist = $2, total_score = $3
+         WHERE store_id = $4 AND year = $5 AND month = $6`,
+        [avgMystery, avgChecklist, totalScore, it.storeId, year, month]
+      );
     }
+    // Пересчитываем rank для всех точек этого месяца после сохранения.
+    await pool.query(
+      `WITH ranked AS (
+         SELECT id, ROW_NUMBER() OVER (ORDER BY total_score DESC NULLS LAST) AS rn
+         FROM store_monthly_stats WHERE year = $1 AND month = $2
+       )
+       UPDATE store_monthly_stats sms SET rank = ranked.rn
+       FROM ranked WHERE sms.id = ranked.id`,
+      [year, month]
+    );
     res.json({ ok: true, saved: items.length });
     logAudit('store_ratings_save', { year, month, count: items.length }).catch(() => {});
   } catch (err) { next(err); }
@@ -107,7 +147,7 @@ router.post('/batch', async (req: Request, res: Response, next: NextFunction): P
 // PUT /api/metrics/:id
 router.put('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { mysteryShopperScore, reviewsCount, checklistPercent, revenuePercent } =
+    const { mysteryShopperScore, reviewsCount, checklistPercent, revenuePercent, attestationPercent } =
       req.body as Partial<MonthlyMetricsInput>;
     const { rows } = await pool.query(
       `UPDATE monthly_metrics SET
@@ -115,10 +155,11 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
          reviews_count         = COALESCE($2, reviews_count),
          checklist_percent     = COALESCE($3, checklist_percent),
          revenue_percent       = COALESCE($4, revenue_percent),
+         attestation_percent   = COALESCE($5, attestation_percent),
          updated_at            = NOW()
-       WHERE id = $5 RETURNING *`,
+       WHERE id = $6 RETURNING *`,
       [mysteryShopperScore ?? null, reviewsCount ?? null,
-       checklistPercent ?? null, revenuePercent ?? null, req.params.id]
+       checklistPercent ?? null, revenuePercent ?? null, attestationPercent ?? null, req.params.id]
     );
     if (!rows[0]) { res.status(404).json({ error: 'Не найден' }); return; }
     res.json(rows[0]);

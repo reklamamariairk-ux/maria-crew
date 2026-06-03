@@ -27,12 +27,15 @@ router.get('/:employeeId', async (req: Request, res: Response, next: NextFunctio
 // body: { employeeId, heroId, isMvp?, source? }
 router.post('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { employeeId, heroId, isMvp = false, source = 'manual' } = req.body as {
+    const { employeeId, heroId, isMvp = false, source = 'manual', year, month } = req.body as {
       employeeId: number; heroId: number; isMvp?: boolean; source?: string;
+      year?: number; month?: number;
     };
     if (!employeeId || !heroId) { res.status(400).json({ error: 'employeeId и heroId обязательны' }); return; }
 
     const now = new Date();
+    const finalYear  = (year  && year  >= 2024 && year  <= 2100) ? year  : now.getFullYear();
+    const finalMonth = (month && month >= 1    && month <= 12  ) ? month : now.getMonth() + 1;
     const { rows } = await pool.query<{ id: number; heroName: string }>(
       `WITH inserted AS (
          INSERT INTO employee_cards (employee_id, hero_id, is_mvp, source, year, month)
@@ -40,7 +43,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
          RETURNING id, hero_id
        )
        SELECT i.id, h.name AS "heroName" FROM inserted i JOIN heroes h ON h.id = i.hero_id`,
-      [employeeId, heroId, isMvp, source, now.getFullYear(), now.getMonth() + 1]
+      [employeeId, heroId, isMvp, source, finalYear, finalMonth]
     );
     res.status(201).json({ id: rows[0].id });
 

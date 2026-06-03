@@ -16,13 +16,16 @@ const DEFAULT_THRESHOLDS = {
   cardThresholdMysteryShopper: 90,
   cardThresholdChecklist: 100,
   cardThresholdRevenue: 105,
-  cardMaxReviewsCount: 2,
+  cardThresholdCertification: 80,
 };
 
 /**
  * По заполненным метрикам определяет список причин для начисления карточек.
  * Чистая функция — не обращается к БД. Пороги берутся из mvp_config, чтобы
  * админ мог их менять без выкатки кода.
+ *
+ * Карточки за отзыв — НЕ выдаются. За отзыв сотрудник получает монеты
+ * (см. reviewCoinReward в processMonthForStore). Это решение пользователя.
  */
 export function calcCardAwards(
   metrics: MonthlyMetrics,
@@ -30,7 +33,7 @@ export function calcCardAwards(
     | 'cardThresholdMysteryShopper'
     | 'cardThresholdChecklist'
     | 'cardThresholdRevenue'
-    | 'cardMaxReviewsCount'
+    | 'cardThresholdCertification'
   >
 ): CardAwardItem[] {
   const t = cfg ?? DEFAULT_THRESHOLDS;
@@ -40,18 +43,16 @@ export function calcCardAwards(
     awards.push({ source: 'mystery_shopper', isMvp: false });
   }
 
-  // Максимум cardMaxReviewsCount карточек за отзывы в месяц
-  const reviewCards = Math.min(metrics.reviewsCount, t.cardMaxReviewsCount);
-  for (let i = 0; i < reviewCards; i++) {
-    awards.push({ source: 'review', isMvp: false });
-  }
-
   if (metrics.checklistPercent !== null && metrics.checklistPercent >= t.cardThresholdChecklist) {
     awards.push({ source: 'checklist', isMvp: false });
   }
 
   if (metrics.revenuePercent !== null && metrics.revenuePercent >= t.cardThresholdRevenue) {
     awards.push({ source: 'plan', isMvp: false });
+  }
+
+  if (metrics.attestationPercent !== null && metrics.attestationPercent >= t.cardThresholdCertification) {
+    awards.push({ source: 'certification', isMvp: false });
   }
 
   if (metrics.isMvp) {
@@ -75,8 +76,7 @@ export async function awardCards(
   employeeId: number,
   year: number,
   month: number,
-  awards: CardAwardItem[],
-  cardMaxReviewsCount = 2
+  awards: CardAwardItem[]
 ): Promise<EmployeeCard[]> {
   if (awards.length === 0) return [];
 
@@ -84,7 +84,7 @@ export async function awardCards(
   try {
     await client.query('BEGIN');
 
-    // Источники, уже начисленные в этом месяце (review — до cardMaxReviewsCount раз)
+    // Источники, уже начисленные в этом месяце. По 1 карточке на каждый source.
     const { rows: existing } = await client.query<{ source: CardSource }>(
       `SELECT source FROM employee_cards
        WHERE employee_id = $1 AND year = $2 AND month = $3`,
@@ -99,8 +99,7 @@ export async function awardCards(
 
     for (const award of awards) {
       const current = sourceCounts.get(award.source) ?? 0;
-      const limit = award.source === 'review' ? cardMaxReviewsCount : 1;
-      if (current >= limit) continue;
+      if (current >= 1) continue;
 
       const heroId = randomHeroId();
       const { rows } = await client.query<EmployeeCard>(

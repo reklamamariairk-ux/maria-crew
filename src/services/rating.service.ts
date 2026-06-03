@@ -99,13 +99,14 @@ export async function upsertMetrics(input: MonthlyMetricsInput): Promise<Monthly
   const { rows } = await pool.query<MonthlyMetrics>(
     `INSERT INTO monthly_metrics
        (employee_id, store_id, year, month,
-        mystery_shopper_score, reviews_count, checklist_percent, revenue_percent, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+        mystery_shopper_score, reviews_count, checklist_percent, revenue_percent, attestation_percent, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
      ON CONFLICT (employee_id, year, month) DO UPDATE SET
        mystery_shopper_score = EXCLUDED.mystery_shopper_score,
        reviews_count         = EXCLUDED.reviews_count,
        checklist_percent     = EXCLUDED.checklist_percent,
        revenue_percent       = EXCLUDED.revenue_percent,
+       attestation_percent   = EXCLUDED.attestation_percent,
        updated_at            = NOW()
      RETURNING *`,
     [
@@ -117,6 +118,7 @@ export async function upsertMetrics(input: MonthlyMetricsInput): Promise<Monthly
       input.reviewsCount ?? 0,
       input.checklistPercent ?? null,
       input.revenuePercent ?? null,
+      input.attestationPercent ?? null,
     ]
   );
   return rows[0];
@@ -159,11 +161,13 @@ export async function processMonthForStore(
 
   const maxScore = Math.max(...scored.map(s => s.computedScore));
   const tiedTop = scored.filter(s => s.computedScore === maxScore);
-  // При ничье — никого не делать MVP. Раньше брали «первого по алфавиту»,
-  // но это несправедливо: два сотрудника с одинаковым результатом, а карточка
-  // достаётся одному. Лучше не давать никому, чем дать рандомно.
-  // Также не делать MVP если максимум ≤ 0 (никто не заслужил).
-  const mvp = (tiedTop.length === 1 && tiedTop[0].computedScore > 0) ? tiedTop[0] : null;
+  // MVP назначается ТОЛЬКО при выполнении ВСЕХ трёх условий:
+  //  1) Уникальный максимум (нет ничьих) — иначе никого, чтобы не быть
+  //     несправедливым к одному из равных по результату.
+  //  2) Максимум > mvpMinScore (по умолчанию 80) — иначе никто не заслужил.
+  //  3) (не строго) максимум > 0 — отрицательные ивлюбом случае не дают MVP.
+  const mvp = (tiedTop.length === 1 && tiedTop[0].computedScore > cfg.mvpMinScore)
+    ? tiedTop[0] : null;
 
   const results: ProcessMonthResult['employees'] = [];
 
@@ -177,7 +181,7 @@ export async function processMonthForStore(
 
     const metricsWithMvp: MonthlyMetrics = { ...s, isMvp };
     const awards = calcCardAwards(metricsWithMvp, cfg);
-    const awarded = await awardCards(s.employeeId, year, month, awards, cfg.cardMaxReviewsCount);
+    const awarded = await awardCards(s.employeeId, year, month, awards);
 
     const log = awarded.map(c => ({ heroId: c.heroId, source: c.source, isMvp: c.isMvp }));
     await pool.query(
@@ -314,12 +318,22 @@ export async function processMonthAllStores(
   // Ранжируем по score DESC
   storeResults.sort((a, b) => b.storeScore - a.storeScore);
 
+  const cfgForTop = await getMvpConfig();
+  const topThreshold = cfgForTop.topStoreMinScore;
+  // Топ-точка назначается только если #1:
+  //  1) единственный максимум (нет ничьих);
+  //  2) score > topStoreMinScore (по умолчанию 70).
+  const topCandidate = storeResults[0];
+  const tiedTop = storeResults.filter(s => s.storeScore === topCandidate?.storeScore);
+  const topStoreId = (tiedTop.length === 1 && topCandidate.storeScore > topThreshold)
+    ? topCandidate.storeId : null;
+
   const finalResults: ProcessMonthResult[] = [];
 
   for (let i = 0; i < storeResults.length; i++) {
     const s    = storeResults[i];
     const rank = i + 1;
-    const isTop = rank === 1;
+    const isTop = s.storeId === topStoreId;
 
     await pool.query(
       `UPDATE store_monthly_stats

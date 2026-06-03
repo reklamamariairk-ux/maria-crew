@@ -14,7 +14,11 @@ export interface MvpConfig {
   cardThresholdMysteryShopper: number;
   cardThresholdChecklist: number;
   cardThresholdRevenue: number;
+  cardThresholdCertification: number;
   cardMaxReviewsCount: number;
+  // Пороги назначения MVP/топ-точки (если max ниже — никого не назначаем)
+  mvpMinScore: number;
+  topStoreMinScore: number;
   reviewCoinReward: number;
   mvpCoinReward: number;
   topStoreCoinReward: number;
@@ -38,7 +42,10 @@ const DEFAULT_CONFIG: MvpConfig = {
   cardThresholdMysteryShopper: 90,
   cardThresholdChecklist: 100,
   cardThresholdRevenue: 105,
+  cardThresholdCertification: 80,
   cardMaxReviewsCount: 2,
+  mvpMinScore: 80,
+  topStoreMinScore: 70,
   reviewCoinReward: 5,
   mvpCoinReward: 0,
   topStoreCoinReward: 0,
@@ -64,7 +71,10 @@ export async function getMvpConfig(): Promise<MvpConfig> {
       cardThresholdMysteryShopper: string | null;
       cardThresholdChecklist: string | null;
       cardThresholdRevenue: string | null;
+      cardThresholdCertification: string | null;
       cardMaxReviewsCount: number | string | null;
+      mvpMinScore: string | null;
+      topStoreMinScore: string | null;
       reviewCoinReward: number | string | null;
       mvpCoinReward: number | string | null;
       topStoreCoinReward: number | string | null;
@@ -87,7 +97,10 @@ export async function getMvpConfig(): Promise<MvpConfig> {
       cardThresholdMysteryShopper: r.cardThresholdMysteryShopper != null ? parseFloat(r.cardThresholdMysteryShopper) : 90,
       cardThresholdChecklist: r.cardThresholdChecklist != null ? parseFloat(r.cardThresholdChecklist) : 100,
       cardThresholdRevenue: r.cardThresholdRevenue != null ? parseFloat(r.cardThresholdRevenue) : 105,
+      cardThresholdCertification: r.cardThresholdCertification != null ? parseFloat(r.cardThresholdCertification) : 80,
       cardMaxReviewsCount: r.cardMaxReviewsCount != null ? Number(r.cardMaxReviewsCount) : 2,
+      mvpMinScore: r.mvpMinScore != null ? parseFloat(r.mvpMinScore) : 80,
+      topStoreMinScore: r.topStoreMinScore != null ? parseFloat(r.topStoreMinScore) : 70,
       reviewCoinReward: r.reviewCoinReward != null ? Number(r.reviewCoinReward) : 5,
       mvpCoinReward: r.mvpCoinReward != null ? Number(r.mvpCoinReward) : 0,
       topStoreCoinReward: r.topStoreCoinReward != null ? Number(r.topStoreCoinReward) : 0,
@@ -116,11 +129,14 @@ export async function updateMvpConfig(
     checklist_threshold:            'checklistThreshold',
     revenue_weight_factor:          'revenueWeightFactor',
     revenue_max:                    'revenueMax',
-    card_threshold_mystery_shopper: 'cardThresholdMysteryShopper',
-    card_threshold_checklist:       'cardThresholdChecklist',
-    card_threshold_revenue:         'cardThresholdRevenue',
-    card_max_reviews_count:         'cardMaxReviewsCount',
-    review_coin_reward:             'reviewCoinReward',
+    card_threshold_mystery_shopper:  'cardThresholdMysteryShopper',
+    card_threshold_checklist:        'cardThresholdChecklist',
+    card_threshold_revenue:          'cardThresholdRevenue',
+    card_threshold_certification:    'cardThresholdCertification',
+    card_max_reviews_count:          'cardMaxReviewsCount',
+    mvp_min_score:                   'mvpMinScore',
+    top_store_min_score:             'topStoreMinScore',
+    review_coin_reward:              'reviewCoinReward',
     mvp_coin_reward:                'mvpCoinReward',
     top_store_coin_reward:          'topStoreCoinReward',
   };

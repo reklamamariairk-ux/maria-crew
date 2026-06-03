@@ -19,7 +19,9 @@ router.put('/mvp', async (req: Request, res: Response, next: NextFunction): Prom
                      'reviewsPerCard', 'reviewsMax',
                      'checklistWeight', 'checklistThreshold',
                      'revenueWeightFactor', 'revenueMax',
-                     'cardThresholdMysteryShopper', 'cardThresholdChecklist'] as const;
+                     'cardThresholdMysteryShopper', 'cardThresholdChecklist',
+                     'cardThresholdCertification',
+                     'mvpMinScore', 'topStoreMinScore'] as const;
     // Порог по плану выручки может быть > 100 (перевыполнение), кэп 0–300
     const allowed0to300 = ['cardThresholdRevenue'] as const;
     // Лимит карточек-отзывов — целое 0–20

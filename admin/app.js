@@ -583,6 +583,7 @@ async function loadMetrics() {
       reviewsCount: m.reviewsCount ?? 0,
       checklistPercent: m.checklistPercent ?? null,
       revenuePercent: m.revenuePercent ?? null,
+      attestationPercent: m.attestationPercent ?? null,
     };
   });
 
@@ -635,6 +636,7 @@ async function loadMetricsSingleStore(storeId) {
       reviewsCount: m.reviewsCount ?? 0,
       checklistPercent: m.checklistPercent ?? null,
       revenuePercent: m.revenuePercent ?? null,
+      attestationPercent: m.attestationPercent ?? null,
     };
   });
 
@@ -649,7 +651,7 @@ async function loadMetricsSingleStore(storeId) {
 function renderMetricsTable() {
   const tbody = document.getElementById('metrics-tbody');
   const showStore = !state.storeId;
-  const colspan = showStore ? 6 : 5;
+  const colspan = showStore ? 7 : 6;
 
   const sorted = sortRows(metricsAllRows, metricsSortState);
   // Активные сверху всегда, потом по выбранной сортировке
@@ -675,6 +677,7 @@ function renderMetricsTable() {
       <td><input type="number" class="m-reviews"   min="0" max="10"  step="1"   value="${r.reviewsCount ?? 0}"></td>
       <td><input type="number" class="m-checklist" min="0" max="100" step="0.1" value="${r.checklistPercent ?? ''}" placeholder="—"></td>
       <td><input type="number" class="m-revenue"   min="0" max="300" step="0.1" value="${r.revenuePercent ?? ''}" placeholder="—"></td>
+      <td><input type="number" class="m-attest"    min="0" max="100" step="0.1" value="${r.attestationPercent ?? ''}" placeholder="—"></td>
     </tr>`;
   }).join('');
   updateSortIndicators('#metrics-table', metricsSortState);
@@ -753,6 +756,7 @@ function collectCurrentEdits() {
     r.reviewsCount        = parseInt(tr.querySelector('.m-reviews').value) || 0;
     r.checklistPercent    = num('.m-checklist');
     r.revenuePercent      = num('.m-revenue');
+    r.attestationPercent  = num('.m-attest');
   });
 }
 
@@ -780,13 +784,16 @@ async function saveMetrics() {
     const reviews   = parseInt(row.querySelector('.m-reviews').value) || 0;
     const checklist = val('.m-checklist');
     const revenue   = val('.m-revenue');
-    if (mystery === undefined && reviews === 0 && checklist === undefined && revenue === undefined) return;
+    const attest    = val('.m-attest');
+    if (mystery === undefined && reviews === 0 && checklist === undefined
+        && revenue === undefined && attest === undefined) return;
     batch.push({
       employeeId: id, storeId, year: state.year, month: state.month,
       mysteryShopperScore: mystery,
       reviewsCount: reviews,
       checklistPercent: checklist,
       revenuePercent: revenue,
+      attestationPercent: attest,
     });
   });
 
@@ -2072,6 +2079,11 @@ const CARD_SOURCE_LABELS = {
 let cardHeroes = null;
 
 async function loadCardEmployees() {
+  // По умолчанию подставляем текущий период в селектор месяца карточки.
+  const monthInput = document.getElementById('card-month');
+  if (monthInput && !monthInput.value) {
+    monthInput.value = `${state.year}-${String(state.month).padStart(2, '0')}`;
+  }
   const path = state.storeId ? `/employees?storeId=${state.storeId}` : '/employees';
   const [emps, heroes] = await Promise.all([
     api('GET', path),
@@ -2175,10 +2187,16 @@ async function giveCard() {
   const heroId     = parseInt(document.getElementById('card-hero').value);
   const source     = document.getElementById('card-source').value;
   const isMvp      = document.getElementById('card-mvp').checked;
+  const monthInput = document.getElementById('card-month').value; // 'YYYY-MM' или ''
+  let year, month;
+  if (monthInput) {
+    const [y, m] = monthInput.split('-').map(Number);
+    if (y && m) { year = y; month = m; }
+  }
   if (!employeeId) { toast('Выбери сотрудника'); return; }
   if (!heroId)     { toast('Выбери героя'); return; }
   try {
-    await api('POST', '/cards', { employeeId, heroId, isMvp, source });
+    await api('POST', '/cards', { employeeId, heroId, isMvp, source, year, month });
     toast('✅ Карточка выдана');
     document.getElementById('card-mvp').checked = false;
     loadEmployeeCards();
@@ -3500,7 +3518,9 @@ async function loadMvpConfig() {
   document.getElementById('cfg-card-mystery').value      = cfg.cardThresholdMysteryShopper ?? 90;
   document.getElementById('cfg-card-checklist').value    = cfg.cardThresholdChecklist ?? 100;
   document.getElementById('cfg-card-revenue').value      = cfg.cardThresholdRevenue ?? 105;
-  document.getElementById('cfg-card-reviews-max').value  = cfg.cardMaxReviewsCount ?? 2;
+  document.getElementById('cfg-card-attest').value       = cfg.cardThresholdCertification ?? 80;
+  document.getElementById('cfg-mvp-min').value           = cfg.mvpMinScore ?? 80;
+  document.getElementById('cfg-top-store-min').value     = cfg.topStoreMinScore ?? 70;
   document.getElementById('cfg-review-coins').value      = cfg.reviewCoinReward ?? 5;
   document.getElementById('cfg-mvp-coins').value       = cfg.mvpCoinReward ?? 0;
   document.getElementById('cfg-top-store-coins').value = cfg.topStoreCoinReward ?? 0;
@@ -3525,19 +3545,21 @@ async function saveMvpConfig() {
     toast('Веса должны быть от 0 до 100'); return;
   }
   const cardThresholds = {
-    cardThresholdMysteryShopper: parseFloat(document.getElementById('cfg-card-mystery').value),
-    cardThresholdChecklist:      parseFloat(document.getElementById('cfg-card-checklist').value),
-    cardThresholdRevenue:        parseFloat(document.getElementById('cfg-card-revenue').value),
-    cardMaxReviewsCount:         parseInt(document.getElementById('cfg-card-reviews-max').value, 10),
+    cardThresholdMysteryShopper:  parseFloat(document.getElementById('cfg-card-mystery').value),
+    cardThresholdChecklist:       parseFloat(document.getElementById('cfg-card-checklist').value),
+    cardThresholdRevenue:         parseFloat(document.getElementById('cfg-card-revenue').value),
+    cardThresholdCertification:   parseFloat(document.getElementById('cfg-card-attest').value),
+    mvpMinScore:                  parseFloat(document.getElementById('cfg-mvp-min').value),
+    topStoreMinScore:             parseFloat(document.getElementById('cfg-top-store-min').value),
   };
-  if ([cardThresholds.cardThresholdMysteryShopper, cardThresholds.cardThresholdChecklist].some(v => isNaN(v) || v < 0 || v > 100)) {
-    toast('Пороги тайного и чек-листа: 0–100'); return;
+  if ([cardThresholds.cardThresholdMysteryShopper, cardThresholds.cardThresholdChecklist, cardThresholds.cardThresholdCertification].some(v => isNaN(v) || v < 0 || v > 100)) {
+    toast('Пороги тайного / чек-листа / аттестации: 0–100'); return;
   }
   if (isNaN(cardThresholds.cardThresholdRevenue) || cardThresholds.cardThresholdRevenue < 0 || cardThresholds.cardThresholdRevenue > 300) {
     toast('Порог плана: 0–300'); return;
   }
-  if (isNaN(cardThresholds.cardMaxReviewsCount) || cardThresholds.cardMaxReviewsCount < 0 || cardThresholds.cardMaxReviewsCount > 20) {
-    toast('Лимит карточек за отзывы: 0–20'); return;
+  if ([cardThresholds.mvpMinScore, cardThresholds.topStoreMinScore].some(v => isNaN(v) || v < 0 || v > 200)) {
+    toast('Мин. баллы MVP/топ-точки: 0–200'); return;
   }
   const coins = {
     reviewCoinReward:   parseInt(document.getElementById('cfg-review-coins').value, 10),
