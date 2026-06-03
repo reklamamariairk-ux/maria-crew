@@ -1,20 +1,182 @@
+import path from 'path';
+import fs from 'fs/promises';
+import { chromium, type Browser, type BrowserContext } from 'playwright';
 import { pool } from '../db/pool';
 import { calcStoreScore } from './rating.service';
 
-const GIS2_API = 'https://catalog.api.2gis.com/3.0/items/byid';
+const STATE_DIR = process.env.GIS2_STATE_DIR ?? '/data/gis2';
+const STATE_PATH = path.join(STATE_DIR, 'state.json');
 
-export async function fetchGis2Rating(gis2Id: string): Promise<number | null> {
-  const key = process.env.GIS2_API_KEY;
-  if (!key) return null;
+// Извлечение рейтинга из JSON-LD. Запускается в браузерном контексте через
+// page.evaluate — `document` доступен там нативно. Объявлено как обычная
+// функция в node-сборке (без lib:DOM в tsconfig), потому используем @ts-ignore.
+const extractLdRating = (): number | null => {
+  // @ts-ignore document есть только в браузерном контексте
+  const scripts = Array.from(document.querySelectorAll('script[type="application/ld+json"]'));
+  for (const s of scripts) {
+    try {
+      // @ts-ignore браузерный контекст
+      const json = JSON.parse(s.textContent || '{}');
+      if (json?.aggregateRating?.ratingValue) return Number(json.aggregateRating.ratingValue);
+    } catch { /* skip */ }
+  }
+  return null;
+};
 
-  const url = `${GIS2_API}?id=${encodeURIComponent(gis2Id)}&fields=items.reviews&key=${encodeURIComponent(key)}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-  if (!res.ok) return null;
+const GIS2_LOGIN_URL = 'https://account.2gis.com/';
+const PUBLIC_CARD_URL = (city: string, firmId: string) =>
+  `https://2gis.ru/${encodeURIComponent(city)}/firm/${encodeURIComponent(firmId)}`;
 
-  const data = await res.json() as { result?: { items?: Array<{ reviews?: { rating_value?: number } }> } };
-  const rating = data?.result?.items?.[0]?.reviews?.rating_value;
-  return typeof rating === 'number' ? rating : null;
+const DEFAULT_CITY = process.env.GIS2_CITY ?? 'irkutsk';
+
+// ─── Низкоуровневые утилиты ─────────────────────────────────────────────────
+
+async function ensureStateDir(): Promise<void> {
+  await fs.mkdir(STATE_DIR, { recursive: true });
 }
+
+async function stateExists(): Promise<boolean> {
+  try { await fs.access(STATE_PATH); return true; } catch { return false; }
+}
+
+async function launchBrowser(): Promise<Browser> {
+  return chromium.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--lang=ru-RU'],
+  });
+}
+
+async function createContext(browser: Browser): Promise<BrowserContext> {
+  const exists = await stateExists();
+  return browser.newContext({
+    storageState: exists ? STATE_PATH : undefined,
+    locale: 'ru-RU',
+    viewport: { width: 1440, height: 1100 },
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+      '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  });
+}
+
+// ─── Логин (нужен один раз; потом storageState переиспользуется) ────────────
+
+/**
+ * Если есть сохранённый state — пробуем работать с ним.
+ * Если нет или сессия протухла — выполняем email+pass логин и сохраняем state.
+ * Возвращает true если сессия рабочая.
+ */
+export async function ensureGis2Session(): Promise<boolean> {
+  await ensureStateDir();
+  const email = process.env.GIS2_EMAIL;
+  const pass = process.env.GIS2_PASS;
+
+  const browser = await launchBrowser();
+  try {
+    const ctx = await createContext(browser);
+    const page = await ctx.newPage();
+    await page.goto(GIS2_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    // Если после goto нас редиректит на /login — state протух
+    const onLogin = page.url().includes('login') || page.url().includes('signin');
+
+    if (!onLogin) {
+      // state ещё рабочий
+      await ctx.storageState({ path: STATE_PATH });
+      return true;
+    }
+
+    if (!email || !pass) {
+      console.warn('[gis2] state протух, GIS2_EMAIL/GIS2_PASS не заданы — login невозможен');
+      return false;
+    }
+
+    // Заполняем форму входа. Селекторы могут поменяться — обновлять при поломке.
+    await page.fill('input[type="email"], input[name="login"], input[name="email"]', email);
+    await page.fill('input[type="password"], input[name="password"]', pass);
+    await page.click('button[type="submit"]');
+    await page.waitForLoadState('networkidle', { timeout: 30000 });
+
+    // Проверяем что после логина мы не на /login
+    if (page.url().includes('login') || page.url().includes('signin')) {
+      console.error('[gis2] login не удался — возможно 2FA, капча, или неверные креды');
+      return false;
+    }
+
+    await ctx.storageState({ path: STATE_PATH });
+    console.log('[gis2] storageState сохранён');
+    return true;
+  } finally {
+    await browser.close();
+  }
+}
+
+// ─── Парсинг рейтинга публичной карточки 2ГИС ───────────────────────────────
+
+/**
+ * Скрейпит ПУБЛИЧНУЮ страницу карточки точки на 2ГИС и парсит рейтинг.
+ *
+ * Логин не нужен — рейтинг виден всем. Карточка SPA: ждём появления
+ * элемента с рейтингом, затем читаем число.
+ *
+ * gis2Id — это идентификатор организации в URL карточки 2ГИС
+ * (например, https://2gis.ru/irkutsk/firm/70000001020449571 → 70000001020449571).
+ */
+export async function fetchGis2Rating(gis2Id: string, city = DEFAULT_CITY): Promise<number | null> {
+  const browser = await launchBrowser();
+  try {
+    const ctx = await createContext(browser);
+    // Картинки и шрифты не грузим — экономим трафик и время
+    await ctx.route('**/*', (route) => {
+      const type = route.request().resourceType();
+      if (type === 'image' || type === 'font' || type === 'media') return route.abort();
+      return route.continue();
+    });
+    const page = await ctx.newPage();
+    const url = PUBLIC_CARD_URL(city, gis2Id);
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    // Сразу пытаемся найти рейтинг — 2ГИС рендерит его быстро.
+    // Попытка 1: через aria-label «Оценка X.X из 5».
+    const rating = await page
+      .waitForSelector('[itemprop="ratingValue"], [aria-label*="Оценка"], [data-rating]', { timeout: 15000 })
+      .then(async (el) => {
+        if (!el) return null;
+        // itemprop="ratingValue" — содержит число прямо в content
+        const itempropContent = await el.getAttribute('content');
+        if (itempropContent) {
+          const n = parseFloat(itempropContent.replace(',', '.'));
+          if (Number.isFinite(n)) return n;
+        }
+        // aria-label "Оценка 4.6 из 5"
+        const aria = await el.getAttribute('aria-label');
+        if (aria) {
+          const m = aria.match(/(\d+[.,]\d+)/);
+          if (m) {
+            const n = parseFloat(m[1].replace(',', '.'));
+            if (Number.isFinite(n)) return n;
+          }
+        }
+        // Иногда — просто textContent
+        const text = (await el.textContent())?.trim() ?? '';
+        const m2 = text.match(/(\d+[.,]\d+)/);
+        if (m2) {
+          const n = parseFloat(m2[1].replace(',', '.'));
+          if (Number.isFinite(n)) return n;
+        }
+        return null;
+      })
+      .catch(() => null);
+
+    if (rating !== null) return rating;
+
+    // Запасной путь — поиск JSON-LD скриптом
+    const ld = await page.evaluate(extractLdRating);
+    return ld ?? null;
+  } finally {
+    await browser.close();
+  }
+}
+
+// ─── Массовое обновление по всем точкам ─────────────────────────────────────
 
 export type Gis2RefreshResult = {
   ok: boolean;
@@ -27,15 +189,8 @@ export type Gis2RefreshResult = {
 };
 
 /**
- * Массово обновляет avg_rating_score в store_monthly_stats для всех активных
- * точек, у которых задан gis2_id. После обновления каждой точки пересчитывает
- * total_score (на основе avg_mystery_shopper/avg_checklist уже в БД +
- * новый rating + текущий revenue_percent), затем пересчитывает rank всех точек.
- *
- * Запускается:
- *  - cron'ом раз в день 06:00 Asia/Irkutsk;
- *  - вручную через POST /api/admin/refresh-gis2-ratings;
- *  - вручную через кнопку в UI Метрики «Обновить рейтинги 2ГИС».
+ * Открываем один браузер и поочерёдно обновляем рейтинг каждой точки
+ * (последовательно, чтобы не словить капчу 2ГИС от слишком частых запросов).
  */
 export async function refreshAllGis2Ratings(year?: number, month?: number): Promise<Gis2RefreshResult> {
   const now = new Date();
@@ -46,29 +201,42 @@ export async function refreshAllGis2Ratings(year?: number, month?: number): Prom
     ok: true, year: y, month: m, total: 0, updated: 0, skippedNoId: 0, failed: [],
   };
 
-  if (!process.env.GIS2_API_KEY) {
-    result.ok = false;
-    result.failed.push({ storeId: 0, storeName: 'env', reason: 'GIS2_API_KEY не задан' });
-    return result;
-  }
-
   const { rows: stores } = await pool.query<{ id: number; name: string; gis2Id: string | null }>(
     `SELECT id, name, gis2_id AS "gis2Id" FROM stores WHERE is_active = true ORDER BY name`
   );
   result.total = stores.length;
 
-  // Параллелим запросы к 2ГИС с лимитом 4, чтобы не уйти в их rate-limit.
-  const concurrency = 4;
-  const queue = [...stores];
-  const workers = Array.from({ length: concurrency }, async () => {
-    while (queue.length > 0) {
-      const s = queue.shift();
-      if (!s) break;
+  const browser = await launchBrowser();
+  try {
+    const ctx = await createContext(browser);
+    await ctx.route('**/*', (route) => {
+      const type = route.request().resourceType();
+      if (type === 'image' || type === 'font' || type === 'media') return route.abort();
+      return route.continue();
+    });
+
+    for (const s of stores) {
       if (!s.gis2Id) { result.skippedNoId += 1; continue; }
+      const page = await ctx.newPage();
       try {
-        const rating = await fetchGis2Rating(s.gis2Id);
-        if (rating === null) {
-          result.failed.push({ storeId: s.id, storeName: s.name, reason: '2ГИС не вернул rating_value' });
+        const url = PUBLIC_CARD_URL(DEFAULT_CITY, s.gis2Id);
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        let rating: number | null = null;
+        try {
+          const el = await page.waitForSelector('[itemprop="ratingValue"], [aria-label*="Оценка"]', { timeout: 12000 });
+          const content = await el.getAttribute('content');
+          if (content) rating = parseFloat(content.replace(',', '.'));
+          if (!Number.isFinite(rating ?? NaN)) {
+            const aria = await el.getAttribute('aria-label');
+            const match = aria?.match(/(\d+[.,]\d+)/);
+            if (match) rating = parseFloat(match[1].replace(',', '.'));
+          }
+        } catch { /* пробуем JSON-LD */ }
+        if (rating === null || !Number.isFinite(rating)) {
+          rating = await page.evaluate(extractLdRating);
+        }
+        if (rating === null || !Number.isFinite(rating)) {
+          result.failed.push({ storeId: s.id, storeName: s.name, reason: 'не нашёл rating на карточке' });
           continue;
         }
         await pool.query(
@@ -83,20 +251,20 @@ export async function refreshAllGis2Ratings(year?: number, month?: number): Prom
           storeId: s.id, storeName: s.name,
           reason: e instanceof Error ? e.message : String(e),
         });
+      } finally {
+        await page.close();
       }
     }
-  });
-  await Promise.all(workers);
+  } finally {
+    await browser.close();
+  }
 
-  // Пересчёт total_score для всех обновлённых точек + rank всех.
   await recomputeAllStoreScores(y, m);
 
   return result;
 }
 
 async function recomputeAllStoreScores(year: number, month: number): Promise<void> {
-  // Для каждой точки берём текущие avg_rating_score, revenue_percent из stats и
-  // средние тайный/чек-лист по сотрудникам этого периода — пересчитываем total_score.
   const { rows: stats } = await pool.query<{
     storeId: number;
     avgRatingScore: string | null;

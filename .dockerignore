@@ -1,0 +1,14 @@
+node_modules
+.git
+.gitignore
+.github
+.vscode
+.idea
+*.log
+.env
+.env.*
+!.env.example
+*.md
+mobile/android/build
+mobile/android/app/build
+mobile/ios
