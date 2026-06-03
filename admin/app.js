@@ -380,9 +380,9 @@ async function loadStores() {
 // в Метриках и Рейтингах. Все они синхронизируются с state.storeId.
 function populateStoreSelectors() {
   // Селекторы где «нет выбора» = подсказка («Выбери точку»)
-  const promptIds = ['store-select', 'leaderboard-store-picker'];
+  const promptIds = ['store-select'];
   // Селекторы где «нет выбора» = режим «Все точки» (агрегатный)
-  const allIds = ['metrics-store-picker'];
+  const allIds = ['metrics-store-picker', 'leaderboard-store-picker'];
 
   const buildOptions = (firstLabel) => {
     const current = state.storeId ? String(state.storeId) : '';
