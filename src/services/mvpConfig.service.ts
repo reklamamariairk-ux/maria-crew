@@ -15,6 +15,7 @@ export interface MvpConfig {
   cardThresholdChecklist: number;
   cardThresholdRevenue: number;
   cardMaxReviewsCount: number;
+  reviewCoinReward: number;
   mvpCoinReward: number;
   topStoreCoinReward: number;
   updatedAt: Date;
@@ -38,6 +39,7 @@ const DEFAULT_CONFIG: MvpConfig = {
   cardThresholdChecklist: 100,
   cardThresholdRevenue: 105,
   cardMaxReviewsCount: 2,
+  reviewCoinReward: 5,
   mvpCoinReward: 0,
   topStoreCoinReward: 0,
   updatedAt: new Date(),
@@ -63,6 +65,7 @@ export async function getMvpConfig(): Promise<MvpConfig> {
       cardThresholdChecklist: string | null;
       cardThresholdRevenue: string | null;
       cardMaxReviewsCount: number | string | null;
+      reviewCoinReward: number | string | null;
       mvpCoinReward: number | string | null;
       topStoreCoinReward: number | string | null;
       updatedAt: Date;
@@ -85,6 +88,7 @@ export async function getMvpConfig(): Promise<MvpConfig> {
       cardThresholdChecklist: r.cardThresholdChecklist != null ? parseFloat(r.cardThresholdChecklist) : 100,
       cardThresholdRevenue: r.cardThresholdRevenue != null ? parseFloat(r.cardThresholdRevenue) : 105,
       cardMaxReviewsCount: r.cardMaxReviewsCount != null ? Number(r.cardMaxReviewsCount) : 2,
+      reviewCoinReward: r.reviewCoinReward != null ? Number(r.reviewCoinReward) : 5,
       mvpCoinReward: r.mvpCoinReward != null ? Number(r.mvpCoinReward) : 0,
       topStoreCoinReward: r.topStoreCoinReward != null ? Number(r.topStoreCoinReward) : 0,
       updatedAt: r.updatedAt,
@@ -116,6 +120,7 @@ export async function updateMvpConfig(
     card_threshold_checklist:       'cardThresholdChecklist',
     card_threshold_revenue:         'cardThresholdRevenue',
     card_max_reviews_count:         'cardMaxReviewsCount',
+    review_coin_reward:             'reviewCoinReward',
     mvp_coin_reward:                'mvpCoinReward',
     top_store_coin_reward:          'topStoreCoinReward',
   };

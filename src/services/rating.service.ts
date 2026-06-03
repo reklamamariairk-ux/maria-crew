@@ -81,10 +81,14 @@ export function calcStoreScore(s: {
   avgChecklist: number | null;
   revenuePercent: number | null;
 }): number {
-  const mystery   = ((s.avgMysteryShoper ?? 0) / 100) * 30;
-  const rating    = ((s.avgRatingScore ?? 0) / 5) * 25;
-  const checklist = ((s.avgChecklist ?? 0) / 100) * 25;
-  const revenue   = Math.min(((s.revenuePercent ?? 0) / 100) * 20, 25);
+  // Безопасный приёмник: null/NaN/Infinity → 0. Иначе одно NaN в исходных
+  // данных распространяется через арифметику и весь Store Score становится NaN.
+  const safe = (v: number | null | undefined): number =>
+    typeof v === 'number' && Number.isFinite(v) ? v : 0;
+  const mystery   = (safe(s.avgMysteryShoper) / 100) * 30;
+  const rating    = (safe(s.avgRatingScore) / 5) * 25;
+  const checklist = (safe(s.avgChecklist) / 100) * 25;
+  const revenue   = Math.min((safe(s.revenuePercent) / 100) * 20, 25);
   return Math.round((mystery + rating + checklist + revenue) * 100) / 100;
 }
 
@@ -154,15 +158,17 @@ export async function processMonthForStore(
   }));
 
   const maxScore = Math.max(...scored.map(s => s.computedScore));
-  // При ничьей MVP — первый по алфавиту
-  const mvp = scored
-    .filter(s => s.computedScore === maxScore)
-    .sort((a, b) => a.employeeName.localeCompare(b.employeeName, 'ru'))[0];
+  const tiedTop = scored.filter(s => s.computedScore === maxScore);
+  // При ничье — никого не делать MVP. Раньше брали «первого по алфавиту»,
+  // но это несправедливо: два сотрудника с одинаковым результатом, а карточка
+  // достаётся одному. Лучше не давать никому, чем дать рандомно.
+  // Также не делать MVP если максимум ≤ 0 (никто не заслужил).
+  const mvp = (tiedTop.length === 1 && tiedTop[0].computedScore > 0) ? tiedTop[0] : null;
 
   const results: ProcessMonthResult['employees'] = [];
 
   for (const s of scored) {
-    const isMvp = s.id === mvp.id;
+    const isMvp = mvp !== null && s.id === mvp.id;
 
     await pool.query(
       `UPDATE monthly_metrics SET mvp_score = $1, is_mvp = $2, updated_at = NOW() WHERE id = $3`,
@@ -179,7 +185,7 @@ export async function processMonthForStore(
       [JSON.stringify(log), s.id]
     );
 
-    // Бонусные монеты MVP — настраивается админом в mvp_config
+    // Бонусные монеты MVP — настраивается админом в mvp_config (по умолчанию 0).
     if (isMvp && cfg.mvpCoinReward > 0) {
       const note = `MVP месяца: ${month}/${year}`;
       // Идемпотентно: проверяем, нет ли уже такого начисления за этот месяц
@@ -193,6 +199,25 @@ export async function processMonthForStore(
           `INSERT INTO coin_transactions (employee_id, amount, reason, note)
            VALUES ($1, $2, 'manual', $3)`,
           [s.employeeId, cfg.mvpCoinReward, note]
+        );
+      }
+    }
+
+    // Монеты за каждый отзыв — настраивается админом в mvp_config (по умолчанию 5).
+    // Идемпотентно по note `Отзывы M/Y` — повторное «Обработать месяц» не задвоит.
+    if (cfg.reviewCoinReward > 0 && s.reviewsCount > 0) {
+      const reviewNote = `Отзывы: ${month}/${year}`;
+      const { rows: existing } = await pool.query<{ id: number }>(
+        `SELECT id FROM coin_transactions
+         WHERE employee_id = $1 AND reason = 'review' AND note = $2`,
+        [s.employeeId, reviewNote]
+      );
+      if (!existing[0]) {
+        const amount = cfg.reviewCoinReward * s.reviewsCount;
+        await pool.query(
+          `INSERT INTO coin_transactions (employee_id, amount, reason, note)
+           VALUES ($1, $2, 'review', $3)`,
+          [s.employeeId, amount, reviewNote]
         );
       }
     }
@@ -411,7 +436,9 @@ export async function getStoreLeaderboard(
 // ─── Утилиты ─────────────────────────────────────────────────────────────────
 
 function numAvg(values: (number | null)[]): number | null {
-  const valid = values.filter((v): v is number => v !== null);
+  // Отсеваем не только null, но и NaN/Infinity — иначе средняя «заразится»
+  // и попадёт в БД как NaN, после чего всё дерево расчётов ломается.
+  const valid = values.filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
   if (valid.length === 0) return null;
   return valid.reduce((s, v) => s + v, 0) / valid.length;
 }

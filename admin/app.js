@@ -1678,12 +1678,12 @@ async function loadLeaderboard() {
       const sid = e.storeId ?? 'null';
       return `<tr>
         <td><strong>${rankCell}</strong></td>
-        <td><strong${nameStyle}>${esc(e.name)}</strong>${e.isMvp ? ' <span class="badge badge-mvp"><i data-lucide="star"></i> Лучший</span>' : ''}${hiddenBadge}</td>
+        <td><strong${nameStyle} style="cursor:pointer;color:var(--pink)" onclick="showEmployeeModal(${e.employeeId})">${esc(e.name)}</strong>${e.isMvp ? ' <span class="badge badge-mvp"><i data-lucide="star"></i> Лучший</span>' : ''}${hiddenBadge}</td>
         ${storeCell}
-        <td><input type="number" step="0.01" min="0" max="200" class="lb-score-input"
+        <td><input type="number" step="0.01" min="-200" max="200" class="lb-score-input"
             value="${score}" data-emp-id="${e.employeeId}"
             onchange="saveEmployeeScore(${e.employeeId}, ${sid}, this)"></td>
-        <td class="col-hide-sm">${e.cardsCount}</td>
+        <td class="col-hide-sm" style="cursor:pointer" onclick="showEmployeeModal(${e.employeeId})" title="Открыть карточку сотрудника">${e.cardsCount}</td>
         <td>
           ${e.isMvp
             ? `<button class="btn btn-ghost btn-sm" onclick="unsetEmployeeMvp(${e.employeeId}, ${sid})" title="Снять статус"><i data-lucide="x"></i> Снять</button>`
@@ -3501,6 +3501,7 @@ async function loadMvpConfig() {
   document.getElementById('cfg-card-checklist').value    = cfg.cardThresholdChecklist ?? 100;
   document.getElementById('cfg-card-revenue').value      = cfg.cardThresholdRevenue ?? 105;
   document.getElementById('cfg-card-reviews-max').value  = cfg.cardMaxReviewsCount ?? 2;
+  document.getElementById('cfg-review-coins').value      = cfg.reviewCoinReward ?? 5;
   document.getElementById('cfg-mvp-coins').value       = cfg.mvpCoinReward ?? 0;
   document.getElementById('cfg-top-store-coins').value = cfg.topStoreCoinReward ?? 0;
   const upd = document.getElementById('cfg-last-updated');
@@ -3539,6 +3540,7 @@ async function saveMvpConfig() {
     toast('Лимит карточек за отзывы: 0–20'); return;
   }
   const coins = {
+    reviewCoinReward:   parseInt(document.getElementById('cfg-review-coins').value, 10),
     mvpCoinReward:      parseInt(document.getElementById('cfg-mvp-coins').value, 10),
     topStoreCoinReward: parseInt(document.getElementById('cfg-top-store-coins').value, 10),
   };

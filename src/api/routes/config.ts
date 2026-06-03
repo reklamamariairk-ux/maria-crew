@@ -24,7 +24,7 @@ router.put('/mvp', async (req: Request, res: Response, next: NextFunction): Prom
     const allowed0to300 = ['cardThresholdRevenue'] as const;
     // Лимит карточек-отзывов — целое 0–20
     const allowedIntCount = ['cardMaxReviewsCount'] as const;
-    const allowedCoins = ['mvpCoinReward', 'topStoreCoinReward'] as const;
+    const allowedCoins = ['reviewCoinReward', 'mvpCoinReward', 'topStoreCoinReward'] as const;
 
     const body = req.body as Record<string, unknown>;
     const data: Record<string, number> = {};
