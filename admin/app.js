@@ -800,8 +800,21 @@ async function saveMetrics() {
   if (batch.length === 0) { toast('Нечего сохранять — заполни хотя бы одно поле'); return; }
 
   try {
+    // В режиме «Одна точка» — попутно сохраним метрики точки (avgRatingScore + revenuePercent).
+    if (state.storeId) {
+      const avgRatingScore = parseFloat(document.getElementById('store-rating-score').value);
+      const revenuePercent = parseFloat(document.getElementById('store-revenue-percent').value);
+      if (!isNaN(avgRatingScore) || !isNaN(revenuePercent)) {
+        await api('POST', '/metrics/store-ratings', {
+          year: state.year, month: state.month,
+          items: [{ storeId: state.storeId,
+            avgRatingScore: isNaN(avgRatingScore) ? null : avgRatingScore,
+            revenuePercent: isNaN(revenuePercent) ? null : revenuePercent }],
+        });
+      }
+    }
     await api('POST', '/metrics/batch', batch);
-    toast(`✅ Сохранено: ${batch.length} ${batch.length === 1 ? 'запись' : (batch.length < 5 ? 'записи' : 'записей')}`);
+    toast(`✅ Сохранено: ${batch.length}. Баллы пересчитаны — смотри в табе «Рейтинг»`);
     loadMetrics();
   } catch (e) { toastError(e); }
 }
@@ -850,66 +863,33 @@ async function saveStoreRatings() {
   if (items.length === 0) { toast('Нечего сохранять'); return; }
   try {
     await api('POST', '/metrics/store-ratings', { year: state.year, month: state.month, items });
-    toast(`✅ Сохранено: ${items.length} точек`);
+    toast(`✅ Сохранено: ${items.length} точек. Рейтинг пересчитан — смотри в табе «Рейтинг»`);
   } catch (e) { toastError(e); }
 }
 
 async function processMonth() {
   if (!await confirmDialog({
     title: `Обработать ${MONTH_NAMES[state.month]} ${state.year}?`,
-    message: state.storeId
-      ? 'Обработается одна выбранная точка. Если ставил баллы вручную в «Рейтингах» — они будут перезаписаны.'
-      : 'Обработаются ВСЕ активные точки разом. MVP/карточки/монеты начислятся всем по формуле из «Настройки → MVP».',
-    warning: 'Автообработка ПЕРЕЗАПИШЕТ баллы и статус «Лучший сотрудник», выставленные вручную.',
+    message: 'Финальная выдача наград — карточки, монеты, уведомления — по тому, что сейчас в Рейтинге (включая твои ручные правки). Баллы НЕ перезаписываются.',
+    warning: 'Перед запуском убедись что метрики сохранены (баллы пересчитываются при сохранении).',
     confirmText: 'Обработать месяц',
     danger: true,
   })) return;
-
-  // Сначала сохраняем несохранённые правки метрик точек, чтобы они попали в расчёт.
-  if (!state.storeId) {
-    collectCurrentStoreRatingEdits();
-    const items = storeRatingsRows
-      .filter(r => r.avgRatingScore !== null || r.revenuePercent !== null)
-      .map(r => ({ storeId: r.storeId, avgRatingScore: r.avgRatingScore, revenuePercent: r.revenuePercent }));
-    if (items.length > 0) {
-      try {
-        await api('POST', '/metrics/store-ratings', { year: state.year, month: state.month, items });
-      } catch (e) { toastError(e); return; }
-    }
-  }
-
-  let storeRatings;
-  if (state.storeId) {
-    const avgRatingScore = parseFloat(document.getElementById('store-rating-score').value) || 0;
-    const revenuePercent = parseFloat(document.getElementById('store-revenue-percent').value) || 0;
-    storeRatings = [{ storeId: state.storeId, avgRatingScore, revenuePercent }];
-  } else {
-    // В режиме «Все точки» rating'и читаются из БД самим бэкендом (storeRatings необязателен —
-    // см. processMonthAllStores fallback к store_monthly_stats). Дополнительно прокидываем
-    // массив из UI, чтобы свежие правки точно учлись даже если сохранение выше упало.
-    storeRatings = storeRatingsRows
-      .filter(r => r.avgRatingScore !== null || r.revenuePercent !== null)
-      .map(r => ({ storeId: r.storeId, avgRatingScore: r.avgRatingScore ?? 0, revenuePercent: r.revenuePercent ?? 0 }));
-  }
 
   const btn = document.getElementById('process-btn');
   btn.disabled = true; btn.textContent = '⏳ Обработка...';
 
   try {
     const result = await api('POST', '/metrics/process', {
-      year: state.year, month: state.month, storeRatings,
+      year: state.year, month: state.month,
     });
-    if (state.storeId) {
-      const processed = result.results?.find(r => r.storeId === state.storeId);
-      const mvp = processed?.employees?.find(e => e.isMvp);
-      toast(`✅ Готово! Лучший сотрудник: ${mvp?.name ?? '—'} (${mvp?.mvpScore?.toFixed(2) ?? '—'} б.)`);
-    } else {
-      const topStore = result.results?.find(r => r.topStore);
-      toast(`✅ Обработано точек: ${result.processed}. Топ-точка: ${topStore?.storeId ? (state.stores.find(s => s.id === topStore.storeId)?.name ?? topStore.storeId) : '—'} (${topStore?.storeScore?.toFixed(2) ?? '—'} б.)`);
-    }
-    loadMetrics();
+    const topStore = result.results?.find(r => r.topStore);
+    const totalMvps = (result.results || []).reduce((n, r) => n + (r.employees || []).filter(e => e.isMvp).length, 0);
+    const topStoreName = topStore?.storeId ? (state.stores.find(s => s.id === topStore.storeId)?.name ?? topStore.storeId) : '—';
+    toast(`✅ Обработано точек: ${result.processed}. MVP назначено: ${totalMvps}. Топ-точка: ${topStoreName}`);
+    loadLeaderboard();
   } catch (e) { toastError(e); }
-  finally { btn.disabled = false; btn.textContent = '⚡ Обработать месяц (баллы + карточки + уведомления)'; }
+  finally { btn.disabled = false; btn.textContent = '⚡ Обработать месяц'; }
 }
 
 // ── Монеты ────────────────────────────────────────────────────────────────────

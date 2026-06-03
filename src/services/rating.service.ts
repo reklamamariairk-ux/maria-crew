@@ -164,10 +164,15 @@ async function getStoreMetrics(
 }
 
 /**
- * Обрабатывает одну точку за месяц:
- * считает MVP Score, определяет MVP, начисляет карточки.
+ * PREVIEW-пересчёт одной точки: считает mvp_score, выбирает MVP по новой логике
+ * (порог + ничьи) и записывает в monthly_metrics.mvp_score/is_mvp.
+ *
+ * НЕ выдаёт карточки, НЕ начисляет монеты, НЕ шлёт уведомления. Это «как бы
+ * предложение системы», которое админ потом смотрит в табе Рейтинг и при
+ * необходимости корректирует руками. Финальные награды — отдельной функцией
+ * commitRewardsForStore.
  */
-export async function processMonthForStore(
+export async function recomputeScoresForStore(
   storeId: number,
   year: number,
   month: number
@@ -176,74 +181,82 @@ export async function processMonthForStore(
   if (metrics.length === 0) return [];
 
   const cfg = await getMvpConfig();
-  const scored = metrics.map(m => ({
-    ...m,
-    computedScore: calcMvpScore(m, cfg),
-  }));
+  const scored = metrics.map(m => ({ ...m, computedScore: calcMvpScore(m, cfg) }));
 
   const maxScore = Math.max(...scored.map(s => s.computedScore));
   const tiedTop = scored.filter(s => s.computedScore === maxScore);
-  // MVP назначается ТОЛЬКО при выполнении ВСЕХ условий:
-  //  1) Уникальный максимум общего computedScore (нет ничьих).
-  //  2) «Практический» балл лидера = отзыв + чек-лист + план > mvpMinScore
-  //     (по умолчанию 40). Тайный покупатель в этом пороге НЕ участвует —
-  //     у разных сотрудников может не быть оценки тайного, несправедливо.
   const leader = tiedTop[0];
   const qualifying = leader ? calcMvpQualifyingScore(leader, cfg) : 0;
   const mvp = (tiedTop.length === 1 && qualifying > cfg.mvpMinScore) ? leader : null;
 
   const results: ProcessMonthResult['employees'] = [];
-
   for (const s of scored) {
     const isMvp = mvp !== null && s.id === mvp.id;
-
     await pool.query(
       `UPDATE monthly_metrics SET mvp_score = $1, is_mvp = $2, updated_at = NOW() WHERE id = $3`,
       [s.computedScore, isMvp, s.id]
     );
+    results.push({
+      employeeId: s.employeeId,
+      name: s.employeeName,
+      mvpScore: s.computedScore,
+      isMvp,
+      cardsAwarded: 0,
+    });
+  }
+  return results;
+}
 
-    const metricsWithMvp: MonthlyMetrics = { ...s, isMvp };
-    const awards = calcCardAwards(metricsWithMvp, cfg);
+/**
+ * COMMIT-награды одной точке. Читает текущие значения is_mvp / mvp_score из БД
+ * (могут быть уже отредактированы админом в табе Рейтинг руками) и на их
+ * основе начисляет карточки, монеты MVP, монеты за отзывы. Идемпотентно.
+ */
+export async function commitRewardsForStore(
+  storeId: number,
+  year: number,
+  month: number
+): Promise<ProcessMonthResult['employees']> {
+  const metrics = await getStoreMetrics(storeId, year, month);
+  if (metrics.length === 0) return [];
+
+  const cfg = await getMvpConfig();
+  const results: ProcessMonthResult['employees'] = [];
+
+  for (const s of metrics) {
+    const isMvp = s.isMvp;
+    const awards = calcCardAwards({ ...s, isMvp }, cfg);
     const awarded = await awardCards(s.employeeId, year, month, awards);
-
     const log = awarded.map(c => ({ heroId: c.heroId, source: c.source, isMvp: c.isMvp }));
     await pool.query(
       `UPDATE monthly_metrics SET cards_awarded = $1::jsonb, processed_at = NOW() WHERE id = $2`,
       [JSON.stringify(log), s.id]
     );
 
-    // Бонусные монеты MVP — настраивается админом в mvp_config (по умолчанию 0).
     if (isMvp && cfg.mvpCoinReward > 0) {
       const note = `MVP месяца: ${month}/${year}`;
-      // Идемпотентно: проверяем, нет ли уже такого начисления за этот месяц
       const { rows: existing } = await pool.query<{ id: number }>(
-        `SELECT id FROM coin_transactions
-         WHERE employee_id = $1 AND reason = 'manual' AND note = $2`,
+        `SELECT id FROM coin_transactions WHERE employee_id = $1 AND reason = 'manual' AND note = $2`,
         [s.employeeId, note]
       );
       if (!existing[0]) {
         await pool.query(
-          `INSERT INTO coin_transactions (employee_id, amount, reason, note)
-           VALUES ($1, $2, 'manual', $3)`,
+          `INSERT INTO coin_transactions (employee_id, amount, reason, note) VALUES ($1, $2, 'manual', $3)`,
           [s.employeeId, cfg.mvpCoinReward, note]
         );
       }
     }
 
-    // Монеты за каждый отзыв — настраивается админом в mvp_config (по умолчанию 5).
-    // Идемпотентно по note `Отзывы M/Y` — повторное «Обработать месяц» не задвоит.
     if (cfg.reviewCoinReward > 0 && s.reviewsCount > 0) {
       const reviewNote = `Отзывы: ${month}/${year}`;
       const { rows: existing } = await pool.query<{ id: number }>(
-        `SELECT id FROM coin_transactions
-         WHERE employee_id = $1 AND reason = 'review' AND note = $2`,
+        `SELECT id FROM coin_transactions WHERE employee_id = $1 AND reason = 'review' AND note = $2`,
         [s.employeeId, reviewNote]
       );
       if (!existing[0]) {
         const amount = cfg.reviewCoinReward * s.reviewsCount;
         await pool.query(
-          `INSERT INTO coin_transactions (employee_id, amount, reason, note)
-           VALUES ($1, $2, 'review', $3)`,
+          `INSERT INTO coin_transactions (employee_id, amount, reason, note) VALUES ($1, $2, 'review', $3)`,
           [s.employeeId, amount, reviewNote]
         );
       }
@@ -252,13 +265,25 @@ export async function processMonthForStore(
     results.push({
       employeeId: s.employeeId,
       name: s.employeeName,
-      mvpScore: s.computedScore,
+      mvpScore: Number(s.mvpScore ?? 0),
       isMvp,
       cardsAwarded: awarded.length,
     });
   }
-
   return results;
+}
+
+/**
+ * Back-compat: старая function name. Вызов = preview + commit одним заходом.
+ * Используется только cron autoProcessMonth и старыми кодом если есть.
+ */
+export async function processMonthForStore(
+  storeId: number,
+  year: number,
+  month: number
+): Promise<ProcessMonthResult['employees']> {
+  await recomputeScoresForStore(storeId, year, month);
+  return commitRewardsForStore(storeId, year, month);
 }
 
 /**
@@ -268,40 +293,34 @@ export async function processMonthForStore(
  * storeRatingScores — вручную введённые данные по точкам
  * (рейтинг на отзовиках + % выполнения плана по выручке).
  */
-export async function processMonthAllStores(
+/**
+ * PREVIEW-пересчёт всех точек: для каждой точки пересчитывает mvp_score/is_mvp
+ * сотрудников, total_score точки и общий rank. Без карточек/монет/уведомлений.
+ *
+ * Вызывается после сохранения метрик (POST /metrics/batch и /metrics/store-ratings),
+ * чтобы админ сразу видел в Рейтинге как баллы «легли» по новой формуле.
+ */
+export async function recomputeMonthScores(
   year: number,
   month: number,
-  storeRatingScores: Map<number, { avgRatingScore: number; revenuePercent: number }>
-): Promise<ProcessMonthResult[]> {
+  storeRatingScores?: Map<number, { avgRatingScore: number; revenuePercent: number }>
+): Promise<void> {
   const { rows: stores } = await pool.query<{ id: number; name: string }>(
     `SELECT id, name FROM stores WHERE is_active = true ORDER BY id`
   );
-
-  type Intermediate = {
-    storeId: number;
-    storeName: string;
-    employees: ProcessMonthResult['employees'];
-    storeScore: number;
-  };
-
-  const storeResults: Intermediate[] = [];
-
+  type Item = { storeId: number; storeScore: number };
+  const storeScores: Item[] = [];
   for (const store of stores) {
-    const employees = await processMonthForStore(store.id, year, month);
-    const metrics   = await getStoreMetrics(store.id, year, month);
-    const extra     = storeRatingScores.get(store.id);
-
-    // Если для точки не передана рейтинговая часть, читаем её из БД и сохраняем —
-    // иначе одиночная обработка одной точки обнулила бы данные других.
+    await recomputeScoresForStore(store.id, year, month);
+    const metrics = await getStoreMetrics(store.id, year, month);
+    const extra = storeRatingScores?.get(store.id);
     let avgRatingScoreVal: number | null = null;
     let revenuePercentVal: number | null = null;
     if (extra) {
       avgRatingScoreVal = extra.avgRatingScore;
       revenuePercentVal = extra.revenuePercent;
     } else {
-      const { rows: existing } = await pool.query<{
-        avgRatingScore: number | null; revenuePercent: number | null;
-      }>(
+      const { rows: existing } = await pool.query<{ avgRatingScore: number | null; revenuePercent: number | null }>(
         `SELECT avg_rating_score AS "avgRatingScore", revenue_percent AS "revenuePercent"
          FROM store_monthly_stats WHERE store_id = $1 AND year = $2 AND month = $3`,
         [store.id, year, month]
@@ -309,21 +328,15 @@ export async function processMonthAllStores(
       avgRatingScoreVal = existing[0]?.avgRatingScore ?? null;
       revenuePercentVal = existing[0]?.revenuePercent ?? null;
     }
-
-    const avgMystery   = numAvg(metrics.map(m => m.mysteryShopperScore));
+    const avgMystery = numAvg(metrics.map(m => m.mysteryShopperScore));
     const avgChecklist = numAvg(metrics.map(m => m.checklistPercent));
-
     const storeScore = calcStoreScore({
-      avgMysteryShoper: avgMystery,
-      avgRatingScore:   avgRatingScoreVal,
-      avgChecklist,
-      revenuePercent:   revenuePercentVal,
+      avgMysteryShoper: avgMystery, avgRatingScore: avgRatingScoreVal,
+      avgChecklist, revenuePercent: revenuePercentVal,
     });
-
     await pool.query(
       `INSERT INTO store_monthly_stats
-         (store_id, year, month, avg_mystery_shopper, avg_rating_score,
-          avg_checklist, revenue_percent, total_score)
+         (store_id, year, month, avg_mystery_shopper, avg_rating_score, avg_checklist, revenue_percent, total_score)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (store_id, year, month) DO UPDATE SET
          avg_mystery_shopper = EXCLUDED.avg_mystery_shopper,
@@ -331,79 +344,93 @@ export async function processMonthAllStores(
          avg_checklist       = EXCLUDED.avg_checklist,
          revenue_percent     = EXCLUDED.revenue_percent,
          total_score         = EXCLUDED.total_score`,
-      [store.id, year, month, avgMystery, avgRatingScoreVal,
-       avgChecklist, revenuePercentVal, storeScore]
+      [store.id, year, month, avgMystery, avgRatingScoreVal, avgChecklist, revenuePercentVal, storeScore]
     );
-
-    storeResults.push({ storeId: store.id, storeName: store.name, employees, storeScore });
+    storeScores.push({ storeId: store.id, storeScore });
   }
-
-  // Ранжируем по score DESC
-  storeResults.sort((a, b) => b.storeScore - a.storeScore);
-
-  const cfgForTop = await getMvpConfig();
-  const topThreshold = cfgForTop.topStoreMinScore;
-  // Топ-точка назначается только если #1:
-  //  1) единственный максимум (нет ничьих);
-  //  2) score > topStoreMinScore (по умолчанию 70).
-  const topCandidate = storeResults[0];
-  const tiedTop = storeResults.filter(s => s.storeScore === topCandidate?.storeScore);
-  const topStoreId = (tiedTop.length === 1 && topCandidate.storeScore > topThreshold)
+  // Ранжируем + назначаем топ-точку (preview is_top тоже считается)
+  storeScores.sort((a, b) => b.storeScore - a.storeScore);
+  const cfg = await getMvpConfig();
+  const topCandidate = storeScores[0];
+  const tiedTop = storeScores.filter(s => s.storeScore === topCandidate?.storeScore);
+  const topStoreId = (tiedTop.length === 1 && topCandidate.storeScore > cfg.topStoreMinScore)
     ? topCandidate.storeId : null;
-
-  const finalResults: ProcessMonthResult[] = [];
-
-  for (let i = 0; i < storeResults.length; i++) {
-    const s    = storeResults[i];
-    const rank = i + 1;
-    const isTop = s.storeId === topStoreId;
-
+  for (let i = 0; i < storeScores.length; i++) {
+    const s = storeScores[i];
     await pool.query(
-      `UPDATE store_monthly_stats
-       SET rank = $1, is_top = $2, processed_at = NOW()
-       WHERE store_id = $3 AND year = $4 AND month = $5`,
-      [rank, isTop, s.storeId, year, month]
+      `UPDATE store_monthly_stats SET rank = $1, is_top = $2 WHERE store_id = $3 AND year = $4 AND month = $5`,
+      [i + 1, s.storeId === topStoreId, s.storeId, year, month]
     );
+  }
+}
 
+/**
+ * COMMIT-награды: на основе ТЕКУЩИХ значений is_mvp/is_top в БД (которые могли
+ * быть отредактированы админом в табе Рейтинг) начисляет карточки, монеты,
+ * топ-бонусы и шлёт уведомления. Не пересчитывает баллы. Идемпотентно.
+ *
+ * Это то, что делает кнопка «Обработать месяц» в табе Рейтинг.
+ */
+export async function commitMonthRewards(year: number, month: number): Promise<ProcessMonthResult[]> {
+  const { rows: stores } = await pool.query<{ id: number; name: string }>(
+    `SELECT id, name FROM stores WHERE is_active = true ORDER BY id`
+  );
+  const cfg = await getMvpConfig();
+  const finalResults: ProcessMonthResult[] = [];
+  for (const store of stores) {
+    const employees = await commitRewardsForStore(store.id, year, month);
+    const { rows: stat } = await pool.query<{ isTop: boolean; totalScore: string | null; rank: number | null }>(
+      `SELECT is_top AS "isTop", total_score AS "totalScore", rank
+       FROM store_monthly_stats WHERE store_id = $1 AND year = $2 AND month = $3`,
+      [store.id, year, month]
+    );
+    const isTop = stat[0]?.isTop === true;
+    const storeScore = stat[0]?.totalScore !== null && stat[0]?.totalScore !== undefined ? parseFloat(stat[0].totalScore) : 0;
+    const storeRank = stat[0]?.rank ?? 0;
     if (isTop) {
-      await awardTeamBonus(s.storeId, year, month);
-      // Бонусные монеты всей команде топ-точки
-      const cfg = await getMvpConfig();
+      await awardTeamBonus(store.id, year, month);
       if (cfg.topStoreCoinReward > 0) {
         const note = `Бонус топ-точки: ${month}/${year}`;
         const { rows: emps } = await pool.query<{ id: number }>(
           `SELECT id FROM employees WHERE store_id = $1 AND is_active = true`,
-          [s.storeId]
+          [store.id]
         );
         for (const e of emps) {
           const { rows: existing } = await pool.query<{ id: number }>(
-            `SELECT id FROM coin_transactions
-             WHERE employee_id = $1 AND reason = 'manual' AND note = $2`,
+            `SELECT id FROM coin_transactions WHERE employee_id = $1 AND reason = 'manual' AND note = $2`,
             [e.id, note]
           );
           if (!existing[0]) {
             await pool.query(
-              `INSERT INTO coin_transactions (employee_id, amount, reason, note)
-               VALUES ($1, $2, 'manual', $3)`,
+              `INSERT INTO coin_transactions (employee_id, amount, reason, note) VALUES ($1, $2, 'manual', $3)`,
               [e.id, cfg.topStoreCoinReward, note]
             );
           }
         }
       }
     }
-
+    await pool.query(
+      `UPDATE store_monthly_stats SET processed_at = NOW() WHERE store_id = $1 AND year = $2 AND month = $3`,
+      [store.id, year, month]
+    );
     finalResults.push({
-      year,
-      month,
-      storeId: s.storeId,
-      employees: s.employees,
-      topStore: isTop,
-      storeScore: s.storeScore,
-      storeRank: rank,
+      year, month, storeId: store.id,
+      employees, topStore: isTop, storeScore, storeRank,
     });
   }
-
   return finalResults;
+}
+
+/**
+ * Back-compat для cron autoProcessMonth: preview + commit одним вызовом.
+ */
+export async function processMonthAllStores(
+  year: number,
+  month: number,
+  storeRatingScores: Map<number, { avgRatingScore: number; revenuePercent: number }>
+): Promise<ProcessMonthResult[]> {
+  await recomputeMonthScores(year, month, storeRatingScores);
+  return commitMonthRewards(year, month);
 }
 
 // ─── Запросы рейтингов ───────────────────────────────────────────────────────

@@ -293,11 +293,11 @@
         </table>
       </div>
 
-      <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
+      <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;align-items:center">
         <button class="btn btn-primary" onclick="saveMetrics()"><i data-lucide="save"></i> Сохранить</button>
-        <button class="btn btn-success" onclick="processMonth()" id="process-btn">
-          <i data-lucide="zap"></i> Обработать месяц
-        </button>
+        <span class="text-muted" style="font-size:13px">
+          После сохранения баллы рассчитаются автоматически — посмотри их в табе <b>Рейтинг</b>. Там же кнопка «Обработать месяц» для финальной выдачи наград.
+        </span>
       </div>
     </div>
 
@@ -628,7 +628,7 @@
       <div class="page-head">
         <div>
           <h1 class="page-title">Рейтинги</h1>
-          <p class="page-subtitle">Лучшие сотрудники и лучшие точки — можно править вручную</p>
+          <p class="page-subtitle">Баллы пересчитываются автоматически после сохранения метрик. Здесь можно поправить руками, потом — «Обработать месяц» для выдачи наград.</p>
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
           <div class="inline-store-picker">
@@ -641,6 +641,9 @@
             <button onclick="changePeriod(1)"><i data-lucide="chevron-right"></i></button>
             <button onclick="loadLeaderboard()"><i data-lucide="refresh-cw"></i></button>
           </div>
+          <button class="btn btn-success" onclick="processMonth()" id="process-btn" title="Финальная выдача наград — карточки, монеты, уведомления">
+            <i data-lucide="zap"></i> Обработать месяц
+          </button>
           <button class="btn btn-ghost" onclick="exportLeaderboardCsv()"><i data-lucide="download"></i> CSV</button>
         </div>
       </div>

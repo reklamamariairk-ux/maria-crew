@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
-import { upsertMetrics, processMonthAllStores, calcStoreScore } from '../../services/rating.service';
+import { upsertMetrics, processMonthAllStores, recomputeMonthScores, commitMonthRewards, calcStoreScore } from '../../services/rating.service';
 import { notifyMvp, notifyTopStore, publishMonthResults } from '../../bot/notifications/sender';
 import { logAudit } from '../../services/audit.service';
 import type { MonthlyMetricsInput } from '../../types';
@@ -85,53 +85,19 @@ router.post('/store-ratings', async (req: Request, res: Response, next: NextFunc
             revenue_percent  = EXCLUDED.revenue_percent`,
         [it.storeId, year, month, it.avgRatingScore ?? null, it.revenuePercent ?? null]
       );
-
-      // Сразу пересчитываем total_score этой точки на основе средних
-      // метрик её сотрудников (по тайному + чек-листу) + переданных
-      // отзовиков/плана. Без этого админ правит данные в Метриках, идёт
-      // в Рейтинг, а total_score старый — выглядит как баг.
-      const { rows: empRows } = await pool.query<{ mysteryShopperScore: string | null; checklistPercent: string | null }>(
-        `SELECT mystery_shopper_score AS "mysteryShopperScore",
-                checklist_percent     AS "checklistPercent"
-         FROM monthly_metrics mm
-         JOIN employees e ON e.id = mm.employee_id
-         WHERE mm.store_id = $1 AND mm.year = $2 AND mm.month = $3 AND e.is_active = true`,
-        [it.storeId, year, month]
-      );
-      const numAvg = (vals: (number | null)[]): number | null => {
-        const v = vals.filter((x): x is number => typeof x === 'number' && Number.isFinite(x));
-        return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
-      };
-      const avgMystery = numAvg(empRows.map(r => r.mysteryShopperScore !== null ? parseFloat(r.mysteryShopperScore) : null));
-      const avgChecklist = numAvg(empRows.map(r => r.checklistPercent !== null ? parseFloat(r.checklistPercent) : null));
-      const totalScore = calcStoreScore({
-        avgMysteryShoper: avgMystery,
-        avgRatingScore: it.avgRatingScore,
-        avgChecklist,
-        revenuePercent: it.revenuePercent,
-      });
-      await pool.query(
-        `UPDATE store_monthly_stats SET avg_mystery_shopper = $1, avg_checklist = $2, total_score = $3
-         WHERE store_id = $4 AND year = $5 AND month = $6`,
-        [avgMystery, avgChecklist, totalScore, it.storeId, year, month]
-      );
     }
-    // Пересчитываем rank для всех точек этого месяца после сохранения.
-    await pool.query(
-      `WITH ranked AS (
-         SELECT id, ROW_NUMBER() OVER (ORDER BY total_score DESC NULLS LAST) AS rn
-         FROM store_monthly_stats WHERE year = $1 AND month = $2
-       )
-       UPDATE store_monthly_stats sms SET rank = ranked.rn
-       FROM ranked WHERE sms.id = ranked.id`,
-      [year, month]
-    );
+    // Полный preview-пересчёт (mvp_score сотрудников + total_score точек + rank).
+    // Без начисления карточек/монет/уведомлений — это делает «Обработать месяц».
+    await recomputeMonthScores(year, month);
     res.json({ ok: true, saved: items.length });
     logAudit('store_ratings_save', { year, month, count: items.length }).catch(() => {});
   } catch (err) { next(err); }
 });
 
 // POST /api/metrics/batch
+// После сохранения метрик автоматически делаем PREVIEW-пересчёт
+// (mvp_score / is_mvp / total_score / rank). Финальные награды
+// начисляются отдельной кнопкой «Обработать месяц» в Рейтинге.
 router.post('/batch', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const items = req.body as MonthlyMetricsInput[];
@@ -139,8 +105,16 @@ router.post('/batch', async (req: Request, res: Response, next: NextFunction): P
       res.status(400).json({ error: 'Ожидается массив метрик' }); return;
     }
     const saved = await Promise.all(items.map(m => upsertMetrics(m)));
+
+    const year = items[0]?.year;
+    const month = items[0]?.month;
+    if (year && month) {
+      try { await recomputeMonthScores(year, month); }
+      catch (e) { console.error('[metrics/batch] preview recompute failed:', e); }
+    }
+
     res.json(saved);
-    logAudit('metrics_save', { count: saved.length, year: items[0]?.year, month: items[0]?.month, storeId: items[0]?.storeId }).catch(() => {});
+    logAudit('metrics_save', { count: saved.length, year, month, storeId: items[0]?.storeId }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -186,14 +160,14 @@ router.post('/process', async (req: Request, res: Response, next: NextFunction):
       return;
     }
 
-    const scoresMap = new Map(
-      (storeRatings ?? []).map(s => [
-        s.storeId,
-        { avgRatingScore: s.avgRatingScore, revenuePercent: s.revenuePercent },
-      ])
-    );
-
-    const results = await processMonthAllStores(year, month, scoresMap);
+    // НОВАЯ ЛОГИКА: «Обработать месяц» в Рейтинге = только начисление наград
+    // на основе ТЕКУЩИХ значений is_mvp/is_top в БД (которые могли быть
+    // отредактированы админом руками). Не пересчитываем mvp_score —
+    // если нужно пересчитать, админ сначала жмёт «Сохранить» в Метриках.
+    // storeRatings игнорируется здесь — он применяется только при сохранении
+    // метрик точек через /metrics/store-ratings.
+    void storeRatings; // для будущего back-compat
+    const results = await commitMonthRewards(year, month);
 
     // Отвечаем сразу — данные уже сохранены. Уведомления улетают в фоне:
     // запросы к Telegram могут занять секунды × 16 точек × N сотрудников;
