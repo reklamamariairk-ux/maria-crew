@@ -24,11 +24,9 @@ COPY --from=build /app/admin ./admin
 COPY --from=build /app/migrations ./migrations
 COPY --from=build /app/openapi.yaml ./
 # Каталог для сохранённого storageState от 2ГИС (сессия после первого логина).
-# В docker-compose.yml монтируется как named volume `gis2-state`.
-RUN mkdir -p /data/gis2 && chown -R node:node /data
+RUN mkdir -p /data/gis2
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD wget -qO- http://localhost:3000/api/health || exit 1
-USER node
 ENTRYPOINT ["tini","--"]
 CMD ["node","dist/index.js"]
