@@ -126,6 +126,14 @@ export function createServer(bot: Bot<BotContext>, webhookSecret: string): expre
 
   const adminDir = path.join(__dirname, '../admin');
   app.use(express.static(adminDir));
+  // Старый URL `/admin/*` (когда-то static был смонтирован сюда) теперь
+  // отдавался fallback-ом app.get('*', ...) — браузер получал index.html
+  // вместо app.js и style.css, и страница тихо ломалась с CSP MIME ошибкой.
+  // Постоянно редиректим /admin → / (статика смонтирована на корень).
+  app.get(/^\/admin(\/.*)?$/, (req, res) => {
+    const tail = req.path.replace(/^\/admin\/?/, '');
+    res.redirect(301, '/' + tail);
+  });
   // Публичная страница Политики конфиденциальности — требуется для подачи
   // в App Store / Google Play (постоянный URL). Не закрыта авторизацией,
   // короткий URL без .html для использования в маркетах.
