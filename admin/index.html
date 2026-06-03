@@ -1159,13 +1159,16 @@
 
         <p class="section-title" style="margin-top:24px">Пороги назначения «Лучший»</p>
         <p class="text-muted" style="font-size:13px;margin-bottom:12px">
-          Лучший сотрудник в точке назначается только если его балл <b>строго больше</b> порога <b>и</b> он единственный с максимальным баллом (без ничьих). Лучшая точка — аналогично по своему порогу. Иначе никого не назначаем.
+          Лучший сотрудник назначается, если:<br>
+          (а) сумма <b>отзыв + чек-лист + план</b> у него <b>строго больше</b> «Мин. балл MVP» (без тайного покупателя — у разных сотрудников он может отсутствовать);<br>
+          (б) он единственный с максимальным <i>общим</i> баллом в точке (без ничьих).<br>
+          Иначе MVP в этой точке нет.
         </p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-          <label>Минимальный балл MVP сотрудника
-            <input type="number" id="cfg-mvp-min" class="input" min="0" max="200" step="1" placeholder="80">
+          <label>Мин. балл MVP <span class="text-muted" style="font-size:11px">(отзыв+чек+план)</span>
+            <input type="number" id="cfg-mvp-min" class="input" min="0" max="200" step="1" placeholder="40">
           </label>
-          <label>Минимальный балл лучшей точки
+          <label>Мин. балл лучшей точки <span class="text-muted" style="font-size:11px">(общий Store Score)</span>
             <input type="number" id="cfg-top-store-min" class="input" min="0" max="200" step="1" placeholder="70">
           </label>
         </div>

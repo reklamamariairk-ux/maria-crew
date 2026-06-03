@@ -68,6 +68,28 @@ export function calcMvpScore(
 }
 
 /**
+ * «Практический» балл — сумма результатов сотрудника БЕЗ тайного покупателя:
+ *   отзыв + чек-лист + выполнение плана.
+ *
+ * Этот балл используется для проверки порога MVP: лучшего сотрудника
+ * назначаем только если его practical balls > mvpMinScore. По решению
+ * пользователя — тайный покупатель не должен влиять на MVP-квалификацию,
+ * потому что у разных сотрудников может вообще не быть оценки тайного.
+ */
+export function calcMvpQualifyingScore(
+  m: { reviewsCount: number; checklistPercent: number | null; revenuePercent: number | null },
+  cfg: Pick<MvpConfig,
+    | 'reviewsPerCard' | 'reviewsMax'
+    | 'checklistWeight' | 'checklistThreshold'
+    | 'revenueWeightFactor' | 'revenueMax'>
+): number {
+  const reviews   = Math.min(m.reviewsCount * cfg.reviewsPerCard, cfg.reviewsMax);
+  const checklist = thresholdScore(m.checklistPercent, cfg.checklistThreshold, cfg.checklistWeight);
+  const revenue   = m.revenuePercent !== null ? Math.min((m.revenuePercent / 100) * cfg.revenueWeightFactor, cfg.revenueMax) : 0;
+  return Math.round((reviews + checklist + revenue) * 100) / 100;
+}
+
+/**
  * Рейтинг точки (Store Score), максимум 100 баллов.
  *
  * Средний тайный покупатель  30%  avg/100*30
@@ -161,13 +183,14 @@ export async function processMonthForStore(
 
   const maxScore = Math.max(...scored.map(s => s.computedScore));
   const tiedTop = scored.filter(s => s.computedScore === maxScore);
-  // MVP назначается ТОЛЬКО при выполнении ВСЕХ трёх условий:
-  //  1) Уникальный максимум (нет ничьих) — иначе никого, чтобы не быть
-  //     несправедливым к одному из равных по результату.
-  //  2) Максимум > mvpMinScore (по умолчанию 80) — иначе никто не заслужил.
-  //  3) (не строго) максимум > 0 — отрицательные ивлюбом случае не дают MVP.
-  const mvp = (tiedTop.length === 1 && tiedTop[0].computedScore > cfg.mvpMinScore)
-    ? tiedTop[0] : null;
+  // MVP назначается ТОЛЬКО при выполнении ВСЕХ условий:
+  //  1) Уникальный максимум общего computedScore (нет ничьих).
+  //  2) «Практический» балл лидера = отзыв + чек-лист + план > mvpMinScore
+  //     (по умолчанию 40). Тайный покупатель в этом пороге НЕ участвует —
+  //     у разных сотрудников может не быть оценки тайного, несправедливо.
+  const leader = tiedTop[0];
+  const qualifying = leader ? calcMvpQualifyingScore(leader, cfg) : 0;
+  const mvp = (tiedTop.length === 1 && qualifying > cfg.mvpMinScore) ? leader : null;
 
   const results: ProcessMonthResult['employees'] = [];
 

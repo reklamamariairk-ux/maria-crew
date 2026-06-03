@@ -44,7 +44,7 @@ const DEFAULT_CONFIG: MvpConfig = {
   cardThresholdRevenue: 105,
   cardThresholdCertification: 80,
   cardMaxReviewsCount: 2,
-  mvpMinScore: 80,
+  mvpMinScore: 40,
   topStoreMinScore: 70,
   reviewCoinReward: 5,
   mvpCoinReward: 0,
