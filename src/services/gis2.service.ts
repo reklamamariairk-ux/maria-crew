@@ -3,7 +3,8 @@ import { calcStoreScore } from './rating.service';
 
 // Прокси на sales-dashboard (Timeweb VDS, RU-IP). Без него 2ГИС редиректит
 // нас на /museum («устаревший браузер») — защита на пограничных IP.
-const PROXY_URL = process.env.UPP_CATALOG_PROXY_URL?.replace(/\/products-detail.*$/, '') ?? '';
+// UPP_CATALOG_PROXY_URL в env = .../api/upp/proxy/products-detail; нам нужна база.
+const PROXY_URL = (process.env.UPP_CATALOG_PROXY_URL ?? '').replace(/\/api\/upp\/proxy\/.*$/, '');
 const PROXY_KEY = process.env.UPP_CATALOG_PROXY_KEY ?? '';
 const CITY = process.env.GIS2_CITY ?? 'irkutsk';
 const ORG_ID = process.env.GIS2_ORG_ID ?? '1548649242829424';
