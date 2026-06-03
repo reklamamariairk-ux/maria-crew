@@ -176,6 +176,92 @@ export async function fetchGis2Rating(gis2Id: string, city = DEFAULT_CITY): Prom
   }
 }
 
+// ─── Поиск gis2_id по адресу точки ──────────────────────────────────────────
+
+/**
+ * Ищет карточку точки на 2ГИС по запросу «Мария {адрес}» и достаёт её id
+ * из URL первой найденной карточки.
+ * Возвращает gis2_id (только цифры) или null если не нашлось.
+ */
+export async function searchGis2IdByAddress(address: string, storeName?: string, city = DEFAULT_CITY): Promise<string | null> {
+  const brand = storeName ? storeName : 'Мария';
+  const query = `${brand} ${address}`.trim();
+  const browser = await launchBrowser();
+  try {
+    const ctx = await createContext(browser);
+    await ctx.route('**/*', (route) => {
+      const type = route.request().resourceType();
+      if (type === 'image' || type === 'font' || type === 'media') return route.abort();
+      return route.continue();
+    });
+    const page = await ctx.newPage();
+    const url = `https://2gis.ru/${encodeURIComponent(city)}/search/${encodeURIComponent(query)}`;
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    // Ждём появления любой ссылки на /firm/{id} в результатах поиска.
+    const id = await page
+      .waitForSelector('a[href*="/firm/"]', { timeout: 15000 })
+      .then(async (el) => {
+        if (!el) return null;
+        const href = await el.getAttribute('href');
+        if (!href) return null;
+        const m = href.match(/\/firm\/(\d+)/);
+        return m ? m[1] : null;
+      })
+      .catch(() => null);
+
+    return id;
+  } finally {
+    await browser.close();
+  }
+}
+
+export type DiscoverResult = {
+  total: number;
+  found: number;
+  skippedHaveId: number;
+  skippedNoAddress: number;
+  failed: Array<{ storeId: number; storeName: string; reason: string }>;
+  matches: Array<{ storeId: number; storeName: string; address: string; gis2Id: string }>;
+};
+
+/**
+ * Проходит по всем активным точкам без gis2_id и пробует найти их карточку
+ * на 2ГИС по адресу. Сразу записывает найденный id в stores.gis2_id.
+ */
+export async function discoverGis2IdsForAllStores(city = DEFAULT_CITY): Promise<DiscoverResult> {
+  const result: DiscoverResult = {
+    total: 0, found: 0, skippedHaveId: 0, skippedNoAddress: 0, failed: [], matches: [],
+  };
+
+  const { rows: stores } = await pool.query<{ id: number; name: string; address: string | null; gis2Id: string | null }>(
+    `SELECT id, name, address, gis2_id AS "gis2Id" FROM stores WHERE is_active = true ORDER BY name`
+  );
+  result.total = stores.length;
+
+  for (const s of stores) {
+    if (s.gis2Id) { result.skippedHaveId += 1; continue; }
+    if (!s.address) { result.skippedNoAddress += 1; continue; }
+    try {
+      const id = await searchGis2IdByAddress(s.address, undefined, city);
+      if (!id) {
+        result.failed.push({ storeId: s.id, storeName: s.name, reason: 'не нашёл карточку в выдаче 2ГИС' });
+        continue;
+      }
+      await pool.query(`UPDATE stores SET gis2_id = $1 WHERE id = $2`, [id, s.id]);
+      result.matches.push({ storeId: s.id, storeName: s.name, address: s.address, gis2Id: id });
+      result.found += 1;
+    } catch (e) {
+      result.failed.push({
+        storeId: s.id, storeName: s.name,
+        reason: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  return result;
+}
+
 // ─── Массовое обновление по всем точкам ─────────────────────────────────────
 
 export type Gis2RefreshResult = {

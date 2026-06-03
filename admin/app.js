@@ -806,6 +806,25 @@ async function saveMetrics() {
   } catch (e) { toastError(e); }
 }
 
+async function discoverGis2Ids() {
+  if (!await confirmDialog({
+    title: 'Найти 2ГИС ID автоматически?',
+    message: 'Для всех точек без указанного 2ГИС ID попробуем найти карточку по адресу. Может занять 1-2 минуты.',
+    confirmText: 'Запустить',
+  })) return;
+  try {
+    const res = await api('POST', '/stores/discover-gis2-ids');
+    const parts = [
+      `✅ Найдено: ${res.found}/${res.total}`,
+      res.skippedHaveId ? `${res.skippedHaveId} уже было` : '',
+      res.skippedNoAddress ? `${res.skippedNoAddress} без адреса` : '',
+      res.failed?.length ? `${res.failed.length} не нашлось` : '',
+    ].filter(Boolean).join(' · ');
+    toast(parts);
+    if (res.failed?.length) console.warn('[gis2-discover] failed:', res.failed);
+  } catch (e) { toastError(e); }
+}
+
 async function refreshGis2Ratings() {
   try {
     const res = await api('POST', '/stores/refresh-gis2-ratings', { year: state.year, month: state.month });

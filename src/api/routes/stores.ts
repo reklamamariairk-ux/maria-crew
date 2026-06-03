@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { logAudit } from '../../services/audit.service';
-import { fetchGis2Rating, refreshAllGis2Ratings } from '../../services/gis2.service';
+import { fetchGis2Rating, refreshAllGis2Ratings, discoverGis2IdsForAllStores } from '../../services/gis2.service';
 
 const router = Router();
 
@@ -111,6 +111,16 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     if (!rows[0]) { res.status(404).json({ error: 'Точка не найдена' }); return; }
     res.json(rows[0]);
     logAudit('store_update', { storeId: rows[0].id, changes: body }).catch(() => {});
+  } catch (err) { next(err); }
+});
+
+// POST /api/stores/discover-gis2-ids — автоматически найти gis2_id по адресу
+// для всех активных точек, у которых ID ещё не задан.
+router.post('/discover-gis2-ids', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const result = await discoverGis2IdsForAllStores();
+    res.json(result);
+    logAudit('store_update', { type: 'discover_gis2_ids', found: result.found }).catch(() => {});
   } catch (err) { next(err); }
 });
 
