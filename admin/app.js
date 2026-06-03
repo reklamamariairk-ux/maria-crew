@@ -3497,6 +3497,10 @@ async function loadMvpConfig() {
   document.getElementById('cfg-checklist-threshold').value = cfg.checklistThreshold ?? 70;
   document.getElementById('cfg-revenue-factor').value    = cfg.revenueWeightFactor;
   document.getElementById('cfg-revenue-max').value       = cfg.revenueMax;
+  document.getElementById('cfg-card-mystery').value      = cfg.cardThresholdMysteryShopper ?? 90;
+  document.getElementById('cfg-card-checklist').value    = cfg.cardThresholdChecklist ?? 100;
+  document.getElementById('cfg-card-revenue').value      = cfg.cardThresholdRevenue ?? 105;
+  document.getElementById('cfg-card-reviews-max').value  = cfg.cardMaxReviewsCount ?? 2;
   document.getElementById('cfg-mvp-coins').value       = cfg.mvpCoinReward ?? 0;
   document.getElementById('cfg-top-store-coins').value = cfg.topStoreCoinReward ?? 0;
   const upd = document.getElementById('cfg-last-updated');
@@ -3519,6 +3523,21 @@ async function saveMvpConfig() {
   if (Object.values(weights).some(v => isNaN(v) || v < 0 || v > 100)) {
     toast('Веса должны быть от 0 до 100'); return;
   }
+  const cardThresholds = {
+    cardThresholdMysteryShopper: parseFloat(document.getElementById('cfg-card-mystery').value),
+    cardThresholdChecklist:      parseFloat(document.getElementById('cfg-card-checklist').value),
+    cardThresholdRevenue:        parseFloat(document.getElementById('cfg-card-revenue').value),
+    cardMaxReviewsCount:         parseInt(document.getElementById('cfg-card-reviews-max').value, 10),
+  };
+  if ([cardThresholds.cardThresholdMysteryShopper, cardThresholds.cardThresholdChecklist].some(v => isNaN(v) || v < 0 || v > 100)) {
+    toast('Пороги тайного и чек-листа: 0–100'); return;
+  }
+  if (isNaN(cardThresholds.cardThresholdRevenue) || cardThresholds.cardThresholdRevenue < 0 || cardThresholds.cardThresholdRevenue > 300) {
+    toast('Порог плана: 0–300'); return;
+  }
+  if (isNaN(cardThresholds.cardMaxReviewsCount) || cardThresholds.cardMaxReviewsCount < 0 || cardThresholds.cardMaxReviewsCount > 20) {
+    toast('Лимит карточек за отзывы: 0–20'); return;
+  }
   const coins = {
     mvpCoinReward:      parseInt(document.getElementById('cfg-mvp-coins').value, 10),
     topStoreCoinReward: parseInt(document.getElementById('cfg-top-store-coins').value, 10),
@@ -3527,7 +3546,7 @@ async function saveMvpConfig() {
     toast('Монеты должны быть от 0 до 10000'); return;
   }
   try {
-    await api('PUT', '/config/mvp', { ...weights, ...coins });
+    await api('PUT', '/config/mvp', { ...weights, ...cardThresholds, ...coins });
     toast('✅ Настройки сохранены');
     loadMvpConfig();
   } catch (e) { toastError(e); }

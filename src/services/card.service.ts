@@ -1,4 +1,5 @@
 import { pool, camelizeRow } from '../db/pool';
+import type { MvpConfig } from './mvpConfig.service';
 import type {
   CardAwardItem,
   CardSource,
@@ -10,28 +11,46 @@ import type {
 // Количество основных (не лимитных) героев
 const MAIN_HEROES_COUNT = 12;
 
+// Дефолтные пороги — используются если cfg не передан (для тестов и обратной совместимости).
+const DEFAULT_THRESHOLDS = {
+  cardThresholdMysteryShopper: 90,
+  cardThresholdChecklist: 100,
+  cardThresholdRevenue: 105,
+  cardMaxReviewsCount: 2,
+};
+
 /**
  * По заполненным метрикам определяет список причин для начисления карточек.
- * Чистая функция — не обращается к БД.
+ * Чистая функция — не обращается к БД. Пороги берутся из mvp_config, чтобы
+ * админ мог их менять без выкатки кода.
  */
-export function calcCardAwards(metrics: MonthlyMetrics): CardAwardItem[] {
+export function calcCardAwards(
+  metrics: MonthlyMetrics,
+  cfg?: Pick<MvpConfig,
+    | 'cardThresholdMysteryShopper'
+    | 'cardThresholdChecklist'
+    | 'cardThresholdRevenue'
+    | 'cardMaxReviewsCount'
+  >
+): CardAwardItem[] {
+  const t = cfg ?? DEFAULT_THRESHOLDS;
   const awards: CardAwardItem[] = [];
 
-  if (metrics.mysteryShopperScore !== null && metrics.mysteryShopperScore >= 90) {
+  if (metrics.mysteryShopperScore !== null && metrics.mysteryShopperScore >= t.cardThresholdMysteryShopper) {
     awards.push({ source: 'mystery_shopper', isMvp: false });
   }
 
-  // Максимум 2 карточки за отзывы в месяц
-  const reviewCards = Math.min(metrics.reviewsCount, 2);
+  // Максимум cardMaxReviewsCount карточек за отзывы в месяц
+  const reviewCards = Math.min(metrics.reviewsCount, t.cardMaxReviewsCount);
   for (let i = 0; i < reviewCards; i++) {
     awards.push({ source: 'review', isMvp: false });
   }
 
-  if (metrics.checklistPercent !== null && metrics.checklistPercent >= 100) {
+  if (metrics.checklistPercent !== null && metrics.checklistPercent >= t.cardThresholdChecklist) {
     awards.push({ source: 'checklist', isMvp: false });
   }
 
-  if (metrics.revenuePercent !== null && metrics.revenuePercent >= 105) {
+  if (metrics.revenuePercent !== null && metrics.revenuePercent >= t.cardThresholdRevenue) {
     awards.push({ source: 'plan', isMvp: false });
   }
 
@@ -56,7 +75,8 @@ export async function awardCards(
   employeeId: number,
   year: number,
   month: number,
-  awards: CardAwardItem[]
+  awards: CardAwardItem[],
+  cardMaxReviewsCount = 2
 ): Promise<EmployeeCard[]> {
   if (awards.length === 0) return [];
 
@@ -64,7 +84,7 @@ export async function awardCards(
   try {
     await client.query('BEGIN');
 
-    // Источники, уже начисленные в этом месяце (review — до 2 раз)
+    // Источники, уже начисленные в этом месяце (review — до cardMaxReviewsCount раз)
     const { rows: existing } = await client.query<{ source: CardSource }>(
       `SELECT source FROM employee_cards
        WHERE employee_id = $1 AND year = $2 AND month = $3`,
@@ -79,7 +99,7 @@ export async function awardCards(
 
     for (const award of awards) {
       const current = sourceCounts.get(award.source) ?? 0;
-      const limit = award.source === 'review' ? 2 : 1;
+      const limit = award.source === 'review' ? cardMaxReviewsCount : 1;
       if (current >= limit) continue;
 
       const heroId = randomHeroId();

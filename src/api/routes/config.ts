@@ -14,19 +14,48 @@ router.get('/mvp', async (_req: Request, res: Response, next: NextFunction): Pro
 // PUT /api/config/mvp
 router.put('/mvp', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const allowedWeights = ['mysteryShopperWeight', 'mysteryShopperThreshold',
+    // Веса и пороги 0–100 (всё что относится к шкале % метрик)
+    const allowed0to100 = ['mysteryShopperWeight', 'mysteryShopperThreshold',
                      'reviewsPerCard', 'reviewsMax',
                      'checklistWeight', 'checklistThreshold',
-                     'revenueWeightFactor', 'revenueMax'] as const;
+                     'revenueWeightFactor', 'revenueMax',
+                     'cardThresholdMysteryShopper', 'cardThresholdChecklist'] as const;
+    // Порог по плану выручки может быть > 100 (перевыполнение), кэп 0–300
+    const allowed0to300 = ['cardThresholdRevenue'] as const;
+    // Лимит карточек-отзывов — целое 0–20
+    const allowedIntCount = ['cardMaxReviewsCount'] as const;
     const allowedCoins = ['mvpCoinReward', 'topStoreCoinReward'] as const;
+
     const body = req.body as Record<string, unknown>;
     const data: Record<string, number> = {};
 
-    for (const key of allowedWeights) {
+    for (const key of allowed0to100) {
       if (key in body) {
         const val = Number(body[key]);
         if (isNaN(val) || val < 0 || val > 100) {
           res.status(400).json({ error: `${key} должен быть числом от 0 до 100` });
+          return;
+        }
+        data[key] = val;
+      }
+    }
+
+    for (const key of allowed0to300) {
+      if (key in body) {
+        const val = Number(body[key]);
+        if (isNaN(val) || val < 0 || val > 300) {
+          res.status(400).json({ error: `${key} должен быть числом от 0 до 300` });
+          return;
+        }
+        data[key] = val;
+      }
+    }
+
+    for (const key of allowedIntCount) {
+      if (key in body) {
+        const val = Number(body[key]);
+        if (isNaN(val) || val < 0 || val > 20 || !Number.isInteger(val)) {
+          res.status(400).json({ error: `${key} должен быть целым числом от 0 до 20` });
           return;
         }
         data[key] = val;

@@ -64,4 +64,45 @@ describe('calcCardAwards', () => {
     expect(awards.filter(a => a.source === 'review').length).toBe(2);
     expect(awards.find(a => a.source === 'mvp')?.isMvp).toBe(true);
   });
+
+  it('пороги из cfg применяются (более жёсткие)', () => {
+    const cfg = {
+      cardThresholdMysteryShopper: 95,
+      cardThresholdChecklist: 110,
+      cardThresholdRevenue: 120,
+      cardMaxReviewsCount: 5,
+    };
+    // тайный 92 < 95 → нет карточки
+    expect(calcCardAwards(metrics({ mysteryShopperScore: 92 }), cfg)).toEqual([]);
+    expect(calcCardAwards(metrics({ mysteryShopperScore: 95 }), cfg)).toEqual([
+      { source: 'mystery_shopper', isMvp: false },
+    ]);
+    // чек-лист 105 < 110 → нет
+    expect(calcCardAwards(metrics({ checklistPercent: 105 }), cfg)).toEqual([]);
+    // план 115 < 120 → нет
+    expect(calcCardAwards(metrics({ revenuePercent: 115 }), cfg)).toEqual([]);
+    // 4 отзыва при лимите 5 → 4 карточки
+    expect(calcCardAwards(metrics({ reviewsCount: 4 }), cfg).length).toBe(4);
+    // 10 отзывов при лимите 5 → cap на 5
+    expect(calcCardAwards(metrics({ reviewsCount: 10 }), cfg).length).toBe(5);
+  });
+
+  it('пороги из cfg применяются (более мягкие)', () => {
+    const cfg = {
+      cardThresholdMysteryShopper: 80,
+      cardThresholdChecklist: 90,
+      cardThresholdRevenue: 100,
+      cardMaxReviewsCount: 1,
+    };
+    // тайный 80 ≥ 80 → карточка
+    expect(calcCardAwards(metrics({ mysteryShopperScore: 80 }), cfg)).toEqual([
+      { source: 'mystery_shopper', isMvp: false },
+    ]);
+    // план 100 ≥ 100 → карточка (раньше нужно было 105)
+    expect(calcCardAwards(metrics({ revenuePercent: 100 }), cfg)).toEqual([
+      { source: 'plan', isMvp: false },
+    ]);
+    // 3 отзыва при лимите 1 → 1 карточка
+    expect(calcCardAwards(metrics({ reviewsCount: 3 }), cfg).length).toBe(1);
+  });
 });

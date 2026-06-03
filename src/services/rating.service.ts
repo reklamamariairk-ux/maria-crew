@@ -170,8 +170,8 @@ export async function processMonthForStore(
     );
 
     const metricsWithMvp: MonthlyMetrics = { ...s, isMvp };
-    const awards = calcCardAwards(metricsWithMvp);
-    const awarded = await awardCards(s.employeeId, year, month, awards);
+    const awards = calcCardAwards(metricsWithMvp, cfg);
+    const awarded = await awardCards(s.employeeId, year, month, awards, cfg.cardMaxReviewsCount);
 
     const log = awarded.map(c => ({ heroId: c.heroId, source: c.source, isMvp: c.isMvp }));
     await pool.query(
