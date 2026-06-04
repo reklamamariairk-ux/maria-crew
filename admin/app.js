@@ -1037,7 +1037,7 @@ async function loadCoinHistory() {
 // при пресет-причине берётся из earn() на бэке, что бы тут ни выбрал пользователь.
 const COIN_REASON_AMOUNTS = {
   checklist_day:        1,
-  review:               3,
+  review:               5, // = COIN_AMOUNTS.review на бэке (= reviewCoinReward)
   substitution:         5,
   mentoring:            10,
   idea:                 5,

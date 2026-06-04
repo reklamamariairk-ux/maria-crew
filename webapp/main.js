@@ -1847,9 +1847,10 @@ function renderCollection({ heroes, owned, mvpIds, counts }) {
       howtoEl.innerHTML = `
         <div class="howto-card">
           <div class="howto-title">💡 Как получить первую карточку?</div>
-          <div class="howto-row"><span class="howto-row-icon">✅</span><div class="howto-row-text"><strong>Выполни чек-лист за смену</strong><span>Руководитель отмечает каждый день</span></div></div>
-          <div class="howto-row"><span class="howto-row-icon">⭐</span><div class="howto-row-text"><strong>Получи именной отзыв от гостя</strong><span>Упомянули тебя по имени в отзыве</span></div></div>
-          <div class="howto-row"><span class="howto-row-icon">📈</span><div class="howto-row-text"><strong>Выполни план продаж</strong><span>Хороший результат за месяц</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">✅</span><div class="howto-row-text"><strong>Чек-лист 100% за месяц</strong><span>Месяц без замечаний по чек-листам</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">🔍</span><div class="howto-row-text"><strong>Тайный покупатель ≥ 90</strong><span>Высокая оценка по проверке</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">📈</span><div class="howto-row-text"><strong>Выполни план продаж ≥ 105%</strong><span>Перевыполни план за месяц</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">🎓</span><div class="howto-row-text"><strong>Аттестация ≥ 80%</strong><span>Сдай аттестацию на высокий балл</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">👑</span><div class="howto-row-text"><strong>Стань лучшим сотрудником месяца</strong><span>Лучший результат точки — особая карточка со звездой</span></div></div>
         </div>
         <div class="howto-card" style="background:linear-gradient(135deg,#fff4f5,var(--brand-bg));margin-top:10px">
@@ -1956,9 +1957,9 @@ function renderHeroModal(hero, cards) {
         <div class="hero-modal-section">Как получить</div>
         <div class="howto-card">
           <div class="howto-row"><span class="howto-row-icon">✅</span><div class="howto-row-text"><strong>Выполни чек-лист 100%</strong><span>За месяц без замечаний</span></div></div>
-          <div class="howto-row"><span class="howto-row-icon">⭐</span><div class="howto-row-text"><strong>Именной отзыв</strong><span>Гость упомянул тебя по имени</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">🔍</span><div class="howto-row-text"><strong>Тайный покупатель ≥ 90/100</strong><span>Высокая оценка по проверке</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">📈</span><div class="howto-row-text"><strong>Выполнение плана ≥ 105%</strong><span>Перевыполнил план продаж</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">🎓</span><div class="howto-row-text"><strong>Аттестация ≥ 80%</strong><span>Высокий балл по аттестации</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">👑</span><div class="howto-row-text"><strong>Лучший сотрудник месяца</strong><span>Получишь именно особую карточку (со звездой)</span></div></div>
         </div>`;
   } else {
@@ -2077,9 +2078,9 @@ async function loadCoins() {
         <div class="howto-card">
           <div class="howto-title">💰 Как зарабатывать монеты?</div>
           <div class="howto-row"><span class="howto-row-icon">🧩</span><div class="howto-row-text"><strong>Квиз каждый день</strong><span>5 вопросов — до +5 монет за все правильные ответы</span></div></div>
-          <div class="howto-row"><span class="howto-row-icon">🔥</span><div class="howto-row-text"><strong>Серия входов</strong><span>Нажми 🔥 в шапке каждый день. Каждый 7-й день подряд = +5 бонусом</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">🔥</span><div class="howto-row-text"><strong>Серия входов</strong><span>Нажми 🔥 в шапке каждый день. Каждый 7-й день подряд = +3 бонусом</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">✅</span><div class="howto-row-text"><strong>Чек-лист за смену</strong><span>Руководитель начисляет монеты за хороший день</span></div></div>
-          <div class="howto-row"><span class="howto-row-icon">⭐</span><div class="howto-row-text"><strong>Именной отзыв от гостя</strong><span>Тебя упомянули по имени в отзыве</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">⭐</span><div class="howto-row-text"><strong>Именной отзыв от гостя</strong><span>+5 монет за каждый отзыв, где тебя назвали по имени</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">🎓</span><div class="howto-row-text"><strong>Наставничество и обучение</strong><span>Подмена коллеги, идеи, применение знаний</span></div></div>
         </div>
         <p style="font-size:12px;color:var(--hint);text-align:center;padding-bottom:4px">Монеты начисляет руководитель + квиз и серия входов</p>`;

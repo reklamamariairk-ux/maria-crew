@@ -6,7 +6,7 @@ import type { CoinReason, CoinTransaction } from '../types';
 export const COIN_AMOUNTS: Record<Exclude<CoinReason, 'spend' | 'manual' | 'drinks'>, number> = {
   // Начисления
   checklist_day:       1,
-  review:              3,
+  review:              5,   // = reviewCoinReward в mvp_config (авто-начисление при обработке месяца)
   cake_order:          2,   // устарело, оставлено для обратной совместимости
   substitution:        5,
   mentoring:           10,

@@ -26,10 +26,10 @@ describe('coin.service: earn', () => {
 
     await earn({ employeeId, reason: 'quiz' });
     await earn({ employeeId, reason: 'quiz' });
-    await earn({ employeeId, reason: 'review' }); // +3
+    await earn({ employeeId, reason: 'review' }); // +5
 
     const balance = await getBalance(employeeId);
-    expect(balance).toBe(1 + 1 + 3); // 2 монеты от quiz + 3 за review
+    expect(balance).toBe(1 + 1 + 5); // 2 монеты от quiz + 5 за review
   });
 
   it('manual с явной суммой работает', async () => {
@@ -63,8 +63,8 @@ describe('coin.service: списания (отрицательные суммы)
   it('штраф больше баланса: списывается только то, что есть (не уходит в минус)', async () => {
     const { employeeId } = await seedEmployee(testPool);
 
-    // Только 3 монеты в балансе
-    await earn({ employeeId, reason: 'review' });
+    // Только 5 монет за отзыв — но штраф проверяем с меньшим балансом (+3 знания)
+    await earn({ employeeId, reason: 'knowledge_applied' });
     expect(await getBalance(employeeId)).toBe(3);
 
     // Штраф bad_review = -5, но баланс уйти ниже 0 не должен
