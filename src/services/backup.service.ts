@@ -11,6 +11,7 @@ import { pool } from '../db/pool';
 const TABLES = [
   'stores',
   'heroes',
+  'prize_categories', // до prizes: prizes.category_id → FK сюда
   'prizes',
   'mvp_config',
   'seasonal_challenges',
@@ -30,7 +31,19 @@ const TABLES = [
   'notifications',
   'auth_pins',
   'device_tokens',
+  // Месенджер (миграции 045-052) — родитель employee_requests, потом дети
+  'employee_requests',
+  'request_targets',
+  'request_notifications',
+  'request_responses',
+  'request_employee_views',
 ] as const;
+
+// У junction-таблиц нет колонки id (составной PK) — для них свой ORDER BY.
+const ORDER_BY: Record<string, string> = {
+  request_targets: 'request_id, employee_id',
+  request_employee_views: 'request_id, employee_id',
+};
 
 export interface BackupResult {
   version: number;
@@ -64,7 +77,7 @@ export async function createBackup(): Promise<BackupResult> {
         continue;
       }
 
-      const { rows } = await pool.query(`SELECT * FROM ${table} ORDER BY id`);
+      const { rows } = await pool.query(`SELECT * FROM ${table} ORDER BY ${ORDER_BY[table] ?? 'id'}`);
       result.tables[table] = rows;
       result.rowCounts[table] = rows.length;
     } catch (err) {

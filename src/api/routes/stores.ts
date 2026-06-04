@@ -67,7 +67,7 @@ router.get('/:id/gis2-rating', async (req: Request, res: Response, next: NextFun
     );
     const gis2Id = rows[0]?.gis2Id ?? null;
     if (!gis2Id) { res.status(400).json({ error: 'У точки не задан 2ГИС ID' }); return; }
-    if (!process.env.GIS2_API_KEY) { res.status(500).json({ error: 'GIS2_API_KEY не задан на сервере' }); return; }
+    // Рейтинг идёт через прокси sales-dashboard (см. gis2.service), GIS2_API_KEY больше не нужен
     const rating = await fetchGis2Rating(gis2Id);
     if (rating === null) { res.status(502).json({ error: 'Не удалось получить рейтинг из 2ГИС' }); return; }
     res.json({ rating });

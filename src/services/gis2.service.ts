@@ -6,7 +6,10 @@ import { calcStoreScore } from './rating.service';
 // UPP_CATALOG_PROXY_URL в env = .../api/upp/proxy/products-detail; нам нужна база.
 const PROXY_URL = (process.env.UPP_CATALOG_PROXY_URL ?? '').replace(/\/api\/upp\/proxy\/.*$/, '');
 const PROXY_KEY = process.env.UPP_CATALOG_PROXY_KEY ?? '';
-const CITY = process.env.GIS2_CITY ?? 'irkutsk';
+// Города через запятую: у «Марии» есть точка в Ангарске, а карточки 2ГИС
+// привязаны к городу — скрейпим филиалы по каждому и сливаем.
+const CITIES = (process.env.GIS2_CITY ?? 'irkutsk,angarsk')
+  .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 const ORG_ID = process.env.GIS2_ORG_ID ?? '1548649242829424';
 
 type ScrapedBranch = {
@@ -35,6 +38,31 @@ async function callProxy<T>(path: string): Promise<T> {
   const res = await fetch(url, { headers: { 'X-API-Key': PROXY_KEY }, signal: AbortSignal.timeout(200000) });
   if (!res.ok) throw new Error(`proxy ${path} → ${res.status}`);
   return (await res.json()) as T;
+}
+
+// Скрейп филиалов организации по всем городам из CITIES, дедуп по id карточки.
+async function scrapeBranchesAllCities(orgId: string): Promise<ScrapedBranch[]> {
+  const out: ScrapedBranch[] = [];
+  const seen = new Set<string>();
+  for (const city of CITIES) {
+    try {
+      const r = await callProxy<BranchesProxyResp>(
+        `/api/upp/proxy/gis2-branches?org=${encodeURIComponent(orgId)}&city=${encodeURIComponent(city)}`
+      );
+      if (!r.ok || !r.branches) {
+        console.warn(`[gis2] branches(${city}) пусто: ${r.error ?? 'no branches'}`);
+        continue;
+      }
+      for (const b of r.branches) {
+        if (b.id && seen.has(b.id)) continue;
+        if (b.id) seen.add(b.id);
+        out.push(b);
+      }
+    } catch (e) {
+      console.warn(`[gis2] branches(${city}) ошибка:`, e instanceof Error ? e.message : e);
+    }
+  }
+  return out;
 }
 
 // ─── Парсинг адреса для матчинга ────────────────────────────────────────────
@@ -82,15 +110,15 @@ export type DiscoverResult = {
   matches: Array<{ storeId: number; storeName: string; address: string; gis2Id: string; gis2Address: string | null; rating: number | null; similarity: number }>;
 };
 
-export async function discoverGis2IdsForAllStores(orgId = ORG_ID, city = CITY): Promise<DiscoverResult> {
+export async function discoverGis2IdsForAllStores(orgId = ORG_ID): Promise<DiscoverResult> {
   const result: DiscoverResult = { total: 0, found: 0, scrapedBranches: 0, failed: [], matches: [] };
 
-  const scraped = await callProxy<BranchesProxyResp>(`/api/upp/proxy/gis2-branches?org=${encodeURIComponent(orgId)}&city=${encodeURIComponent(city)}`);
-  if (!scraped.ok || !scraped.branches?.length) {
-    result.failed.push({ storeId: 0, storeName: '_proxy', reason: scraped.error || 'no branches' });
+  const branches = await scrapeBranchesAllCities(orgId);
+  if (!branches.length) {
+    result.failed.push({ storeId: 0, storeName: '_proxy', reason: 'no branches' });
     return result;
   }
-  result.scrapedBranches = scraped.branches.length;
+  result.scrapedBranches = branches.length;
 
   const { rows: stores } = await pool.query<{ id: number; name: string; address: string | null; gis2Id: string | null }>(
     `SELECT id, name, address, gis2_id AS "gis2Id" FROM stores WHERE is_active = true ORDER BY name`
@@ -100,7 +128,7 @@ export async function discoverGis2IdsForAllStores(orgId = ORG_ID, city = CITY): 
   // raw содержит и адрес и rating; парсим в parsedBranches и используем для матча
   type ParsedBranch = { id: string; address: string; rating: number | null };
   const parsedBranches: ParsedBranch[] = [];
-  for (const b of scraped.branches) {
+  for (const b of branches) {
     // в raw на отдельных строках: "Кафе-кондитерская\nRATING\nN оценок\nADDRESS\nОткрыто"
     const lines = (b.raw || '').split('\n').map(s => s.trim()).filter(Boolean);
     const ratingLine = lines.find(l => /^[\d.,]+$/.test(l) && parseFloat(l.replace(',', '.')) >= 1 && parseFloat(l.replace(',', '.')) <= 5);
@@ -160,17 +188,15 @@ export async function refreshAllGis2Ratings(year?: number, month?: number): Prom
     return result;
   }
 
-  // Стратегия: тянем один большой /gis2-branches за раз — там сразу и адреса и рейтинги.
+  // Стратегия: тянем один большой /gis2-branches на город — там сразу и адреса и рейтинги.
   // Точечный /gis2-rating используем только если стора с gis2_id, которой нет в общем списке.
-  const scraped = await callProxy<BranchesProxyResp>(`/api/upp/proxy/gis2-branches?org=${encodeURIComponent(ORG_ID)}&city=${encodeURIComponent(CITY)}`);
+  const branches = await scrapeBranchesAllCities(ORG_ID);
   const byId = new Map<string, { rating: number | null }>();
-  if (scraped.ok && scraped.branches) {
-    for (const b of scraped.branches) {
-      const lines = (b.raw || '').split('\n').map(s => s.trim()).filter(Boolean);
-      const ratingLine = lines.find(l => /^[\d.,]+$/.test(l) && parseFloat(l.replace(',', '.')) >= 1 && parseFloat(l.replace(',', '.')) <= 5);
-      const rating = ratingLine ? parseFloat(ratingLine.replace(',', '.')) : (b.rating ?? null);
-      if (b.id) byId.set(b.id, { rating });
-    }
+  for (const b of branches) {
+    const lines = (b.raw || '').split('\n').map(s => s.trim()).filter(Boolean);
+    const ratingLine = lines.find(l => /^[\d.,]+$/.test(l) && parseFloat(l.replace(',', '.')) >= 1 && parseFloat(l.replace(',', '.')) <= 5);
+    const rating = ratingLine ? parseFloat(ratingLine.replace(',', '.')) : (b.rating ?? null);
+    if (b.id) byId.set(b.id, { rating });
   }
 
   const { rows: stores } = await pool.query<{ id: number; name: string; gis2Id: string | null }>(
@@ -181,12 +207,7 @@ export async function refreshAllGis2Ratings(year?: number, month?: number): Prom
   for (const s of stores) {
     if (!s.gis2Id) { result.skippedNoId += 1; continue; }
     let rating = byId.get(s.gis2Id)?.rating ?? null;
-    if (rating === null) {
-      try {
-        const r = await callProxy<RatingProxyResp>(`/api/upp/proxy/gis2-rating?id=${encodeURIComponent(s.gis2Id)}&city=${encodeURIComponent(CITY)}`);
-        if (r.ok && typeof r.rating === 'number') rating = r.rating;
-      } catch (e) { /* пропустим — добавим в failed ниже */ }
-    }
+    if (rating === null) rating = await fetchGis2Rating(s.gis2Id);
     if (rating === null) {
       result.failed.push({ storeId: s.id, storeName: s.name, reason: 'нет рейтинга от прокси' });
       continue;
@@ -247,10 +268,14 @@ async function recomputeAllStoreScores(year: number, month: number): Promise<voi
 
 // ─── Back-compat для cards.ts — UI кнопка «из 2ГИС» ─────────────────────────
 
-/** Возвращает рейтинг одной карточки по её id. Используется кнопкой «из 2ГИС» в Метриках одной точки. */
+/** Возвращает рейтинг одной карточки по её id. Используется кнопкой «из 2ГИС» в Метриках одной точки.
+ *  Карточка живёт в одном городе — перебираем CITIES до первого ответа. */
 export async function fetchGis2Rating(gis2Id: string): Promise<number | null> {
-  try {
-    const r = await callProxy<RatingProxyResp>(`/api/upp/proxy/gis2-rating?id=${encodeURIComponent(gis2Id)}&city=${encodeURIComponent(CITY)}`);
-    return r.ok && typeof r.rating === 'number' ? r.rating : null;
-  } catch { return null; }
+  for (const city of CITIES) {
+    try {
+      const r = await callProxy<RatingProxyResp>(`/api/upp/proxy/gis2-rating?id=${encodeURIComponent(gis2Id)}&city=${encodeURIComponent(city)}`);
+      if (r.ok && typeof r.rating === 'number') return r.rating;
+    } catch { /* пробуем следующий город */ }
+  }
+  return null;
 }
