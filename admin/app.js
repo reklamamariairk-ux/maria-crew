@@ -1414,7 +1414,7 @@ async function loadEmployees() {
   employeesCache = list;
 
   if (list.length === 0) {
-    tbody.innerHTML = emptyRow(11, 'users', state.storeId ? 'Нет сотрудников на этой точке' : 'Нет сотрудников');
+    tbody.innerHTML = emptyRow(12, 'users', state.storeId ? 'Нет сотрудников на этой точке' : 'Нет сотрудников');
     renderIcons();
     return;
   }
@@ -1424,6 +1424,24 @@ async function loadEmployees() {
   employeeSummaries = await api('GET', path2).catch(() => ({})) || {};
 
   renderEmployees();
+}
+
+/** Бейджи «откуда заходит»: ✈️ Telegram Mini App / 📱 APK (мобильное приложение).
+ *  Канал определяется способом авторизации (initData vs Bearer JWT).
+ *  Свежий канал — ярко, второй (если им тоже пользовались) — приглушённо. */
+function sourceBadges(e) {
+  const tg  = e.lastSeenTgAt  ? new Date(e.lastSeenTgAt)  : null;
+  const app = e.lastSeenAppAt ? new Date(e.lastSeenAppAt) : null;
+  if (!tg && !app) return '<span style="color:var(--muted)" title="Канал станет известен при следующем входе сотрудника">—</span>';
+  const badge = (label, icon, date, dim) =>
+    `<span title="${label}: ${formatDate(date.toISOString())}" style="white-space:nowrap${dim ? ';opacity:.45' : ''}">${icon}</span>`;
+  const parts = [];
+  const tgB  = tg  ? badge('Telegram Mini App', '✈️ TG',  tg,  app && app > tg)  : null;
+  const appB = app ? badge('Мобильное приложение (APK)', '📱 APK', app, tg && tg > app) : null;
+  // свежий канал первым
+  if (tg && app) { parts.push(app > tg ? appB : tgB); parts.push(app > tg ? tgB : appB); }
+  else parts.push(tgB || appB);
+  return parts.join(' ');
 }
 
 function renderEmployees() {
@@ -1437,7 +1455,7 @@ function renderEmployees() {
   });
 
   if (list.length === 0) {
-    tbody.innerHTML = emptyRow(11, 'search-x', 'Ничего не найдено');
+    tbody.innerHTML = emptyRow(12, 'search-x', 'Ничего не найдено');
     renderIcons();
     return;
   }
@@ -1462,6 +1480,7 @@ function renderEmployees() {
       <td class="col-hide-sm">${coins}</td>
       <td class="col-hide-md">${heroes}</td>
       <td class="col-hide-sm" style="font-size:12px">${lastSeenLabel(e.lastSeenAt)}</td>
+      <td class="col-hide-sm" style="font-size:12px">${sourceBadges(e)}</td>
       <td>
         ${e.isActive
           ? `<button class="btn btn-ghost btn-sm" onclick="toggleEmployee(${e.id}, false)"><i data-lucide="user-x"></i> Скрыть</button>`
@@ -4251,6 +4270,10 @@ async function showEmployeeModal(id) {
       <div>
         <div style="font-size:13px;color:var(--text-2);margin-bottom:4px">Последний вход</div>
         <div style="font-size:13px">${lastSeen}</div>
+      </div>
+      <div>
+        <div style="font-size:13px;color:var(--text-2);margin-bottom:4px">Откуда заходит</div>
+        <div style="font-size:13px">${sourceBadges(summary)}</div>
       </div>
     </div>
 

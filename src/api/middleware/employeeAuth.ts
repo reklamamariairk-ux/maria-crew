@@ -39,5 +39,14 @@ export async function employeeAuth(req: Request, res: Response, next: NextFuncti
   }
   req.employeeId = payload.uid;
   req.employeeFromMobile = rows[0];
+
+  // Отмечаем «сидит из APK» (Bearer JWT = мобильное приложение). Троттлинг 5 минут,
+  // чтобы не писать в БД на каждый запрос; fire-and-forget — не задерживает ответ.
+  pool.query(
+    `UPDATE employees SET last_seen_at = NOW(), last_seen_app_at = NOW()
+     WHERE id = $1 AND (last_seen_app_at IS NULL OR last_seen_app_at < NOW() - INTERVAL '5 minutes')`,
+    [payload.uid]
+  ).catch(() => { /* не критично */ });
+
   next();
 }

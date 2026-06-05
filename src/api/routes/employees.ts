@@ -43,6 +43,8 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
               e.telegram_username AS "telegramUsername",
               e.telegram_photo_url AS "telegramPhotoUrl",
               e.last_seen_at      AS "lastSeenAt",
+              e.last_seen_tg_at   AS "lastSeenTgAt",
+              e.last_seen_app_at  AS "lastSeenAppAt",
               e.phone             AS "phone",
               e.store_id          AS "storeId",
               s.name              AS "storeName"
@@ -151,6 +153,7 @@ router.get('/:id/summary', async (req: Request, res: Response, next: NextFunctio
       `SELECT e.id, e.name, e.role, e.is_active AS "isActive", e.joined_at AS "joinedAt",
               e.telegram_id AS "telegramId", e.telegram_username AS "telegramUsername",
               e.telegram_photo_url AS "telegramPhotoUrl", e.last_seen_at AS "lastSeenAt",
+              e.last_seen_tg_at AS "lastSeenTgAt", e.last_seen_app_at AS "lastSeenAppAt",
               e.phone AS "phone", e.email AS "email",
               e.store_id AS "storeId", s.name AS "storeName"
        FROM employees e JOIN stores s ON s.id = e.store_id

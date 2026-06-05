@@ -41,6 +41,8 @@ export function newTestPool(): { pool: TestPool; db: IMemoryDb } {
       is_active BOOLEAN NOT NULL DEFAULT true,
       joined_at DATE,
       last_seen_at TIMESTAMPTZ,
+      last_seen_tg_at TIMESTAMPTZ,
+      last_seen_app_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 

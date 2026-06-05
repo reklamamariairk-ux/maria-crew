@@ -114,16 +114,20 @@ async function getEmployee(telegramId: number): Promise<Employee | null> {
   return rows[0] ?? null;
 }
 
-async function touchLastSeen(employeeId: number, photoUrl?: string): Promise<void> {
+/** Канал, которым сотрудник зашёл: Telegram Mini App (initData) или APK (Bearer JWT). */
+export type SeenChannel = 'tg' | 'app';
+
+async function touchLastSeen(employeeId: number, channel: SeenChannel, photoUrl?: string): Promise<void> {
   try {
+    const channelCol = channel === 'app' ? 'last_seen_app_at' : 'last_seen_tg_at';
     if (photoUrl) {
       await pool.query(
-        `UPDATE employees SET last_seen_at = NOW(), telegram_photo_url = $2 WHERE id = $1`,
+        `UPDATE employees SET last_seen_at = NOW(), ${channelCol} = NOW(), telegram_photo_url = $2 WHERE id = $1`,
         [employeeId, photoUrl]
       );
     } else {
       await pool.query(
-        `UPDATE employees SET last_seen_at = NOW() WHERE id = $1`,
+        `UPDATE employees SET last_seen_at = NOW(), ${channelCol} = NOW() WHERE id = $1`,
         [employeeId]
       );
     }
@@ -139,7 +143,7 @@ async function touchLastSeen(employeeId: number, photoUrl?: string): Promise<voi
  * Для JWT user-объект синтезируется из employee-данных — клиенту неважно,
  * какой метод аутентификации использовался, поля те же.
  */
-async function requireAuth(req: Request, res: Response): Promise<{ user: { id: number; username?: string; firstName: string; lastName?: string; photoUrl?: string }; employee: Employee } | null> {
+async function requireAuth(req: Request, res: Response): Promise<{ user: { id: number; username?: string; firstName: string; lastName?: string; photoUrl?: string }; employee: Employee; channel: SeenChannel } | null> {
   const raw = req.headers.authorization ?? '';
 
   // 1. Bearer JWT (mobile / standalone web client)
@@ -169,7 +173,7 @@ async function requireAuth(req: Request, res: Response): Promise<{ user: { id: n
       firstName: employee.name,
       photoUrl: employee.telegramPhotoUrl ?? undefined,
     };
-    return { user, employee };
+    return { user, employee, channel: 'app' };
   }
 
   // 2. Telegram initData (Mini App внутри Telegram)
@@ -189,7 +193,7 @@ async function requireAuth(req: Request, res: Response): Promise<{ user: { id: n
     res.status(403).json({ error: 'Не зарегистрирован', notRegistered: true });
     return null;
   }
-  return { user, employee };
+  return { user, employee, channel: 'tg' };
 }
 
 async function getStats(empId: number) {
@@ -249,7 +253,7 @@ router.post('/auth', async (req: Request, res: Response, next: NextFunction): Pr
     try {
       employee = await getEmployee(user.id);
       if (employee) {
-        await touchLastSeen(employee.id, user.photoUrl);
+        await touchLastSeen(employee.id, 'tg', user.photoUrl);
         if (user.photoUrl && employee.telegramPhotoUrl !== user.photoUrl) {
           employee.telegramPhotoUrl = user.photoUrl;
         }
@@ -326,7 +330,7 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
 
     if (!employee) { res.status(500).json({ error: 'Ошибка регистрации' }); return; }
 
-    await touchLastSeen(employee.id, user.photoUrl);
+    await touchLastSeen(employee.id, 'tg', user.photoUrl);
     if (user.photoUrl && employee.telegramPhotoUrl !== user.photoUrl) {
       employee.telegramPhotoUrl = user.photoUrl;
     }
@@ -342,7 +346,7 @@ router.get('/me', async (req: Request, res: Response, next: NextFunction): Promi
     markWebappAuth('me:start');
     const auth = await requireAuth(req, res);
     if (!auth) return;
-    await touchLastSeen(auth.employee.id, auth.user.photoUrl);
+    await touchLastSeen(auth.employee.id, auth.channel, auth.user.photoUrl);
     const stats = await getStats(auth.employee.id);
     markWebappAuth('me:ok', { userId: auth.user.id, employeeId: auth.employee.id });
     res.json({ ...auth.employee, ...stats });
