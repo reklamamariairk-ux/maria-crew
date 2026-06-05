@@ -136,6 +136,19 @@ async function touchLastSeen(employeeId: number, channel: SeenChannel, photoUrl?
   }
 }
 
+/** Троттлёная отметка канала (раз в 5 минут) на ЛЮБОЙ авторизованный webapp-запрос —
+ *  включая поллинг чата каждые 15с. Без этого канал проявлялся бы только при входе
+ *  (/auth, /me), и у тех, кто держит приложение открытым, «Откуда» пустело до
+ *  следующего запуска. Fire-and-forget — ответ не задерживает. */
+function touchSeenThrottled(employeeId: number, channel: SeenChannel): void {
+  const col = channel === 'app' ? 'last_seen_app_at' : 'last_seen_tg_at';
+  pool.query(
+    `UPDATE employees SET last_seen_at = NOW(), ${col} = NOW()
+     WHERE id = $1 AND (${col} IS NULL OR ${col} < NOW() - INTERVAL '5 minutes')`,
+    [employeeId]
+  ).catch(() => { /* не критично */ });
+}
+
 /**
  * Принимает либо Telegram initData (заголовок Authorization: tma <initData>),
  * либо JWT мобильного приложения (Authorization: Bearer <token>).
@@ -173,6 +186,7 @@ async function requireAuth(req: Request, res: Response): Promise<{ user: { id: n
       firstName: employee.name,
       photoUrl: employee.telegramPhotoUrl ?? undefined,
     };
+    touchSeenThrottled(employee.id, 'app');
     return { user, employee, channel: 'app' };
   }
 
@@ -193,6 +207,7 @@ async function requireAuth(req: Request, res: Response): Promise<{ user: { id: n
     res.status(403).json({ error: 'Не зарегистрирован', notRegistered: true });
     return null;
   }
+  touchSeenThrottled(employee.id, 'tg');
   return { user, employee, channel: 'tg' };
 }
 
