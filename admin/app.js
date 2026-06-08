@@ -1037,7 +1037,7 @@ async function loadCoinHistory() {
 // при пресет-причине берётся из earn() на бэке, что бы тут ни выбрал пользователь.
 const COIN_REASON_AMOUNTS = {
   checklist_day:        1,
-  review:               5, // = COIN_AMOUNTS.review на бэке (= reviewCoinReward)
+  review:               10, // = COIN_AMOUNTS.review на бэке (= reviewCoinReward)
   substitution:         5,
   mentoring:            10,
   idea:                 5,
@@ -3556,9 +3556,13 @@ async function loadMvpConfig() {
   document.getElementById('cfg-card-attest').value       = cfg.cardThresholdCertification ?? 80;
   document.getElementById('cfg-mvp-min').value           = cfg.mvpMinScore ?? 80;
   document.getElementById('cfg-top-store-min').value     = cfg.topStoreMinScore ?? 70;
-  document.getElementById('cfg-review-coins').value      = cfg.reviewCoinReward ?? 5;
+  document.getElementById('cfg-review-coins').value      = cfg.reviewCoinReward ?? 10;
   document.getElementById('cfg-mvp-coins').value       = cfg.mvpCoinReward ?? 0;
   document.getElementById('cfg-top-store-coins').value = cfg.topStoreCoinReward ?? 0;
+  document.getElementById('cfg-plan-threshold').value      = cfg.planThreshold ?? 100;
+  document.getElementById('cfg-plan-coins').value          = cfg.planCoinReward ?? 15;
+  document.getElementById('cfg-plan-over-threshold').value = cfg.planOverThreshold ?? 100;
+  document.getElementById('cfg-plan-over-coins').value     = cfg.planOverCoinReward ?? 20;
   const upd = document.getElementById('cfg-last-updated');
   if (upd && cfg.updatedAt) {
     upd.textContent = `Последнее изменение: ${formatAuditDateTime(cfg.updatedAt)}`;
@@ -3586,12 +3590,14 @@ async function saveMvpConfig() {
     cardThresholdCertification:   parseFloat(document.getElementById('cfg-card-attest').value),
     mvpMinScore:                  parseFloat(document.getElementById('cfg-mvp-min').value),
     topStoreMinScore:             parseFloat(document.getElementById('cfg-top-store-min').value),
+    planThreshold:                parseFloat(document.getElementById('cfg-plan-threshold').value),
+    planOverThreshold:            parseFloat(document.getElementById('cfg-plan-over-threshold').value),
   };
   if ([cardThresholds.cardThresholdMysteryShopper, cardThresholds.cardThresholdChecklist, cardThresholds.cardThresholdCertification].some(v => isNaN(v) || v < 0 || v > 100)) {
     toast('Пороги тайного / чек-листа / аттестации: 0–100'); return;
   }
-  if (isNaN(cardThresholds.cardThresholdRevenue) || cardThresholds.cardThresholdRevenue < 0 || cardThresholds.cardThresholdRevenue > 300) {
-    toast('Порог плана: 0–300'); return;
+  if ([cardThresholds.cardThresholdRevenue, cardThresholds.planThreshold, cardThresholds.planOverThreshold].some(v => isNaN(v) || v < 0 || v > 300)) {
+    toast('Пороги плана: 0–300'); return;
   }
   if ([cardThresholds.mvpMinScore, cardThresholds.topStoreMinScore].some(v => isNaN(v) || v < 0 || v > 200)) {
     toast('Мин. баллы MVP/топ-точки: 0–200'); return;
@@ -3600,6 +3606,8 @@ async function saveMvpConfig() {
     reviewCoinReward:   parseInt(document.getElementById('cfg-review-coins').value, 10),
     mvpCoinReward:      parseInt(document.getElementById('cfg-mvp-coins').value, 10),
     topStoreCoinReward: parseInt(document.getElementById('cfg-top-store-coins').value, 10),
+    planCoinReward:     parseInt(document.getElementById('cfg-plan-coins').value, 10),
+    planOverCoinReward: parseInt(document.getElementById('cfg-plan-over-coins').value, 10),
   };
   if (Object.values(coins).some(v => isNaN(v) || v < 0 || v > 10000)) {
     toast('Монеты должны быть от 0 до 10000'); return;

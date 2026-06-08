@@ -22,6 +22,11 @@ export interface MvpConfig {
   reviewCoinReward: number;
   mvpCoinReward: number;
   topStoreCoinReward: number;
+  // Монеты за выполнение плана по выручке (авто при «Обработать месяц», per-employee по revenue_percent)
+  planThreshold: number;
+  planCoinReward: number;
+  planOverThreshold: number;
+  planOverCoinReward: number;
   updatedAt: Date;
 }
 
@@ -46,9 +51,13 @@ const DEFAULT_CONFIG: MvpConfig = {
   cardMaxReviewsCount: 2,
   mvpMinScore: 40,
   topStoreMinScore: 70,
-  reviewCoinReward: 5,
+  reviewCoinReward: 10,
   mvpCoinReward: 0,
   topStoreCoinReward: 0,
+  planThreshold: 100,
+  planCoinReward: 15,
+  planOverThreshold: 100,
+  planOverCoinReward: 20,
   updatedAt: new Date(),
 };
 
@@ -78,6 +87,10 @@ export async function getMvpConfig(): Promise<MvpConfig> {
       reviewCoinReward: number | string | null;
       mvpCoinReward: number | string | null;
       topStoreCoinReward: number | string | null;
+      planThreshold: string | null;
+      planCoinReward: number | string | null;
+      planOverThreshold: string | null;
+      planOverCoinReward: number | string | null;
       updatedAt: Date;
     }>(`SELECT * FROM mvp_config ORDER BY id LIMIT 1`);
 
@@ -101,9 +114,13 @@ export async function getMvpConfig(): Promise<MvpConfig> {
       cardMaxReviewsCount: r.cardMaxReviewsCount != null ? Number(r.cardMaxReviewsCount) : 2,
       mvpMinScore: r.mvpMinScore != null ? parseFloat(r.mvpMinScore) : 80,
       topStoreMinScore: r.topStoreMinScore != null ? parseFloat(r.topStoreMinScore) : 70,
-      reviewCoinReward: r.reviewCoinReward != null ? Number(r.reviewCoinReward) : 5,
+      reviewCoinReward: r.reviewCoinReward != null ? Number(r.reviewCoinReward) : 10,
       mvpCoinReward: r.mvpCoinReward != null ? Number(r.mvpCoinReward) : 0,
       topStoreCoinReward: r.topStoreCoinReward != null ? Number(r.topStoreCoinReward) : 0,
+      planThreshold: r.planThreshold != null ? parseFloat(r.planThreshold) : 100,
+      planCoinReward: r.planCoinReward != null ? Number(r.planCoinReward) : 15,
+      planOverThreshold: r.planOverThreshold != null ? parseFloat(r.planOverThreshold) : 100,
+      planOverCoinReward: r.planOverCoinReward != null ? Number(r.planOverCoinReward) : 20,
       updatedAt: r.updatedAt,
     };
     cacheTime = now;
@@ -139,6 +156,10 @@ export async function updateMvpConfig(
     review_coin_reward:              'reviewCoinReward',
     mvp_coin_reward:                'mvpCoinReward',
     top_store_coin_reward:          'topStoreCoinReward',
+    plan_threshold:                 'planThreshold',
+    plan_coin_reward:               'planCoinReward',
+    plan_over_threshold:            'planOverThreshold',
+    plan_over_coin_reward:          'planOverCoinReward',
   };
 
   for (const [col, key] of Object.entries(map)) {

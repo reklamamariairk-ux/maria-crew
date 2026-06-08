@@ -2080,7 +2080,7 @@ async function loadCoins() {
           <div class="howto-row"><span class="howto-row-icon">🧩</span><div class="howto-row-text"><strong>Квиз каждый день</strong><span>5 вопросов — до +5 монет за все правильные ответы</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">🔥</span><div class="howto-row-text"><strong>Серия входов</strong><span>Нажми 🔥 в шапке каждый день. Каждый 7-й день подряд = +3 бонусом</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">✅</span><div class="howto-row-text"><strong>Чек-лист за смену</strong><span>Руководитель начисляет монеты за хороший день</span></div></div>
-          <div class="howto-row"><span class="howto-row-icon">⭐</span><div class="howto-row-text"><strong>Именной отзыв от гостя</strong><span>+5 монет за каждый отзыв, где тебя назвали по имени</span></div></div>
+          <div class="howto-row"><span class="howto-row-icon">⭐</span><div class="howto-row-text"><strong>Именной отзыв от гостя</strong><span>+10 монет за каждый отзыв, где тебя назвали по имени</span></div></div>
           <div class="howto-row"><span class="howto-row-icon">🎓</span><div class="howto-row-text"><strong>Наставничество и обучение</strong><span>Подмена коллеги, идеи, применение знаний</span></div></div>
         </div>
         <p style="font-size:12px;color:var(--hint);text-align:center;padding-bottom:4px">Монеты начисляет руководитель + квиз и серия входов</p>`;

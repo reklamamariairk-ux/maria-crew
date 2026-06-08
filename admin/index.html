@@ -353,7 +353,7 @@
               <option value="manual" selected>Вручную (своя сумма)</option>
               <optgroup label="Начисления">
                 <option value="checklist_day">Чек-лист 100% за день (+1)</option>
-                <option value="review">Именной отзыв гостя (+5)</option>
+                <option value="review">Именной отзыв гостя (+10)</option>
                 <option value="substitution">Подмена коллеги (+5)</option>
                 <option value="knowledge_applied">Применение знаний (+3)</option>
                 <option value="training_meeting">Участие в собрании (+5)</option>
@@ -393,7 +393,7 @@
               <option value="manual" selected>Вручную (своя сумма)</option>
               <optgroup label="Начисления">
                 <option value="checklist_day">Чек-лист 100% за день (+1)</option>
-                <option value="review">Именной отзыв гостя (+5)</option>
+                <option value="review">Именной отзыв гостя (+10)</option>
                 <option value="substitution">Подмена коллеги на другой точке (+5)</option>
                 <option value="knowledge_applied">Применение знаний на практике (+3)</option>
                 <option value="training_meeting">Участие в собрании по обучению (+5)</option>
@@ -575,7 +575,7 @@
           <option value="">— Причина —</option>
           <optgroup label="Начисления">
             <option value="checklist_day">Чек-лист 100% за день (+1)</option>
-            <option value="review">Именной отзыв гостя (+5)</option>
+            <option value="review">Именной отзыв гостя (+10)</option>
             <option value="substitution">Подмена коллеги на другой точке (+5)</option>
             <option value="knowledge_applied">Применение знаний на практике (+3)</option>
             <option value="training_meeting">Участие в собрании по обучению (+5)</option>
@@ -1184,14 +1184,34 @@
           Начисляются автоматически при «Обработать месяц», идемпотентно (повторное обработка не задвоит). Поставь <b>0</b>, чтобы не начислять.
         </p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-          <label>Монеты за каждый отзыв
-            <input type="number" id="cfg-review-coins" class="input" min="0" max="10000" step="1" placeholder="5">
+          <label>Монеты за каждый отзыв в 2ГИС
+            <input type="number" id="cfg-review-coins" class="input" min="0" max="10000" step="1" placeholder="10">
           </label>
           <label>Монеты лучшему сотруднику месяца
             <input type="number" id="cfg-mvp-coins" class="input" min="0" max="10000" step="1" placeholder="0">
           </label>
           <label>Монеты команде лучшей точки
             <input type="number" id="cfg-top-store-coins" class="input" min="0" max="10000" step="1" placeholder="0">
+          </label>
+        </div>
+
+        <p class="section-title" style="margin-top:24px">Монеты за выполнение плана по выручке</p>
+        <p class="text-muted" style="font-size:13px;margin-bottom:12px">
+          Начисляются каждому сотруднику точки по его % выполнения плана (revenue_percent) при «Обработать месяц», идемпотентно.
+          «Свыше» (строго больше своего порога) перебивает «выполнение». Поставь сумму <b>0</b>, чтобы не начислять тот уровень.
+        </p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <label>Порог выполнения плана, %
+            <input type="number" id="cfg-plan-threshold" class="input" min="0" max="300" step="1" placeholder="100">
+          </label>
+          <label>Монет за выполнение плана
+            <input type="number" id="cfg-plan-coins" class="input" min="0" max="10000" step="1" placeholder="15">
+          </label>
+          <label>Порог перевыполнения (свыше), %
+            <input type="number" id="cfg-plan-over-threshold" class="input" min="0" max="300" step="1" placeholder="100">
+          </label>
+          <label>Монет за перевыполнение плана
+            <input type="number" id="cfg-plan-over-coins" class="input" min="0" max="10000" step="1" placeholder="20">
           </label>
         </div>
         <div style="display:flex;gap:8px;margin-top:16px">

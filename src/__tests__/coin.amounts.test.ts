@@ -17,8 +17,8 @@ describe('COIN_AMOUNTS — фиксация значений', () => {
     expect(COIN_AMOUNTS.checklist_day).toBe(1);
   });
 
-  it('именной отзыв = 5 монет (= reviewCoinReward, авто-начисление за месяц)', () => {
-    expect(COIN_AMOUNTS.review).toBe(5);
+  it('именной отзыв = 10 монет (= reviewCoinReward, авто-начисление за месяц)', () => {
+    expect(COIN_AMOUNTS.review).toBe(10);
   });
 
   it('подмена коллеги = 5 монет', () => {

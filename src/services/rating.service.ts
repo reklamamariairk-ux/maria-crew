@@ -262,6 +262,34 @@ export async function commitRewardsForStore(
       }
     }
 
+    // Монеты за выполнение плана по выручке (по revenue_percent сотрудника).
+    // > planOverThreshold → planOverCoinReward (reason plan_105), иначе
+    // ≥ planThreshold → planCoinReward (reason plan_100). Идемпотентно по note.
+    if (s.revenuePercent != null) {
+      let planAmount = 0;
+      let planReason: 'plan_100' | 'plan_105' = 'plan_100';
+      if (s.revenuePercent > cfg.planOverThreshold && cfg.planOverCoinReward > 0) {
+        planAmount = cfg.planOverCoinReward;
+        planReason = 'plan_105';
+      } else if (s.revenuePercent >= cfg.planThreshold && cfg.planCoinReward > 0) {
+        planAmount = cfg.planCoinReward;
+        planReason = 'plan_100';
+      }
+      if (planAmount > 0) {
+        const planNote = `План: ${month}/${year}`;
+        const { rows: existing } = await pool.query<{ id: number }>(
+          `SELECT id FROM coin_transactions WHERE employee_id = $1 AND note = $2 AND reason IN ('plan_100','plan_105')`,
+          [s.employeeId, planNote]
+        );
+        if (!existing[0]) {
+          await pool.query(
+            `INSERT INTO coin_transactions (employee_id, amount, reason, note) VALUES ($1, $2, $3, $4)`,
+            [s.employeeId, planAmount, planReason, planNote]
+          );
+        }
+      }
+    }
+
     results.push({
       employeeId: s.employeeId,
       name: s.employeeName,
