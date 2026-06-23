@@ -3783,6 +3783,25 @@ const REQUEST_STATUS_LABELS = {
   closed:   '<span style="color:var(--muted)">● Закрыт</span>',
 };
 
+// Превью последнего сообщения треда для списка мессенджера (как в WhatsApp).
+// Показываем последнее сообщение; если их нет — исходный запрос; если и его
+// нет (пустой личный чат) — заглушку. Свои сообщения помечаем «Вы: ».
+function reqPreview(r) {
+  const fileLabel = (t) => t === 'photo' ? '📷 Фото' : t === 'video' ? '🎬 Видео' : t === 'document' ? '📎 Файл' : '';
+  let text = '';
+  if (r.lastMessageText && r.lastMessageText.trim()) {
+    text = r.lastMessageText.trim();
+  } else if (r.lastMessageFileType) {
+    text = fileLabel(r.lastMessageFileType);
+  }
+  if (text) {
+    const prefix = r.lastMessageSender === 'manager' ? 'Вы: ' : '';
+    return esc(prefix + text);
+  }
+  if (r.requestText && r.requestText.trim()) return esc(r.requestText);
+  return '<span style="color:var(--muted)">— личный чат —</span>';
+}
+
 async function loadRequests() {
   const tbody = document.getElementById('requests-tbody');
   if (!tbody) return;
@@ -3822,7 +3841,7 @@ async function loadRequests() {
     return `<tr style="${rowStyle}" onclick="openRequestModal(${r.id})">
       <td style="color:var(--muted);font-size:12px">${r.id}</td>
       <td>${target}${unreadBadge}</td>
-      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.requestText && r.requestText.trim() ? esc(r.requestText) : '<span style="color:var(--muted)">— личный чат —</span>'}</td>
+      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${reqPreview(r)}</td>
       <td class="col-hide-sm">${r.responseCount} / ${r.notificationsSent}</td>
       <td>${REQUEST_STATUS_LABELS[r.status] || r.status}</td>
       <td class="col-hide-md" style="color:var(--muted);font-size:12px">${activity}</td>

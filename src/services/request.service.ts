@@ -60,6 +60,11 @@ export interface RequestSummary {
   /** Если запрос инициирован сотрудником (не менеджером) — id и имя инициатора. */
   initiatedByEmployeeId: number | null;
   initiatedByName: string | null;
+  /** Превью последнего сообщения в треде (для списка — как в мессенджере).
+   *  null если сообщений-ответов нет (тогда показываем requestText). */
+  lastMessageText: string | null;
+  lastMessageFileType: 'photo' | 'video' | 'document' | null;
+  lastMessageSender: 'employee' | 'manager' | null;
 }
 
 export interface RequestResponseRow {
@@ -596,6 +601,9 @@ export async function listRequests(filter?: { status?: string }): Promise<Reques
             r.updated_at        AS "updatedAt",
             r.initiated_by_employee_id AS "initiatedByEmployeeId",
             ie.name             AS "initiatedByName",
+            lr.text_content     AS "lastMessageText",
+            lr.file_type        AS "lastMessageFileType",
+            lr.sender_type      AS "lastMessageSender",
             (SELECT COUNT(*)::int FROM request_responses WHERE request_id = r.id) AS "responseCount",
             (SELECT COUNT(*)::int FROM request_notifications WHERE request_id = r.id) AS "notificationsSent",
             (SELECT COUNT(*)::int FROM request_targets WHERE request_id = r.id) AS "targetCount",
@@ -620,6 +628,13 @@ export async function listRequests(filter?: { status?: string }): Promise<Reques
      LEFT JOIN employees te ON te.id = r.target_employee_id
      LEFT JOIN employees ie ON ie.id = r.initiated_by_employee_id
      LEFT JOIN stores s     ON s.id  = r.target_store_id
+     LEFT JOIN LATERAL (
+       SELECT rr.text_content, rr.file_type, rr.sender_type
+       FROM request_responses rr
+       WHERE rr.request_id = r.id
+       ORDER BY rr.created_at DESC
+       LIMIT 1
+     ) lr ON true
      WHERE ($1::text IS NULL OR r.status = $1)
      ORDER BY
        -- Сначала запросы с непрочитанными ответами (как в мессенджере)
