@@ -384,6 +384,7 @@
         <p class="section-title">Начислить или списать</p>
         <div class="form-row">
           <label>Сотрудник
+            <input type="text" id="coin-employee-search" class="input" placeholder="🔍 Поиск…" oninput="filterSelectOptions('coin-employee', this.value)" style="width:240px;margin-bottom:4px;display:block">
             <select id="coin-employee" style="width:240px">
               <option value="">— выбери —</option>
             </select>
@@ -452,6 +453,7 @@
         <p class="section-title">Выдать карточку героя</p>
         <div class="form-row">
           <label>Сотрудник
+            <input type="text" id="card-employee-search" class="input" placeholder="🔍 Поиск…" oninput="filterSelectOptions('card-employee', this.value)" style="width:240px;margin-bottom:4px;display:block">
             <select id="card-employee" style="width:240px">
               <option value="">— выбери —</option>
             </select>
@@ -1308,6 +1310,7 @@
             </select>
           </label>
           <label id="notify-emp-label" class="hidden">Сотрудник
+            <input type="text" id="notify-employee-search" class="input" placeholder="🔍 Поиск…" oninput="filterSelectOptions('notify-employee', this.value)" style="width:240px;margin-bottom:4px;display:block">
             <select id="notify-employee" class="input" style="width:240px">
               <option value="">— выбери —</option>
             </select>
@@ -1332,11 +1335,14 @@
           <h1 class="page-title">Мессенджер</h1>
           <p class="page-subtitle">Чаты с сотрудниками: вы инициируете запрос или они пишут вам сами</p>
         </div>
-        <button class="btn btn-primary" onclick="showNewRequest()"><i data-lucide="plus"></i> Новое сообщение</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="openEmpPicker()"><i data-lucide="pencil"></i> Написать сотруднику</button>
+          <button class="btn btn-ghost" onclick="showNewRequest()"><i data-lucide="megaphone"></i> Рассылка</button>
+        </div>
       </div>
 
       <div id="new-request-form" class="hidden card card-pad" style="margin-bottom:16px;max-width:680px">
-        <p class="section-title">Создать запрос</p>
+        <p class="section-title">Рассылка нескольким сотрудникам</p>
         <div class="form-col">
           <label>Фильтр по точке
             <select id="new-req-store-filter" onchange="renderReqEmployees()" class="input" style="width:300px">
@@ -1351,6 +1357,7 @@
                 <button type="button" class="btn btn-ghost btn-sm" onclick="reqSelectAll(false)">Никого</button>
               </div>
             </div>
+            <input type="text" id="new-req-search" class="input" placeholder="🔍 Поиск сотрудника…" oninput="renderReqEmployees()" style="width:100%;margin-bottom:6px">
             <div id="new-req-employees" style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:6px;background:var(--bg)">
               <p class="text-muted" style="font-size:13px;text-align:center;margin:14px 0">Загрузка…</p>
             </div>
@@ -1442,6 +1449,22 @@
   .chat-meta { font-size: 10px; color: var(--muted); margin: 2px 4px; }
   .chat-bubble img, .chat-bubble video { max-width: 240px; max-height: 240px; border-radius: 6px; display: block; margin-top: 4px; }
 </style>
+
+<!-- ── Модалка: выбор сотрудника для личного чата ───────────────────────── -->
+<div id="modal-emp-picker" class="modal-overlay hidden" onclick="if(event.target===this)closeEmpPicker()">
+  <div class="modal-box" style="max-width:460px;width:95%;display:flex;flex-direction:column;max-height:80vh">
+    <div class="modal-header">
+      <h2 class="modal-title">Написать сотруднику</h2>
+      <button class="modal-close" onclick="closeEmpPicker()"><i data-lucide="x"></i></button>
+    </div>
+    <div style="padding:12px 14px 6px">
+      <input type="text" id="emp-picker-search" class="input" placeholder="🔍 Поиск по имени или точке…" oninput="renderEmpPickerList()" style="width:100%">
+    </div>
+    <div id="emp-picker-list" style="overflow-y:auto;flex:1;padding:4px 8px 10px;min-height:120px">
+      <p class="text-muted">Загрузка…</p>
+    </div>
+  </div>
+</div>
 
 <!-- ── Модалка: Карточка сотрудника ─────────────────────────────────────── -->
 <div id="modal-employee" class="modal-overlay hidden" onclick="if(event.target===this)closeEmployeeModal()">

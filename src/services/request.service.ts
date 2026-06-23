@@ -76,6 +76,70 @@ export interface RequestResponseRow {
   createdAt: string;
 }
 
+/** Ищет id существующего НЕзакрытого личного (1-на-1) чата с сотрудником.
+ *  Личным считается тред, у которого ровно один получатель = этот сотрудник,
+ *  ИЛИ тред, инициированный самим сотрудником. Широковещательные (точка /
+ *  несколько получателей) сюда НЕ попадают. Вернёт null если такого нет. */
+export async function findDirectThreadId(employeeId: number): Promise<number | null> {
+  const { rows } = await pool.query<{ id: number }>(
+    `SELECT r.id
+       FROM employee_requests r
+      WHERE r.status <> 'closed'
+        AND (
+          r.initiated_by_employee_id = $1
+          OR (
+            r.initiated_by_employee_id IS NULL
+            AND (SELECT COUNT(*) FROM request_targets rt WHERE rt.request_id = r.id) = 1
+            AND EXISTS (
+              SELECT 1 FROM request_targets rt
+               WHERE rt.request_id = r.id AND rt.employee_id = $1
+            )
+          )
+        )
+      ORDER BY r.updated_at DESC
+      LIMIT 1`,
+    [employeeId]
+  );
+  return rows[0]?.id ?? null;
+}
+
+/** Открывает (или создаёт пустой) личный чат с сотрудником и возвращает его id.
+ *  Используется кнопкой «Написать сотруднику» в админке — открыть переписку
+ *  без обязательного первого сообщения. Пустой тред (request_text = '') не
+ *  показывает «исходный запрос», диалог ведётся обычными сообщениями. */
+export async function getOrCreateDirectThread(
+  employeeId: number,
+  requestedBy: number
+): Promise<number> {
+  const existing = await findDirectThreadId(employeeId);
+  if (existing) return existing;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query<{ id: number }>(
+      `INSERT INTO employee_requests
+         (requested_by, target_employee_id, target_store_id, request_text)
+       VALUES ($1, $2, NULL, '')
+       RETURNING id`,
+      [requestedBy, employeeId]
+    );
+    const id = rows[0].id;
+    await client.query(
+      `INSERT INTO request_targets (request_id, employee_id)
+       VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [id, employeeId]
+    );
+    await client.query('COMMIT');
+    return id;
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 export async function createRequest(input: CreateRequestInput): Promise<number> {
   const text = (input.requestText ?? '').trim();
   if (!text) throw new Error('requestText обязателен');
@@ -98,30 +162,28 @@ export async function createRequest(input: CreateRequestInput): Promise<number> 
   }
 
   // Месенджер-логика: для **одного** получателя — ищем существующий open
-  // чат с этим сотрудником (как админский, так и employee-initiated).
-  // Если есть — добавляем сообщение в него, не создаём новый. Это даёт
-  // WhatsApp-стиль: один постоянный чат на каждого сотрудника. Для multi-
-  // recipient (рассылка / точка / несколько выбранных) — всегда новый.
+  // личный (1-на-1) чат с этим сотрудником. Если есть — добавляем сообщение
+  // в него, не создаём новый. Это даёт WhatsApp-стиль: один постоянный чат
+  // на каждого сотрудника. Для multi-recipient (рассылка / точка / несколько
+  // выбранных) — всегда новый.
+  //
+  // ВАЖНО: переиспользуем ТОЛЬКО настоящий 1-на-1 тред (один получатель =
+  // этот сотрудник) либо чат, инициированный самим сотрудником. Раньше сюда
+  // попадал ЛЮБОЙ незакрытый тред где сотрудник — один из получателей, в т.ч.
+  // широковещательный (точка / «все»). Из-за этого «написать одному» могло
+  // подмешаться в групповой тред и улететь сразу всем его участникам.
   if (employeeIds.length === 1) {
-    const empId = employeeIds[0];
-    const { rows: existing } = await pool.query<{ id: number }>(
-      `SELECT r.id FROM employee_requests r
-       LEFT JOIN request_targets rt ON rt.request_id = r.id
-       WHERE r.status <> 'closed'
-         AND (rt.employee_id = $1 OR r.initiated_by_employee_id = $1)
-       ORDER BY r.updated_at DESC LIMIT 1`,
-      [empId]
-    );
-    if (existing[0]) {
-      // Существующий чат — добавляем сообщение через sendManagerMessage
+    const existingId = await findDirectThreadId(employeeIds[0]);
+    if (existingId) {
+      // Существующий личный чат — добавляем сообщение через sendManagerMessage
       const res = await sendManagerMessage({
-        requestId: existing[0].id,
+        requestId: existingId,
         text,
         adminUserId: input.requestedBy,
       });
       // sendManagerMessage уже обновил last_viewed_at, разослал DM/push
       void res;
-      return existing[0].id;
+      return existingId;
     }
   }
 

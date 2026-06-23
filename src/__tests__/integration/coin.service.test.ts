@@ -26,10 +26,10 @@ describe('coin.service: earn', () => {
 
     await earn({ employeeId, reason: 'quiz' });
     await earn({ employeeId, reason: 'quiz' });
-    await earn({ employeeId, reason: 'review' }); // +5
+    await earn({ employeeId, reason: 'review' }); // +10
 
     const balance = await getBalance(employeeId);
-    expect(balance).toBe(1 + 1 + 5); // 2 монеты от quiz + 5 за review
+    expect(balance).toBe(1 + 1 + 10); // 2 монеты от quiz + 10 за review
   });
 
   it('manual с явной суммой работает', async () => {

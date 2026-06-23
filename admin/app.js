@@ -3822,7 +3822,7 @@ async function loadRequests() {
     return `<tr style="${rowStyle}" onclick="openRequestModal(${r.id})">
       <td style="color:var(--muted);font-size:12px">${r.id}</td>
       <td>${target}${unreadBadge}</td>
-      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.requestText)}</td>
+      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.requestText && r.requestText.trim() ? esc(r.requestText) : '<span style="color:var(--muted)">— личный чат —</span>'}</td>
       <td class="col-hide-sm">${r.responseCount} / ${r.notificationsSent}</td>
       <td>${REQUEST_STATUS_LABELS[r.status] || r.status}</td>
       <td class="col-hide-md" style="color:var(--muted);font-size:12px">${activity}</td>
@@ -3838,6 +3838,68 @@ async function loadRequests() {
 }
 
 let reqEmployeesCache = [];
+
+// Поиск по опциям нативного <select>: прячет неподходящие <option> (placeholder
+// с пустым value остаётся). Работает в Chrome (админка — браузерная).
+function filterSelectOptions(selectId, query) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const q = (query || '').trim().toLowerCase();
+  Array.from(sel.options).forEach(o => {
+    if (!o.value) return; // placeholder «— выбери —» всегда виден
+    o.hidden = !!q && !o.textContent.toLowerCase().includes(q);
+  });
+}
+
+// ── Личный чат: выбор сотрудника → openDirectChat ────────────────────────
+async function openEmpPicker() {
+  const modal = document.getElementById('modal-emp-picker');
+  modal.classList.remove('hidden');
+  const search = document.getElementById('emp-picker-search');
+  search.value = '';
+  if (reqEmployeesCache.length === 0) {
+    const emps = await api('GET', '/employees') || [];
+    reqEmployeesCache = emps.filter(e => e.isActive);
+  }
+  renderEmpPickerList();
+  setTimeout(() => search.focus(), 50);
+}
+
+function closeEmpPicker() {
+  document.getElementById('modal-emp-picker').classList.add('hidden');
+}
+
+function renderEmpPickerList() {
+  const q = (document.getElementById('emp-picker-search').value || '').trim().toLowerCase();
+  const wrap = document.getElementById('emp-picker-list');
+  const list = reqEmployeesCache
+    .filter(e => !q || e.name.toLowerCase().includes(q) || (e.storeName || '').toLowerCase().includes(q))
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  if (list.length === 0) {
+    wrap.innerHTML = '<p class="text-muted" style="text-align:center;margin:14px 0">Никого не найдено</p>';
+    return;
+  }
+  wrap.innerHTML = list.map(e => {
+    const storeLabel = e.storeName ? `<span style="color:var(--muted);font-size:12px"> — ${esc(e.storeName)}</span>` : '';
+    return `<div onclick="openDirectChat(${e.id})" style="display:flex;align-items:center;gap:10px;padding:9px 10px;cursor:pointer;border-radius:6px" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
+      <i data-lucide="user" style="width:16px;height:16px;color:var(--muted)"></i>
+      <span>${esc(e.name)}${storeLabel}</span>
+    </div>`;
+  }).join('');
+  renderIcons();
+}
+
+// Открыть (или создать) личный чат с сотрудником и сразу показать переписку.
+async function openDirectChat(employeeId) {
+  try {
+    const r = await api('POST', '/requests/direct', { employeeId });
+    if (!r || !r.requestId) { toast('Не удалось открыть чат'); return; }
+    closeEmpPicker();
+    await openRequestModal(r.requestId);
+    loadRequests();
+  } catch (e) { toastError(e); }
+}
 
 async function showNewRequest() {
   const form = document.getElementById('new-request-form');
@@ -3858,8 +3920,10 @@ async function showNewRequest() {
 function renderReqEmployees() {
   const filter = document.getElementById('new-req-store-filter').value;
   const storeId = filter ? parseInt(filter, 10) : null;
+  const q = (document.getElementById('new-req-search')?.value || '').trim().toLowerCase();
   const wrap = document.getElementById('new-req-employees');
-  const list = storeId ? reqEmployeesCache.filter(e => e.storeId === storeId) : reqEmployeesCache;
+  let list = storeId ? reqEmployeesCache.filter(e => e.storeId === storeId) : reqEmployeesCache;
+  if (q) list = list.filter(e => e.name.toLowerCase().includes(q) || (e.storeName || '').toLowerCase().includes(q));
   if (list.length === 0) {
     wrap.innerHTML = '<p class="text-muted" style="font-size:13px;text-align:center;margin:14px 0">Нет активных сотрудников</p>';
     updateReqSelectedCount();
@@ -3982,13 +4046,18 @@ async function renderRequestChat(id) {
       <div style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border)">
         <div style="color:var(--muted);font-size:12px;margin-bottom:4px">Кому: ${target} · ${REQUEST_STATUS_LABELS[r.status] || r.status}</div>
       </div>
+    `;
+    // Исходный запрос — только если он есть. У личного чата (открыт кнопкой
+    // «Написать сотруднику») текста запроса нет — сразу обычная переписка.
+    if (r.requestText && r.requestText.trim()) {
+      html += `
       <div class="chat-msg employee">
         <div>
           <div class="chat-bubble"><div style="white-space:pre-wrap">${esc(r.requestText)}</div></div>
           <div class="chat-meta">${new Date(r.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })} · исходный запрос</div>
         </div>
-      </div>
-    `;
+      </div>`;
+    }
 
     // Все сообщения — chat-thread
     for (const resp of data.responses) {

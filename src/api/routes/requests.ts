@@ -9,6 +9,7 @@ import {
   sendManagerMessage,
   getUnreadRequestCount,
   markRequestViewed,
+  getOrCreateDirectThread,
 } from '../../services/request.service';
 import { logAudit } from '../../services/audit.service';
 
@@ -40,6 +41,21 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     // Mark viewed — но только если есть unread responses (избегаем лишних writes)
     await markRequestViewed(id).catch(() => {});
     res.json(data);
+  } catch (err) { next(err); }
+});
+
+// POST /api/requests/direct — открыть (или создать) личный чат с сотрудником.
+// Возвращает { requestId } — id треда, который фронт сразу открывает в модалке.
+// Сообщение НЕ шлётся: пустой тред, общение — обычными сообщениями.
+router.post('/direct', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const employeeId = parseInt(String((req.body ?? {}).employeeId), 10);
+    if (!Number.isFinite(employeeId) || employeeId <= 0) {
+      res.status(400).json({ error: 'employeeId обязателен' }); return;
+    }
+    const requestedBy = req.adminUserId ?? 0;
+    const requestId = await getOrCreateDirectThread(employeeId, requestedBy);
+    res.json({ requestId });
   } catch (err) { next(err); }
 });
 
