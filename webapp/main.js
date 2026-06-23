@@ -275,6 +275,7 @@ function showBootError(message) {
 function showLoginScreen() {
   const loading = document.getElementById('loading');
   if (loading) loading.style.display = 'none';
+  applyDeskChrome(); // брендовый фон + центрированная карточка входа на десктопе
   let screen = document.getElementById('login-screen');
   if (!screen) {
     screen = document.createElement('div');
@@ -1065,6 +1066,7 @@ function updateStreakBadge(streak) {
 
 async function init() {
   initTelegramContext();
+  applyDeskChrome(); // как можно раньше: ставит body.deskweb до отрисовки экранов
 
   const isStandalone = !hasTelegramUser || !initData;
 
@@ -1232,11 +1234,79 @@ window.closeWelcome = function () {
 
 // ── App shell ─────────────────────────────────────────────────────────────────
 
+// ═══ Десктоп-веб оболочка (сайдбар) ════════════════════════════════════════
+// Включается ТОЛЬКО в настоящем широком браузере: не Telegram Mini App и не
+// Capacitor APK. Тот же фронт в TG/APK работает как раньше (мобильная вёрстка).
+function isDeskWeb() {
+  try {
+    const inTg  = !!(window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData);
+    const inApp = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+    return !inTg && !inApp && window.matchMedia('(min-width: 980px)').matches;
+  } catch { return false; }
+}
+
+const DESK_NAV = [
+  { tab: 'collection', icon: 'layers',         label: 'Карточки' },
+  { tab: 'coins',      icon: 'coins',          label: 'Монеты' },
+  { tab: 'quiz',       icon: 'brain',          label: 'Квиз' },
+  { tab: 'rating',     icon: 'trophy',         label: 'Рейтинг' },
+  { tab: 'store',      icon: 'shopping-bag',   label: 'Магазин' },
+  { tab: 'messages',   icon: 'message-circle', label: 'Чат', badge: 'desk-nav-messages-badge' },
+];
+
+function buildDeskSidebar() {
+  if (document.getElementById('desk-sidebar')) return;
+  const aside = document.createElement('aside');
+  aside.id = 'desk-sidebar';
+  aside.className = 'desk-sidebar';
+  aside.innerHTML = `
+    <div class="desk-brand">
+      <div class="desk-brand-mark"><img src="assets/logo-girl-red.png" alt="" onerror="this.replaceWith(document.createTextNode('МК'))"></div>
+      <div class="desk-brand-text">Maria Crew<small>команда «Марии»</small></div>
+    </div>
+    <nav class="desk-nav">
+      ${DESK_NAV.map(n => `
+        <button class="desk-nav-item" data-tab="${n.tab}" onclick="switchTab('${n.tab}')">
+          <i data-lucide="${n.icon}"></i><span>${n.label}</span>
+          ${n.badge ? `<span class="desk-nav-badge" id="${n.badge}">0</span>` : ''}
+        </button>`).join('')}
+    </nav>
+    <div class="desk-side-foot">
+      <button onclick="openProfileEdit()"><i data-lucide="user"></i>Мой профиль</button>
+      <button onclick="openFeedback()"><i data-lucide="message-square-warning"></i>Сообщить о проблеме</button>
+      <button class="logout" onclick="doMobileLogout()"><i data-lucide="log-out"></i>Выйти</button>
+      <button class="desk-delete" onclick="doDeleteAccount()">Удалить аккаунт</button>
+    </div>`;
+  document.body.appendChild(aside);
+  renderIcons();
+}
+
+function syncDeskNav(tab) {
+  document.querySelectorAll('.desk-nav-item').forEach(el =>
+    el.classList.toggle('active', el.dataset.tab === tab));
+}
+
+function applyDeskChrome() {
+  const on = isDeskWeb();
+  document.body.classList.toggle('deskweb', on);
+  if (on) buildDeskSidebar();
+}
+
+let _deskResizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(_deskResizeTimer);
+  _deskResizeTimer = setTimeout(applyDeskChrome, 150);
+});
+
 function showApp(stats) {
   document.getElementById('loading').style.display = 'none';
   document.getElementById('reg-screen').style.display = 'none';
   document.getElementById('welcome-overlay').classList.remove('show');
   document.getElementById('app').style.display = 'block';
+
+  // Десктоп-веб: построить сайдбар и включить широкую раскладку
+  document.body.classList.add('app-ready');
+  applyDeskChrome();
 
   // Гарантированно скрываем нативный splash — на случай если inline-pre-check
   // в <head> не сработал (например, кеш был пуст и сейчас наполнился впервые)
@@ -1352,6 +1422,7 @@ function switchTab(tab) {
   document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
   document.getElementById('nav-' + tab).classList.add('active');
+  syncDeskNav(tab); // десктоп-сайдбар
   ({ collection: loadCollection, coins: loadCoins, quiz: loadQuiz, rating: loadRating, store: loadStore, messages: loadMessages })[tab]?.();
 }
 
@@ -1514,16 +1585,16 @@ async function submitNewChat() {
 async function refreshMessagesBadge() {
   try {
     const r = await apiFetch('/messages/unread-count');
-    const badge = document.getElementById('nav-messages-badge');
-    if (badge) {
-      const n = r.count || 0;
+    const n = r.count || 0;
+    [document.getElementById('nav-messages-badge'), document.getElementById('desk-nav-messages-badge')].forEach(badge => {
+      if (!badge) return;
       if (n > 0) {
         badge.textContent = n > 99 ? '99+' : n;
-        badge.style.display = '';
+        badge.style.display = badge.id === 'desk-nav-messages-badge' ? 'flex' : '';
       } else {
         badge.style.display = 'none';
       }
-    }
+    });
   } catch { /* ignore */ }
 }
 

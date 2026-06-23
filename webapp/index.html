@@ -766,6 +766,115 @@
       text-align: center; pointer-events: none;
     }
     .toast.show { opacity: 1; }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       DESKTOP WEB SHELL — сайдбар + широкая колонка контента.
+       Включается ТОЛЬКО в настоящем широком браузере: класс body.deskweb
+       ставит JS (isDeskWeb): не Telegram Mini App и не Capacitor APK.
+       Доп. гейт @media min-width:980px. Мобайл/Mini App/APK не затрагивает.
+       ═══════════════════════════════════════════════════════════════════════ */
+    .desk-sidebar { display: none; }  /* по умолчанию скрыт */
+
+    @media (min-width: 980px) {
+      body.deskweb {
+        background:
+          radial-gradient(1100px 560px at 16% -10%, var(--brand-bg) 0%, rgba(253,232,235,0) 58%),
+          linear-gradient(162deg, #FFF8F4 0%, #F6EDE6 100%);
+        background-attachment: fixed;
+      }
+
+      /* ── Сайдбар ── */
+      body.deskweb.app-ready .desk-sidebar {
+        display: flex; flex-direction: column;
+        position: fixed; left: 0; top: 0; bottom: 0;
+        width: 252px; padding: 22px 16px;
+        background: #fff;
+        border-right: 1px solid var(--cream-dark);
+        box-shadow: 0 0 44px rgba(33,28,23,0.06);
+        z-index: 60;
+      }
+      .desk-brand { display: flex; align-items: center; gap: 12px; padding: 2px 8px 22px; }
+      .desk-brand-mark {
+        width: 42px; height: 42px; border-radius: 13px; flex-shrink: 0;
+        background: var(--brand);
+        display: flex; align-items: center; justify-content: center;
+        color: #fff; font-weight: 900; font-size: 15px; letter-spacing: .5px;
+        box-shadow: 0 5px 16px rgba(212,33,57,0.30); overflow: hidden;
+      }
+      .desk-brand-mark img { width: 72%; height: auto; filter: brightness(0) invert(1); }
+      .desk-brand-text { font-weight: 900; font-size: 17px; color: var(--text); letter-spacing: -0.2px; line-height: 1.1; }
+      .desk-brand-text small { display: block; font-weight: 700; font-size: 11px; color: var(--hint); letter-spacing: .2px; margin-top: 3px; }
+
+      .desk-nav { display: flex; flex-direction: column; gap: 3px; }
+      .desk-nav-item {
+        display: flex; align-items: center; gap: 12px;
+        padding: 11px 14px; border: 0; border-radius: 12px;
+        background: transparent; color: var(--text);
+        font-family: var(--font); font-size: 14.5px; font-weight: 700;
+        cursor: pointer; text-align: left; position: relative;
+        transition: background .15s, color .15s;
+      }
+      .desk-nav-item .lucide { width: 19px; height: 19px; stroke-width: 2.2; color: var(--hint); transition: color .15s; flex-shrink: 0; }
+      .desk-nav-item:hover { background: var(--cream); }
+      .desk-nav-item.active { background: var(--brand-bg); color: var(--brand); }
+      .desk-nav-item.active .lucide { color: var(--brand); }
+      .desk-nav-item.active::before {
+        content: ''; position: absolute; left: -16px; top: 50%; transform: translateY(-50%);
+        width: 3px; height: 22px; border-radius: 0 3px 3px 0; background: var(--brand);
+      }
+      .desk-nav-badge {
+        margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px;
+        background: var(--brand); color: #fff; border-radius: 9px;
+        font-size: 11px; font-weight: 800; display: none; align-items: center; justify-content: center;
+      }
+      .desk-side-foot {
+        margin-top: auto; padding-top: 14px; border-top: 1px solid var(--cream-dark);
+        display: flex; flex-direction: column; gap: 1px;
+      }
+      .desk-side-foot button {
+        display: flex; align-items: center; gap: 10px;
+        background: transparent; border: 0; padding: 9px 14px; border-radius: 10px;
+        font-family: var(--font); font-size: 13px; font-weight: 700; color: var(--hint);
+        cursor: pointer; text-align: left; transition: background .15s, color .15s;
+      }
+      .desk-side-foot button .lucide { width: 16px; height: 16px; stroke-width: 2.2; flex-shrink: 0; }
+      .desk-side-foot button:hover { background: var(--cream); color: var(--text); }
+      .desk-side-foot button.logout:hover { color: var(--brand); }
+      .desk-side-foot .desk-delete {
+        font-size: 11px; font-weight: 600; color: var(--hint); opacity: .7;
+        padding: 6px 14px 2px; justify-content: flex-start;
+      }
+      .desk-side-foot .desk-delete:hover { background: transparent; color: var(--brand); opacity: 1; }
+
+      /* ── Колонка контента ── */
+      body.deskweb.app-ready { padding-bottom: 0; }
+      body.deskweb.app-ready #app {
+        margin-left: 252px; min-height: 100vh;
+        padding: 28px clamp(20px, 4vw, 56px) 72px;
+      }
+      body.deskweb.app-ready #app > .header,
+      body.deskweb.app-ready #app > div {
+        max-width: 940px; margin-left: auto; margin-right: auto;
+      }
+      /* шапка → скруглённая карточка-герой, не на всю ширину */
+      body.deskweb.app-ready #app > .header {
+        border-radius: 20px; margin-top: 2px; margin-bottom: 22px;
+        padding: 20px 24px 22px;
+        box-shadow: 0 12px 32px rgba(212,33,57,0.18);
+      }
+      /* плавающая нижняя навигация на десктопе не нужна — её заменяет сайдбар */
+      body.deskweb.app-ready .bottom-nav { display: none; }
+      /* мобильный standalone-footer дублирует сайдбар — прячем */
+      body.deskweb.app-ready #standalone-footer { display: none !important; }
+
+      /* ── Экран входа: карточка-панель на брендовом фоне ── */
+      body.deskweb #login-screen { background: transparent !important; }
+      body.deskweb #login-screen > div {
+        background: #fff; padding: 36px 32px 30px; border-radius: 22px;
+        box-shadow: 0 22px 54px rgba(33,28,23,0.13); border: 1px solid var(--cream-dark);
+        max-width: 380px !important;
+      }
+    }
   </style>
 </head>
 <body>
