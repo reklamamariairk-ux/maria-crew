@@ -98,7 +98,7 @@ export function initScheduler(bot: Bot<BotContext>): void {
   }), { timezone: 'Asia/Irkutsk' });
 
   // ── 3h. Ежедневное обновление рейтинга 2ГИС у всех точек (06:00 Иркутск) ─
-  // Без GIS2_API_KEY — пропуск с логом. Обновляет avg_rating_score за
+  // Рейтинг через прокси sales-dashboard. Обновляет avg_rating_score за
   // текущий период, пересчитывает total_score и rank всех точек.
   cron.schedule('0 6 * * *', safeRun('refreshGis2Ratings', refreshGis2RatingsJob),
     { timezone: 'Asia/Irkutsk' });
