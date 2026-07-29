@@ -131,6 +131,9 @@
       <button class="nav-item role-superadmin-only" data-tab="adminUsers" onclick="switchTab('adminUsers')">
         <i data-lucide="shield"></i> Доступы
       </button>
+      <button class="nav-item role-superadmin-only" data-tab="vpn" onclick="switchTab('vpn')">
+        <i data-lucide="globe-lock"></i> VPN
+      </button>
     </nav>
 
     <div class="sidebar-footer">
@@ -1286,6 +1289,41 @@
       </div>
     </div>
 
+    <!-- ── VPN ────────────────────────────────────────────────────── -->
+    <div id="tab-vpn" class="tab-content hidden">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">VPN сотрудников</h1>
+          <p class="page-subtitle">Ключи, онлайн и трафик. Выдача нового доступа из карточки сотрудника. Доступно только суперадмину.</p>
+        </div>
+        <button id="vpn-link-btn" class="btn btn-primary hidden" onclick="openVpnLinkModal()">
+          <i data-lucide="link"></i> Связать <span id="vpn-unlinked-count"></span>
+        </button>
+      </div>
+
+      <div id="vpn-engine-down" class="card card-pad hidden" style="margin-bottom:16px">
+        VPN-движок недоступен. Проверь контейнер vpn-panel на VPS.
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Сотрудник</th>
+            <th class="col-hide-sm">Точка</th>
+            <th style="width:70px">Онлайн</th>
+            <th class="col-hide-md" style="width:110px">Сегодня</th>
+            <th class="col-hide-md" style="width:110px">Всего</th>
+            <th style="width:130px">Компьютер</th>
+            <th style="width:130px">Телефон</th>
+            <th class="col-hide-sm" style="width:190px">Метки</th>
+          </tr></thead>
+          <tbody id="vpn-tbody">
+            <tr><td colspan="8" class="empty">Загрузка...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- ── Рассылка ───────────────────────────────────────────────── -->
     <div id="tab-notify" class="tab-content hidden">
       <div class="page-head">
@@ -1467,6 +1505,18 @@
 </div>
 
 <!-- ── Модалка: Карточка сотрудника ─────────────────────────────────────── -->
+<div id="modal-vpn-link" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="modal-box" style="max-width:640px;width:95%">
+    <div class="modal-header">
+      <h2 class="modal-title">Связать VPN-юзеров с сотрудниками</h2>
+      <button class="modal-close" onclick="document.getElementById('modal-vpn-link').classList.add('hidden')"><i data-lucide="x"></i></button>
+    </div>
+    <div id="modal-vpn-link-body" style="overflow-y:auto;max-height:70vh;padding:16px">
+      <p class="text-muted">Загрузка...</p>
+    </div>
+  </div>
+</div>
+
 <div id="modal-employee" class="modal-overlay hidden" onclick="if(event.target===this)closeEmployeeModal()">
   <div class="modal-box" style="max-width:700px;width:95%">
     <div class="modal-header">

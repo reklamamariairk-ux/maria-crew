@@ -22,7 +22,7 @@ const ROLE_LABEL = {
 
 // Единая точка истины: какие вкладки доступны какой роли.
 // Используется и в applyRoleVisibility(), и в switchTab() — чтобы UI и навигация не разошлись.
-const SUPERADMIN_ONLY_TABS = new Set(['adminUsers', 'settings']);
+const SUPERADMIN_ONLY_TABS = new Set(['adminUsers', 'settings', 'vpn']);
 const COIN_ADMIN_TABS = new Set(['dashboard', 'coins', 'employees', 'prizes']);
 const EDITOR_FORBIDDEN_TABS = new Set(['coins']);
 
@@ -511,6 +511,7 @@ function refreshCurrentTab() {
   if (state.currentTab === 'adminUsers')  loadAdminUsers();
   if (state.currentTab === 'notify')      loadNotifyForm();
   if (state.currentTab === 'requests')    loadRequests();
+  if (state.currentTab === 'vpn')         loadVpn();
 }
 
 // ── Period ────────────────────────────────────────────────────────────────────
@@ -4414,11 +4415,207 @@ async function showEmployeeModal(id) {
          </table>`
       : '<p class="text-muted">Нет заявок</p>'}
   `;
+  // Секция VPN подгружается отдельно (только superadmin) — модалка не ждёт движок.
+  if (state.role === 'superadmin') {
+    body.insertAdjacentHTML('beforeend', '<div id="emp-vpn-section"></div>');
+    loadEmpVpnSection(id);
+  }
   renderIcons();
 }
 
 function closeEmployeeModal() {
   document.getElementById('modal-employee').classList.add('hidden');
+}
+
+// ── VPN (только superadmin; проксируется в vpn-panel) ─────────────────────────
+
+let vpnOverviewCache = null;
+
+function fmtVpnBytes(n) {
+  if (n == null) return 'н/д';
+  if (n < 1024) return `${n} Б`;
+  const units = ['КБ', 'МБ', 'ГБ', 'ТБ'];
+  let v = n / 1024, i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v >= 100 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+}
+
+function vpnKeyBadge(status) {
+  return status === 'active'
+    ? '<span class="badge badge-approved">Активен</span>'
+    : '<span class="badge badge-rejected">Отозван</span>';
+}
+
+function vpnMarks(u) {
+  const marks = [];
+  if (u.phoneShared) marks.push('<span class="badge badge-rejected" title="Телефонный ключ использовался с нескольких устройств и отключён">Передал ключ</span>');
+  if (u.codeConflict) marks.push(`<span class="badge badge-pending" title="Код активации пробовали ввести с чужого устройства (${u.codeConflict.count} раз)">Код передавали</span>`);
+  return marks.join(' ');
+}
+
+async function loadVpn() {
+  const tbody = document.getElementById('vpn-tbody');
+  const down = document.getElementById('vpn-engine-down');
+  tbody.innerHTML = skeletonRows(8, 5);
+  let data;
+  try {
+    data = await api('GET', '/vpn/overview');
+  } catch (e) { data = null; }
+  if (!data) {
+    down.classList.remove('hidden');
+    tbody.innerHTML = emptyRow(8, 'globe-lock', 'VPN-движок недоступен');
+    renderIcons();
+    return;
+  }
+  down.classList.add('hidden');
+  vpnOverviewCache = data;
+
+  const btn = document.getElementById('vpn-link-btn');
+  const cnt = document.getElementById('vpn-unlinked-count');
+  btn.classList.toggle('hidden', data.unlinked.length === 0);
+  cnt.textContent = data.unlinked.length ? `(${data.unlinked.length})` : '';
+
+  if (data.linked.length === 0) {
+    tbody.innerHTML = emptyRow(8, 'globe-lock', 'Ни один сотрудник не привязан к VPN. Выдай доступ из карточки сотрудника.');
+    renderIcons();
+    return;
+  }
+  tbody.innerHTML = data.linked.map(u => `
+    <tr style="cursor:pointer" onclick="showEmployeeModal(${u.employee.id})" title="Открыть карточку сотрудника">
+      <td><strong>${esc(u.employee.name)}</strong></td>
+      <td class="col-hide-sm">${esc(u.employee.storeName ?? '—')}</td>
+      <td><span class="dot ${u.online ? 'dot-online' : ''}" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${u.online ? 'var(--green,#27ae60)' : 'var(--border,#ddd)'}"></span></td>
+      <td class="col-hide-md">${fmtVpnBytes(u.todayBytes)}</td>
+      <td class="col-hide-md">${fmtVpnBytes(u.totalBytes)}</td>
+      <td>${vpnKeyBadge(u.status)}</td>
+      <td>${u.phone ? vpnKeyBadge(u.phone.status) : '<span class="text-muted">—</span>'}</td>
+      <td class="col-hide-sm">${vpnMarks(u)}</td>
+    </tr>`).join('');
+  renderIcons();
+}
+
+function openVpnLinkModal() {
+  const modal = document.getElementById('modal-vpn-link');
+  const body = document.getElementById('modal-vpn-link-body');
+  const d = vpnOverviewCache;
+  if (!d) return;
+  const empOptions = (selName) => d.employeesWithoutVpn
+    .map(e => {
+      // Подсказка: сотрудник с максимально похожим именем — первым в списке
+      const hit = selName && (e.name.toLowerCase().includes(selName.toLowerCase()) || selName.toLowerCase().includes(e.name.toLowerCase().split(' ')[0]));
+      return { e, hit };
+    })
+    .sort((a, b) => (b.hit ? 1 : 0) - (a.hit ? 1 : 0))
+    .map(({ e, hit }) => `<option value="${e.id}" ${hit ? 'data-hit="1"' : ''}>${esc(e.name)}${e.storeName ? ` · ${esc(e.storeName)}` : ''}</option>`)
+    .join('');
+  body.innerHTML = d.unlinked.length === 0
+    ? '<p class="text-muted">Все VPN-юзеры привязаны.</p>'
+    : d.unlinked.map(u => `
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <strong style="min-width:150px">${esc(u.name)}</strong>
+        <select id="vpn-link-sel-${cssId(u.name)}" class="input" style="flex:1;min-width:180px">
+          <option value="">— выбрать сотрудника —</option>
+          ${empOptions(u.name)}
+        </select>
+        <button class="btn btn-primary btn-sm" onclick="vpnLink('${esc(u.name).replace(/'/g, '&#39;')}')">Связать</button>
+      </div>`).join('');
+  modal.classList.remove('hidden');
+  renderIcons();
+}
+
+function cssId(s) {
+  return btoa(unescape(encodeURIComponent(s))).replace(/[^a-zA-Z0-9]/g, '');
+}
+
+async function vpnLink(vpnName) {
+  const sel = document.getElementById(`vpn-link-sel-${cssId(vpnName)}`);
+  const employeeId = Number(sel?.value);
+  if (!employeeId) { toast('⚠️ Выбери сотрудника'); return; }
+  try {
+    await api('POST', '/vpn/link', { employeeId, vpnName });
+    toast('✅ Связано');
+    await loadVpn();
+    openVpnLinkModal();
+    if (!vpnOverviewCache || vpnOverviewCache.unlinked.length === 0) {
+      document.getElementById('modal-vpn-link').classList.add('hidden');
+    }
+  } catch (e) { toastError(e); }
+}
+
+async function loadEmpVpnSection(employeeId) {
+  const box = document.getElementById('emp-vpn-section');
+  if (!box) return;
+  box.innerHTML = '<p class="section-title" style="margin-top:20px">VPN</p><p class="text-muted">Загрузка...</p>';
+  let d;
+  try { d = await api('GET', `/vpn/employee/${employeeId}`); } catch (e) { d = null; }
+  if (!d) {
+    box.innerHTML = '<p class="section-title" style="margin-top:20px">VPN</p><p class="text-muted">VPN-движок недоступен</p>';
+    return;
+  }
+  if (!d.linked) {
+    box.innerHTML = `
+      <p class="section-title" style="margin-top:20px">VPN</p>
+      <button class="btn btn-primary btn-sm" onclick="issueVpn(${employeeId})"><i data-lucide="globe-lock"></i> Выдать VPN</button>`;
+    renderIcons();
+    return;
+  }
+  const u = d.user ?? {};
+  const ph = d.phone;
+  const act = (action, label, cls = 'btn-ghost') =>
+    `<button class="btn ${cls} btn-sm" onclick="vpnAction(${employeeId}, '${action}')">${label}</button>`;
+  box.innerHTML = `
+    <p class="section-title" style="margin-top:20px">VPN <span style="font-weight:400;color:var(--text-2)">(${esc(d.vpnName)})</span></p>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px">
+      <div><span style="font-size:13px;color:var(--text-2)">Компьютер:</span> ${vpnKeyBadge(u.status)}
+        ${u.device_id ? '<span style="font-size:12px;color:var(--text-2)">привязан к ПК</span>' : '<span style="font-size:12px;color:var(--text-2)">не привязан</span>'}</div>
+      <div><span style="font-size:13px;color:var(--text-2)">Телефон:</span> ${ph ? vpnKeyBadge(ph.status) : '—'}</div>
+    </div>
+    ${d.codeConflict ? `<p style="font-size:12.5px;color:var(--red,#c0392b);margin-bottom:8px">Код пробовали ввести с чужого устройства (${d.codeConflict.count} раз). Похоже, код передавали. Если сотрудник сменил ПК — сбрось привязку.</p>` : ''}
+    ${ph && ph.status === 'revoked' && ph.revoked_reason === 'shared' ? '<p style="font-size:12.5px;color:var(--red,#c0392b);margin-bottom:8px">Телефонный ключ отключён автоматически: использовался с нескольких устройств.</p>' : ''}
+    ${d.code ? `
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <span style="font-size:13px;color:var(--text-2)">Код активации:</span>
+        <strong style="font-size:16px;letter-spacing:2px">${esc(String(d.code))}</strong>
+        <button class="btn btn-ghost btn-sm" onclick="copyVpnTg(${employeeId})">Скопировать сообщение для TG</button>
+      </div>` : ''}
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      ${u.status === 'revoked' ? act('reactivate', 'Вернуть доступ', 'btn-primary') : act('revoke', 'Отозвать')}
+      ${act('reissue', 'Перевыпустить ключ')}
+      ${u.device_id ? act('unbind', 'Сбросить привязку к ПК') : ''}
+      ${!ph ? act('phone', 'Выдать ключ для телефона')
+        : ph.status === 'revoked' ? act('phone/reactivate', 'Вернуть телефон', 'btn-primary') + act('phone/reissue', 'Перевыпустить телефон')
+        : act('phone/revoke', 'Отозвать телефон') + act('phone/reissue', 'Перевыпустить телефон')}
+    </div>
+    <p class="text-muted" style="font-size:12px;margin-top:8px">Ключи персональные: VPN можно подключить только на одно устройство (ПК + отдельный ключ на телефон).</p>`;
+  window._vpnTgText = d.tgText ?? null;
+  renderIcons();
+}
+
+async function issueVpn(employeeId) {
+  try {
+    const r = await api('POST', '/vpn/issue', { employeeId });
+    toast('✅ VPN выдан');
+    if (r?.tgText) { window._vpnTgText = r.tgText; }
+    await loadEmpVpnSection(employeeId);
+  } catch (e) { toastError(e); }
+}
+
+async function vpnAction(employeeId, action) {
+  const dangerous = action === 'revoke' || action === 'phone/revoke';
+  if (dangerous) {
+    const ok = await confirmDialog({ title: 'Отозвать доступ?', message: 'Сотрудник потеряет VPN до возврата доступа.', danger: true, confirmText: 'Отозвать' });
+    if (!ok) return;
+  }
+  try {
+    await api('POST', `/vpn/employee/${employeeId}/${action}`);
+    toast('✅ Готово');
+    await loadEmpVpnSection(employeeId);
+  } catch (e) { toastError(e); }
+}
+
+function copyVpnTg(employeeId) {
+  if (!window._vpnTgText) { toast('⚠️ Текст недоступен'); return; }
+  navigator.clipboard.writeText(window._vpnTgText).then(() => toast('✅ Скопировано'));
 }
 
 // ── CSV Экспорт ───────────────────────────────────────────────────────────────
