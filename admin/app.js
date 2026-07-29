@@ -4527,6 +4527,50 @@ function cssId(s) {
   return btoa(unescape(encodeURIComponent(s))).replace(/[^a-zA-Z0-9]/g, '');
 }
 
+function openVpnIssueModal() {
+  const d = vpnOverviewCache;
+  if (!d) { toast('⚠️ Сначала дождись загрузки вкладки'); return; }
+  const list = document.getElementById('vpn-issue-list');
+  document.getElementById('vpn-issue-result').innerHTML = '';
+  document.getElementById('vpn-issue-all').checked = false;
+  list.innerHTML = d.employeesWithoutVpn.length === 0
+    ? '<p class="text-muted">У всех активных сотрудников уже есть VPN.</p>'
+    : d.employeesWithoutVpn.map(e => `
+      <label style="display:flex;gap:8px;align-items:center;padding:6px 4px;border-bottom:1px solid var(--border,#eee);cursor:pointer">
+        <input type="checkbox" class="vpn-issue-cb" value="${e.id}">
+        <span style="flex:1"><strong>${esc(e.name)}</strong>${e.storeName ? ` <span class="text-muted">· ${esc(e.storeName)}</span>` : ''}</span>
+        ${e.hasTelegram
+          ? '<span class="badge badge-approved" title="Код уйдёт сообщением от бота">TG</span>'
+          : '<span class="badge badge-pending" title="Бота не запускал: код показать из карточки">без TG</span>'}
+      </label>`).join('');
+  document.getElementById('modal-vpn-issue').classList.remove('hidden');
+  renderIcons();
+}
+
+function vpnIssueToggleAll(checked) {
+  document.querySelectorAll('.vpn-issue-cb').forEach(cb => { cb.checked = checked; });
+}
+
+async function vpnIssueBulk() {
+  const ids = [...document.querySelectorAll('.vpn-issue-cb:checked')].map(cb => Number(cb.value));
+  if (!ids.length) { toast('⚠️ Выбери сотрудников'); return; }
+  const btn = document.getElementById('vpn-issue-go');
+  const resBox = document.getElementById('vpn-issue-result');
+  btn.disabled = true;
+  resBox.innerHTML = `<p class="text-muted">Выдаю ${ids.length}... Рассылка кодов идёт по одному, подожди.</p>`;
+  try {
+    const r = await api('POST', '/vpn/issue-bulk', { employeeIds: ids });
+    const fails = (r.results || []).filter(x => x.error);
+    const noTg = (r.results || []).filter(x => x.code && !x.sent);
+    resBox.innerHTML = `
+      <p>✅ Выдано: <strong>${r.issued}</strong> · Отправлено в TG: <strong>${r.sent}</strong></p>
+      ${noTg.length ? `<p>Без Telegram (код в карточке сотрудника): ${noTg.map(x => esc(x.name)).join(', ')}</p>` : ''}
+      ${fails.length ? `<p style="color:var(--red,#c0392b)">Ошибки: ${fails.map(x => `${esc(x.name)} (${esc(x.error)})`).join(', ')}</p>` : ''}`;
+    await loadVpn();
+  } catch (e) { toastError(e); resBox.innerHTML = ''; }
+  btn.disabled = false;
+}
+
 async function vpnLink(vpnName) {
   const sel = document.getElementById(`vpn-link-sel-${cssId(vpnName)}`);
   const employeeId = Number(sel?.value);

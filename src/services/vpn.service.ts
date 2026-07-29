@@ -69,6 +69,13 @@ export const addPanelUser = (name: string) =>
   panelFetch<{ user: { name: string }; code: string; tgText: string }>(
     '/api/users', { method: 'POST', body: { name } });
 
+/** Пакетная выдача: один рестарт ss-multi на всю пачку. */
+export const bulkAddPanelUsers = (names: string[]) =>
+  panelFetch<{
+    created: { name: string; code: string; tgText: string }[];
+    errors: { name: string; error: string }[];
+  }>('/api/users/bulk', { method: 'POST', body: { names } });
+
 export const panelUserDetail = (name: string) =>
   panelFetch<Record<string, unknown>>(`/api/users/${encodeURIComponent(name)}/detail`);
 

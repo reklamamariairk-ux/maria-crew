@@ -1,9 +1,10 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import {
-  vpnConfigured, listPanelUsers, addPanelUser, panelUserDetail, panelUserAction,
+  vpnConfigured, listPanelUsers, addPanelUser, bulkAddPanelUsers, panelUserDetail, panelUserAction,
   VpnEngineError, VpnEngineUnavailable, VPN_ACTIONS, VpnAction, pickVpnName,
 } from '../../services/vpn.service';
+import { sendBroadcast } from '../../bot/notifications/sender';
 
 // Управление VPN из админки crew (только superadmin — навешено в router.ts).
 // crew хранит маппинг employee_vpn, vpn-panel — сам движок ключей.
@@ -32,7 +33,8 @@ router.get('/overview', async (_req: Request, res: Response, next: NextFunction)
     const [panelUsers, links, employees] = await Promise.all([
       listPanelUsers(),
       pool.query('SELECT employee_id, vpn_name FROM employee_vpn'),
-      pool.query(`SELECT e.id, e.name, e.is_active, s.name AS store_name
+      pool.query(`SELECT e.id, e.name, e.is_active, e.telegram_id IS NOT NULL AS has_telegram,
+                         s.name AS store_name
                   FROM employees e LEFT JOIN stores s ON s.id = e.store_id`),
     ]);
     const byVpnName = new Map(links.rows.map((l: { employeeId: number; vpnName: string }) => [l.vpnName, l.employeeId]));
@@ -98,6 +100,58 @@ router.post('/issue', async (req: Request, res: Response, next: NextFunction): P
     await pool.query(
       'INSERT INTO employee_vpn (employee_id, vpn_name) VALUES ($1, $2)', [employeeId, vpnName]);
     res.json({ ok: true, vpnName, code: created.code, tgText: created.tgText });
+  } catch (err) { handlePanelError(err, res, next); }
+});
+
+// POST /api/vpn/issue-bulk {employeeIds:[]} — массовая выдача + рассылка кодов в TG.
+router.post('/issue-bulk', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const ids: number[] = Array.isArray(req.body?.employeeIds)
+      ? req.body.employeeIds.map(Number).filter(Number.isInteger) : [];
+    if (!ids.length) { res.status(400).json({ error: 'bad_request' }); return; }
+
+    const [emps, links, panelUsers] = await Promise.all([
+      pool.query(`SELECT id, name, telegram_id::text AS telegram_id FROM employees WHERE id = ANY($1)`, [ids]),
+      pool.query('SELECT employee_id FROM employee_vpn'),
+      listPanelUsers(),
+    ]);
+    const linkedIds = new Set(links.rows.map((l: { employeeId: number }) => l.employeeId));
+    const taken = new Set(panelUsers.map(u => u.name));
+
+    type Plan = { employeeId: number; name: string; vpnName: string; telegramId: string | null };
+    const plan: Plan[] = [];
+    const results: Array<Record<string, unknown>> = [];
+    for (const e of emps.rows as Array<{ id: number; name: string; telegramId: string | null }>) {
+      if (linkedIds.has(e.id)) { results.push({ employeeId: e.id, name: e.name, error: 'already_linked' }); continue; }
+      const vpnName = pickVpnName(e.name, taken);
+      taken.add(vpnName);
+      plan.push({ employeeId: e.id, name: e.name, vpnName, telegramId: e.telegramId });
+    }
+    if (plan.length) {
+      const bulk = await bulkAddPanelUsers(plan.map(p => p.vpnName));
+      const createdByName = new Map(bulk.created.map(c => [c.name, c]));
+      for (const p of plan) {
+        const c = createdByName.get(p.vpnName);
+        if (!c) {
+          results.push({ employeeId: p.employeeId, name: p.name,
+            error: bulk.errors.find(er => er.name === p.vpnName)?.error ?? 'issue_failed' });
+          continue;
+        }
+        await pool.query('INSERT INTO employee_vpn (employee_id, vpn_name) VALUES ($1, $2)',
+          [p.employeeId, p.vpnName]);
+        let sent = false;
+        if (p.telegramId) {
+          // Персональное сообщение с кодом — по одному, бот сам переживает rate limit
+          const r = await sendBroadcast([p.telegramId], c.tgText);
+          sent = r.sent === 1;
+          await new Promise(resolve => setTimeout(resolve, 150));
+        }
+        results.push({ employeeId: p.employeeId, name: p.name, vpnName: p.vpnName, code: c.code, sent });
+      }
+    }
+    const issued = results.filter(r => r.code).length;
+    const sentCount = results.filter(r => r.sent).length;
+    res.json({ issued, sent: sentCount, results });
   } catch (err) { handlePanelError(err, res, next); }
 });
 
