@@ -1300,6 +1300,9 @@
           <button class="btn btn-primary" onclick="openVpnIssueModal()">
             <i data-lucide="user-plus"></i> Выдать VPN
           </button>
+          <button class="btn btn-ghost" onclick="document.getElementById('vpn-ext-issue-result').innerHTML='';document.getElementById('modal-vpn-ext-issue').classList.remove('hidden')">
+            <i data-lucide="user-cog"></i> Выдать внешнему
+          </button>
           <button id="vpn-link-btn" class="btn btn-ghost hidden" onclick="openVpnLinkModal()">
             <i data-lucide="link"></i> Связать <span id="vpn-unlinked-count"></span>
           </button>
@@ -1517,9 +1520,10 @@
       <button class="modal-close" onclick="document.getElementById('modal-vpn-issue').classList.add('hidden')"><i data-lucide="x"></i></button>
     </div>
     <div style="padding:16px">
+      <input type="text" id="vpn-issue-search" class="input" placeholder="Поиск по имени или точке..." oninput="vpnIssueFilterRows(this.value)" style="width:100%;margin-bottom:10px">
       <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
         <label style="display:flex;gap:6px;align-items:center;cursor:pointer">
-          <input type="checkbox" id="vpn-issue-all" onchange="vpnIssueToggleAll(this.checked)"> Выбрать всех
+          <input type="checkbox" id="vpn-issue-all" onchange="vpnIssueToggleAll(this.checked)"> Выбрать всех (видимых)
         </label>
         <span class="text-muted" style="font-size:12.5px">Код придёт каждому в Telegram от бота. Кто не запускал бота, получит код в карточке.</span>
       </div>
@@ -1538,7 +1542,39 @@
       <h2 class="modal-title">Связать VPN-юзеров с сотрудниками</h2>
       <button class="modal-close" onclick="document.getElementById('modal-vpn-link').classList.add('hidden')"><i data-lucide="x"></i></button>
     </div>
-    <div id="modal-vpn-link-body" style="overflow-y:auto;max-height:70vh;padding:16px">
+    <div style="padding:16px 16px 0">
+      <input type="text" id="vpn-link-search" class="input" placeholder="Поиск сотрудника по имени или точке..." oninput="renderVpnLinkBody(this.value)" style="width:100%">
+    </div>
+    <div id="modal-vpn-link-body" style="overflow-y:auto;max-height:62vh;padding:16px">
+      <p class="text-muted">Загрузка...</p>
+    </div>
+  </div>
+</div>
+
+<div id="modal-vpn-ext-issue" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="modal-box" style="max-width:520px;width:95%">
+    <div class="modal-header">
+      <h2 class="modal-title">Выдать VPN внешнему</h2>
+      <button class="modal-close" onclick="document.getElementById('modal-vpn-ext-issue').classList.add('hidden')"><i data-lucide="x"></i></button>
+    </div>
+    <div style="padding:16px">
+      <p class="text-muted" style="font-size:12.5px;margin-bottom:10px">Для тех, кого нет в списке сотрудников (офис, бухгалтерия, подрядчики). Код отправь человеку вручную.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input type="text" id="vpn-ext-name" class="input" placeholder="Имя (например: Бухгалтерия Наталья)" style="flex:1;min-width:200px" maxlength="60">
+        <button class="btn btn-primary" onclick="vpnIssueExternal()"><i data-lucide="key-round"></i> Выдать</button>
+      </div>
+      <div id="vpn-ext-issue-result"></div>
+    </div>
+  </div>
+</div>
+
+<div id="modal-vpn-ext" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="modal-box" style="max-width:640px;width:95%">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-vpn-ext-title">VPN</h2>
+      <button class="modal-close" onclick="document.getElementById('modal-vpn-ext').classList.add('hidden')"><i data-lucide="x"></i></button>
+    </div>
+    <div id="modal-vpn-ext-body" style="overflow-y:auto;max-height:70vh;padding:16px">
       <p class="text-muted">Загрузка...</p>
     </div>
   </div>

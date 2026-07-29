@@ -155,6 +155,38 @@ router.post('/issue-bulk', async (req: Request, res: Response, next: NextFunctio
   } catch (err) { handlePanelError(err, res, next); }
 });
 
+// POST /api/vpn/issue-external {name} — VPN человеку вне crew (офис, подрядчик):
+// юзер в панели без маппинга. Код показываем админу, TG-рассылки нет.
+router.post('/issue-external', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const name = String(req.body?.name ?? '').trim();
+    if (!name || name.includes('/')) { res.status(400).json({ error: 'bad_request' }); return; }
+    const taken = new Set((await listPanelUsers()).map(u => u.name));
+    const vpnName = pickVpnName(name, taken);
+    const created = await addPanelUser(vpnName);
+    res.json({ ok: true, vpnName, code: created.code, tgText: created.tgText });
+  } catch (err) { handlePanelError(err, res, next); }
+});
+
+// GET /api/vpn/external/:name — detail внешнего (непривязанного) vpn-юзера.
+router.get('/external/:name', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const detail = await panelUserDetail(String(req.params.name));
+    res.json({ linked: false, vpnName: String(req.params.name), ...detail });
+  } catch (err) { handlePanelError(err, res, next); }
+});
+
+// POST /api/vpn/external/:name/:action(*) — действия панели для внешнего юзера.
+router.post(/^\/external\/([^/]+)\/(.+)$/, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    // Express сам декодирует path-параметры; raw оставляем как fallback
+    const name = (req.params as Record<string, string>)['0'];
+    const action = (req.params as Record<string, string>)['1'];
+    if (!VPN_ACTIONS.includes(action as VpnAction)) { res.status(400).json({ error: 'unknown_action' }); return; }
+    res.json(await panelUserAction(name, action as VpnAction));
+  } catch (err) { handlePanelError(err, res, next); }
+});
+
 // GET /api/vpn/employee/:id — карточка VPN сотрудника (detail панели).
 router.get('/employee/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {

@@ -4475,31 +4475,49 @@ async function loadVpn() {
   btn.classList.toggle('hidden', data.unlinked.length === 0);
   cnt.textContent = data.unlinked.length ? `(${data.unlinked.length})` : '';
 
-  if (data.linked.length === 0) {
-    tbody.innerHTML = emptyRow(8, 'globe-lock', 'Ни один сотрудник не привязан к VPN. Выдай доступ из карточки сотрудника.');
+  if (data.linked.length === 0 && data.unlinked.length === 0) {
+    tbody.innerHTML = emptyRow(8, 'globe-lock', 'VPN пока никому не выдан. Жми «Выдать VPN».');
     renderIcons();
     return;
   }
-  tbody.innerHTML = data.linked.map(u => `
-    <tr style="cursor:pointer" onclick="showEmployeeModal(${u.employee.id})" title="Открыть карточку сотрудника">
-      <td><strong>${esc(u.employee.name)}</strong></td>
-      <td class="col-hide-sm">${esc(u.employee.storeName ?? '—')}</td>
+  const row = (u, nameCell, onclick, title) => `
+    <tr style="cursor:pointer" onclick="${onclick}" title="${title}">
+      <td>${nameCell}</td>
+      <td class="col-hide-sm">${esc(u.employee?.storeName ?? '—')}</td>
       <td><span class="dot ${u.online ? 'dot-online' : ''}" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${u.online ? 'var(--green,#27ae60)' : 'var(--border,#ddd)'}"></span></td>
       <td class="col-hide-md">${fmtVpnBytes(u.todayBytes)}</td>
       <td class="col-hide-md">${fmtVpnBytes(u.totalBytes)}</td>
       <td>${vpnKeyBadge(u.status)}</td>
       <td>${u.phone ? vpnKeyBadge(u.phone.status) : '<span class="text-muted">—</span>'}</td>
       <td class="col-hide-sm">${vpnMarks(u)}</td>
-    </tr>`).join('');
+    </tr>`;
+  const encName = n => esc(encodeURIComponent(n)).replace(/'/g, '&#39;');
+  tbody.innerHTML =
+    data.linked.map(u => row(u, `<strong>${esc(u.employee.name)}</strong>`,
+      `showEmployeeModal(${u.employee.id})`, 'Открыть карточку сотрудника')).join('') +
+    data.unlinked.map(u => row(u,
+      `<strong>${esc(u.name)}</strong> <span class="text-muted" style="font-size:12px">вне crew</span>`,
+      `openVpnExtModal(decodeURIComponent('${encName(u.name)}'))`, 'Управление внешним доступом')).join('');
   renderIcons();
 }
 
 function openVpnLinkModal() {
-  const modal = document.getElementById('modal-vpn-link');
+  const search = document.getElementById('vpn-link-search');
+  if (search) search.value = '';
+  renderVpnLinkBody('');
+  document.getElementById('modal-vpn-link').classList.remove('hidden');
+  renderIcons();
+}
+
+function renderVpnLinkBody(filter) {
   const body = document.getElementById('modal-vpn-link-body');
   const d = vpnOverviewCache;
   if (!d) return;
-  const empOptions = (selName) => d.employeesWithoutVpn
+  const f = (filter ?? '').trim().toLowerCase();
+  const pool = f
+    ? d.employeesWithoutVpn.filter(e => e.name.toLowerCase().includes(f) || (e.storeName ?? '').toLowerCase().includes(f))
+    : d.employeesWithoutVpn;
+  const empOptions = (selName) => pool
     .map(e => {
       // Подсказка: сотрудник с максимально похожим именем — первым в списке
       const hit = selName && (e.name.toLowerCase().includes(selName.toLowerCase()) || selName.toLowerCase().includes(e.name.toLowerCase().split(' ')[0]));
@@ -4519,8 +4537,6 @@ function openVpnLinkModal() {
         </select>
         <button class="btn btn-primary btn-sm" onclick="vpnLink('${esc(u.name).replace(/'/g, '&#39;')}')">Связать</button>
       </div>`).join('');
-  modal.classList.remove('hidden');
-  renderIcons();
 }
 
 function cssId(s) {
@@ -4533,10 +4549,12 @@ function openVpnIssueModal() {
   const list = document.getElementById('vpn-issue-list');
   document.getElementById('vpn-issue-result').innerHTML = '';
   document.getElementById('vpn-issue-all').checked = false;
+  const search = document.getElementById('vpn-issue-search');
+  if (search) search.value = '';
   list.innerHTML = d.employeesWithoutVpn.length === 0
     ? '<p class="text-muted">У всех активных сотрудников уже есть VPN.</p>'
     : d.employeesWithoutVpn.map(e => `
-      <label style="display:flex;gap:8px;align-items:center;padding:6px 4px;border-bottom:1px solid var(--border,#eee);cursor:pointer">
+      <label class="vpn-issue-row" data-search="${esc((e.name + ' ' + (e.storeName ?? '')).toLowerCase())}" style="display:flex;gap:8px;align-items:center;padding:6px 4px;border-bottom:1px solid var(--border,#eee);cursor:pointer">
         <input type="checkbox" class="vpn-issue-cb" value="${e.id}">
         <span style="flex:1"><strong>${esc(e.name)}</strong>${e.storeName ? ` <span class="text-muted">· ${esc(e.storeName)}</span>` : ''}</span>
         ${e.hasTelegram
@@ -4548,7 +4566,17 @@ function openVpnIssueModal() {
 }
 
 function vpnIssueToggleAll(checked) {
-  document.querySelectorAll('.vpn-issue-cb').forEach(cb => { cb.checked = checked; });
+  // «Выбрать всех» уважает поисковый фильтр: отмечаем только видимые строки
+  document.querySelectorAll('.vpn-issue-row').forEach(rowEl => {
+    if (rowEl.style.display !== 'none') rowEl.querySelector('.vpn-issue-cb').checked = checked;
+  });
+}
+
+function vpnIssueFilterRows(value) {
+  const f = value.trim().toLowerCase();
+  document.querySelectorAll('.vpn-issue-row').forEach(rowEl => {
+    rowEl.style.display = !f || rowEl.dataset.search.includes(f) ? '' : 'none';
+  });
 }
 
 async function vpnIssueBulk() {
@@ -4603,24 +4631,33 @@ async function loadEmpVpnSection(employeeId) {
     renderIcons();
     return;
   }
+  box.innerHTML = `
+    <p class="section-title" style="margin-top:20px">VPN <span style="font-weight:400;color:var(--text-2)">(${esc(d.vpnName)})</span></p>
+    ${vpnControlsHtml(d, a => `vpnAction(${employeeId}, '${a}')`)}`;
+  window._vpnTgText = d.tgText ?? null;
+  renderIcons();
+}
+
+// Общий рендер контролов VPN: и для карточки сотрудника, и для внешних юзеров.
+// mkOnclick(action) возвращает JS-строку обработчика.
+function vpnControlsHtml(d, mkOnclick) {
   const u = d.user ?? {};
   const ph = d.phone;
   const act = (action, label, cls = 'btn-ghost') =>
-    `<button class="btn ${cls} btn-sm" onclick="vpnAction(${employeeId}, '${action}')">${label}</button>`;
-  box.innerHTML = `
-    <p class="section-title" style="margin-top:20px">VPN <span style="font-weight:400;color:var(--text-2)">(${esc(d.vpnName)})</span></p>
+    `<button class="btn ${cls} btn-sm" onclick="${mkOnclick(action)}">${label}</button>`;
+  return `
     <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px">
       <div><span style="font-size:13px;color:var(--text-2)">Компьютер:</span> ${vpnKeyBadge(u.status)}
         ${u.device_id ? '<span style="font-size:12px;color:var(--text-2)">привязан к ПК</span>' : '<span style="font-size:12px;color:var(--text-2)">не привязан</span>'}</div>
       <div><span style="font-size:13px;color:var(--text-2)">Телефон:</span> ${ph ? vpnKeyBadge(ph.status) : '—'}</div>
     </div>
-    ${d.codeConflict ? `<p style="font-size:12.5px;color:var(--red,#c0392b);margin-bottom:8px">Код пробовали ввести с чужого устройства (${d.codeConflict.count} раз). Похоже, код передавали. Если сотрудник сменил ПК — сбрось привязку.</p>` : ''}
+    ${d.codeConflict ? `<p style="font-size:12.5px;color:var(--red,#c0392b);margin-bottom:8px">Код пробовали ввести с чужого устройства (${d.codeConflict.count} раз). Похоже, код передавали. Если человек сменил ПК — сбрось привязку.</p>` : ''}
     ${ph && ph.status === 'revoked' && ph.revoked_reason === 'shared' ? '<p style="font-size:12.5px;color:var(--red,#c0392b);margin-bottom:8px">Телефонный ключ отключён автоматически: использовался с нескольких устройств.</p>' : ''}
     ${d.code ? `
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
         <span style="font-size:13px;color:var(--text-2)">Код активации:</span>
         <strong style="font-size:16px;letter-spacing:2px">${esc(String(d.code))}</strong>
-        <button class="btn btn-ghost btn-sm" onclick="copyVpnTg(${employeeId})">Скопировать сообщение для TG</button>
+        <button class="btn btn-ghost btn-sm" onclick="copyVpnTg()">Скопировать сообщение для TG</button>
       </div>` : ''}
     <div style="display:flex;gap:6px;flex-wrap:wrap">
       ${u.status === 'revoked' ? act('reactivate', 'Вернуть доступ', 'btn-primary') : act('revoke', 'Отозвать')}
@@ -4631,8 +4668,55 @@ async function loadEmpVpnSection(employeeId) {
         : act('phone/revoke', 'Отозвать телефон') + act('phone/reissue', 'Перевыпустить телефон')}
     </div>
     <p class="text-muted" style="font-size:12px;margin-top:8px">Ключи персональные: VPN можно подключить только на одно устройство (ПК + отдельный ключ на телефон).</p>`;
+}
+
+// ── Внешние VPN-юзеры (вне crew) ──────────────────────────────────────────────
+
+async function openVpnExtModal(vpnName) {
+  const modal = document.getElementById('modal-vpn-ext');
+  const body = document.getElementById('modal-vpn-ext-body');
+  document.getElementById('modal-vpn-ext-title').textContent = vpnName;
+  body.innerHTML = '<p class="text-muted">Загрузка...</p>';
+  modal.classList.remove('hidden');
+  let d;
+  try { d = await api('GET', `/vpn/external/${encodeURIComponent(vpnName)}`); } catch (e) { d = null; }
+  if (!d) { body.innerHTML = '<p class="text-muted">VPN-движок недоступен</p>'; return; }
+  const enc = esc(encodeURIComponent(vpnName)).replace(/'/g, '&#39;');
+  body.innerHTML = `
+    <p class="text-muted" style="font-size:12.5px;margin-bottom:10px">Внешний доступ (человека нет в списке сотрудников). Код и сообщение отправь ему вручную.</p>
+    ${vpnControlsHtml(d, a => `vpnExtAction('${enc}', '${a}')`)}`;
   window._vpnTgText = d.tgText ?? null;
   renderIcons();
+}
+
+async function vpnExtAction(encName, action) {
+  const dangerous = action === 'revoke' || action === 'phone/revoke';
+  if (dangerous) {
+    const ok = await confirmDialog({ title: 'Отозвать доступ?', danger: true, confirmText: 'Отозвать' });
+    if (!ok) return;
+  }
+  try {
+    await api('POST', `/vpn/external/${encName}/${action}`);
+    toast('✅ Готово');
+    openVpnExtModal(decodeURIComponent(encName));
+    loadVpn();
+  } catch (e) { toastError(e); }
+}
+
+async function vpnIssueExternal() {
+  const input = document.getElementById('vpn-ext-name');
+  const name = input.value.trim();
+  if (!name) { toast('⚠️ Введи имя'); return; }
+  try {
+    const r = await api('POST', '/vpn/issue-external', { name });
+    window._vpnTgText = r.tgText ?? null;
+    document.getElementById('vpn-ext-issue-result').innerHTML = `
+      <p style="margin-top:10px">✅ Выдано: <strong>${esc(r.vpnName)}</strong> · Код:
+      <strong style="letter-spacing:2px">${esc(String(r.code))}</strong>
+      <button class="btn btn-ghost btn-sm" onclick="copyVpnTg()">Скопировать сообщение</button></p>`;
+    input.value = '';
+    loadVpn();
+  } catch (e) { toastError(e); }
 }
 
 async function issueVpn(employeeId) {
