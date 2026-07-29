@@ -4469,6 +4469,10 @@ async function loadVpn() {
   }
   down.classList.add('hidden');
   vpnOverviewCache = data;
+  if (data.applyError) {
+    down.classList.remove('hidden');
+    down.textContent = `Последнее изменение не применилось на сервере (${data.applyError.message}). Ключи записаны, но ss-multi не перезапустился — проверь контейнер.`;
+  }
 
   const btn = document.getElementById('vpn-link-btn');
   const cnt = document.getElementById('vpn-unlinked-count');

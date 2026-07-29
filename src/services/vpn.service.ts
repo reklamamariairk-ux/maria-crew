@@ -65,6 +65,10 @@ export interface PanelUser {
 
 export const listPanelUsers = () => panelFetch<PanelUser[]>('/api/users');
 
+/** Провал фонового рестарта ss-multi (null, если всё применилось). */
+export const panelApplyStatus = () =>
+  panelFetch<{ error: { at: string; message: string } | null }>('/api/apply-status');
+
 export const addPanelUser = (name: string) =>
   panelFetch<{ user: { name: string }; code: string; tgText: string }>(
     '/api/users', { method: 'POST', body: { name } });

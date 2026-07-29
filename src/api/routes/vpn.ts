@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import {
-  vpnConfigured, listPanelUsers, addPanelUser, bulkAddPanelUsers, panelUserDetail, panelUserAction,
+  vpnConfigured, listPanelUsers, addPanelUser, bulkAddPanelUsers, panelUserDetail, panelUserAction, panelApplyStatus,
   VpnEngineError, VpnEngineUnavailable, VPN_ACTIONS, VpnAction, pickVpnName,
 } from '../../services/vpn.service';
 import { sendBroadcast } from '../../bot/notifications/sender';
@@ -30,12 +30,13 @@ async function vpnNameByEmployee(employeeId: number): Promise<string | null> {
 router.get('/overview', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (!vpnConfigured()) { res.status(502).json({ error: 'vpn_engine_unavailable' }); return; }
-    const [panelUsers, links, employees] = await Promise.all([
+    const [panelUsers, links, employees, applyStatus] = await Promise.all([
       listPanelUsers(),
       pool.query('SELECT employee_id, vpn_name FROM employee_vpn'),
       pool.query(`SELECT e.id, e.name, e.is_active, e.telegram_id IS NOT NULL AS has_telegram,
                          s.name AS store_name
                   FROM employees e LEFT JOIN stores s ON s.id = e.store_id`),
+      panelApplyStatus().catch(() => ({ error: null })),
     ]);
     const byVpnName = new Map(links.rows.map((l: { employeeId: number; vpnName: string }) => [l.vpnName, l.employeeId]));
     const empById = new Map(employees.rows.map((e: { id: number }) => [e.id, e]));
@@ -52,7 +53,7 @@ router.get('/overview', async (_req: Request, res: Response, next: NextFunction)
     const linkedEmployeeIds = new Set(byVpnName.values());
     const employeesWithoutVpn = employees.rows.filter(
       (e: { id: number; isActive: boolean }) => !linkedEmployeeIds.has(e.id) && e.isActive);
-    res.json({ linked, unlinked, employeesWithoutVpn });
+    res.json({ linked, unlinked, employeesWithoutVpn, applyError: applyStatus.error });
   } catch (err) { handlePanelError(err, res, next); }
 });
 
