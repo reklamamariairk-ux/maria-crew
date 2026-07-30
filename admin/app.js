@@ -1657,7 +1657,12 @@ function openKSearch() {
   ov.classList.remove('hidden');
   const input = document.getElementById('ksearch-input');
   input.value = ''; input.focus();
-  if (!kSearchEmps) api('GET', '/employees?fired=all').then(l => { kSearchEmps = l || []; }).catch(() => { kSearchEmps = []; });
+  if (!kSearchEmps) {
+    // список долетел — перерисовать выдачу (иначе первый ввод видит «Никого не нашлось»)
+    api('GET', '/employees?fired=all')
+      .then(l => { kSearchEmps = l || []; renderKSearch(); })
+      .catch(() => { kSearchEmps = []; });
+  }
   renderKSearch();
 }
 function closeKSearch() { const ov = document.getElementById('ksearch-ov'); if (ov) ov.classList.add('hidden'); }
@@ -3915,10 +3920,11 @@ async function loadDashboard() {
   const top3El = document.getElementById('dash-top3');
   if (data.top3Mvp && data.top3Mvp.length > 0) {
     const medals = ['🥇', '🥈', '🥉'];
-    const periodLabel = data.mvpPeriod
-      ? `<div style="font-size:12px;color:var(--text-3);margin-bottom:8px">за ${MONTH_NAMES[data.mvpPeriod.month]} ${data.mvpPeriod.year}</div>`
-      : '';
-    top3El.innerHTML = periodLabel + data.top3Mvp.map((e, i) =>
+    // месяц — прямо в заголовке карточки, чтобы не путать с «Топ-10 по монетам»
+    // (тот всегда за ТЕКУЩИЙ месяц, а топ-3 — за последний обработанный)
+    const top3Period = document.getElementById('dash-top3-period');
+    if (top3Period && data.mvpPeriod) top3Period.textContent = `· ${MONTH_NAMES[data.mvpPeriod.month]} ${data.mvpPeriod.year} (обработанный месяц)`;
+    top3El.innerHTML = data.top3Mvp.map((e, i) =>
       `<div class="dash-top3-row" onclick="showEmployeeModal(${e.id})" title="Открыть карточку сотрудника">
         <span style="font-size:20px">${medals[i] ?? ''}</span>
         <div style="flex:1;min-width:0">
