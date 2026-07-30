@@ -98,6 +98,11 @@ export function pickVpnName(base: string, taken: Set<string>): string {
   return candidate;
 }
 
+// Полное удаление юзера из панели: порты закрываются, ключи/коды/сессии/трафик
+// стираются. Необратимо (для «выключить временно» есть revoke).
+export const deletePanelUser = (name: string) =>
+  panelFetch<{ ok: boolean }>(`/api/users/${encodeURIComponent(name)}`, { method: 'DELETE' });
+
 export const panelUserAction = (name: string, action: VpnAction) =>
   panelFetch<Record<string, unknown>>(
     `/api/users/${encodeURIComponent(name)}/${action}`, { method: 'POST', body: {} });

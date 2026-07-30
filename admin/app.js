@@ -4719,7 +4719,11 @@ function vpnControlsHtml(d, mkOnclick) {
         : ph.status === 'revoked' ? act('phone/reactivate', 'Вернуть телефон', 'btn-primary') + act('phone/reissue', 'Перевыпустить телефон')
         : act('phone/revoke', 'Отозвать телефон') + act('phone/reissue', 'Перевыпустить телефон')}
     </div>
-    <p class="text-muted" style="font-size:12px;margin-top:8px">Ключи персональные: VPN можно подключить только на одно устройство (ПК + отдельный ключ на телефон).</p>`;
+    <p class="text-muted" style="font-size:12px;margin-top:8px">Ключи персональные: VPN можно подключить только на одно устройство (ПК + отдельный ключ на телефон).</p>
+    <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border,#eee)">
+      <button class="btn btn-ghost btn-sm" style="color:var(--red,#c0392b)" onclick="${mkOnclick('delete')}"><i data-lucide="trash-2"></i> Удалить VPN-доступ</button>
+      <span class="text-muted" style="font-size:12px;margin-left:6px">стирает ключи и коды насовсем; для паузы используй «Отозвать»</span>
+    </div>`;
 }
 
 // ── Внешние VPN-юзеры (вне crew) ──────────────────────────────────────────────
@@ -4742,6 +4746,20 @@ async function openVpnExtModal(vpnName) {
 }
 
 async function vpnExtAction(encName, action) {
+  if (action === 'delete') {
+    const ok = await confirmDialog({
+      title: 'Удалить VPN-доступ насовсем?',
+      message: 'Ключи, коды и порты будут стёрты без возможности восстановления. Для временного отключения используй «Отозвать».',
+      danger: true, confirmText: 'Удалить' });
+    if (!ok) return;
+    try {
+      await api('DELETE', `/vpn/external/${encName}`);
+      toast('✅ VPN-доступ удалён');
+      document.getElementById('modal-vpn-ext').classList.add('hidden');
+      loadVpn();
+    } catch (e) { toastError(e); }
+    return;
+  }
   const dangerous = action === 'revoke' || action === 'phone/revoke';
   if (dangerous) {
     const ok = await confirmDialog({ title: 'Отозвать доступ?', danger: true, confirmText: 'Отозвать' });
@@ -4781,6 +4799,20 @@ async function issueVpn(employeeId) {
 }
 
 async function vpnAction(employeeId, action) {
+  if (action === 'delete') {
+    const ok = await confirmDialog({
+      title: 'Удалить VPN-доступ насовсем?',
+      message: 'Ключи, коды и порты сотрудника будут стёрты без возможности восстановления. Для временного отключения используй «Отозвать». Выдать заново можно будет кнопкой «Выдать VPN».',
+      danger: true, confirmText: 'Удалить' });
+    if (!ok) return;
+    try {
+      await api('DELETE', `/vpn/employee/${employeeId}`);
+      toast('✅ VPN-доступ удалён');
+      await loadEmpVpnSection(employeeId);
+      loadVpn();
+    } catch (e) { toastError(e); }
+    return;
+  }
   const dangerous = action === 'revoke' || action === 'phone/revoke';
   if (dangerous) {
     const ok = await confirmDialog({ title: 'Отозвать доступ?', message: 'Сотрудник потеряет VPN до возврата доступа.', danger: true, confirmText: 'Отозвать' });

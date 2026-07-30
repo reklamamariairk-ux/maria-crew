@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import {
   vpnConfigured, listPanelUsers, addPanelUser, bulkAddPanelUsers, panelUserDetail, panelUserAction, panelApplyStatus,
-  VpnEngineError, VpnEngineUnavailable, VPN_ACTIONS, VpnAction, pickVpnName,
+  deletePanelUser, VpnEngineError, VpnEngineUnavailable, VPN_ACTIONS, VpnAction, pickVpnName,
 } from '../../services/vpn.service';
 import { sendBroadcast } from '../../bot/notifications/sender';
 
@@ -211,6 +211,34 @@ router.post(/^\/employee\/(\d+)\/(.+)$/, async (req: Request, res: Response, nex
     const vpnName = await vpnNameByEmployee(Number(idStr));
     if (!vpnName) { res.status(400).json({ error: 'not_linked' }); return; }
     res.json(await panelUserAction(vpnName, action as VpnAction));
+  } catch (err) { handlePanelError(err, res, next); }
+});
+
+// DELETE /api/vpn/employee/:id — полностью удалить VPN-доступ сотрудника:
+// юзер стирается из панели (порты/ключи/коды), маппинг и дедуп-след уведомлений
+// чистятся. Необратимо; «Выдать VPN» после этого создаст всё заново.
+router.delete('/employee/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const employeeId = Number(req.params.id);
+    if (!Number.isInteger(employeeId)) { res.status(400).json({ error: 'bad_request' }); return; }
+    const vpnName = await vpnNameByEmployee(employeeId);
+    if (!vpnName) { res.status(400).json({ error: 'not_linked' }); return; }
+    await deletePanelUser(vpnName);
+    await pool.query('DELETE FROM employee_vpn WHERE employee_id = $1', [employeeId]);
+    await pool.query('DELETE FROM vpn_conflict_notified WHERE vpn_name = $1', [vpnName]);
+    res.json({ ok: true });
+  } catch (err) { handlePanelError(err, res, next); }
+});
+
+// DELETE /api/vpn/external/:name — то же для внешнего (вне crew) юзера панели.
+router.delete('/external/:name', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const name = String(req.params.name ?? '').trim();
+    if (!name) { res.status(400).json({ error: 'bad_request' }); return; }
+    await deletePanelUser(name);
+    await pool.query('DELETE FROM employee_vpn WHERE vpn_name = $1', [name]);
+    await pool.query('DELETE FROM vpn_conflict_notified WHERE vpn_name = $1', [name]);
+    res.json({ ok: true });
   } catch (err) { handlePanelError(err, res, next); }
 });
 
