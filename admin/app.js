@@ -4059,7 +4059,12 @@ let msgrThreadTimer = null;  // поллинг открытого чата (5с)
 let msgrLastSig = '';        // подпись открытого треда (не перерисовывать без изменений)
 
 function msgrIsBroadcast(r) {
-  return !!(r.targetStoreName || r.targetCount > 1);
+  // Личный чат (вкладка «Чаты»): сотрудник написал сам (initiatedBy) ИЛИ
+  // direct-чат админ→один сотрудник (targetEmployeeId). Всё остальное с
+  // несколькими получателями/точкой — исходящая рассылка.
+  if (r.initiatedByEmployeeId || r.initiatedByName) return false;
+  if (r.targetEmployeeId || r.targetEmployeeName) return false;
+  return !!(r.targetStoreName || r.targetStoreId || r.targetCount > 1);
 }
 function msgrDialogName(r) {
   if (r.initiatedByName) return r.initiatedByName;
@@ -4107,12 +4112,14 @@ function renderDialogs() {
     wrap.innerHTML = `<p class="text-muted" style="padding:14px;font-size:13px;text-align:center">${q ? 'Ничего не нашлось' : (msgrKind === 'chats' ? 'Чатов пока нет. Нажми «Написать сотруднику»' : 'Рассылок пока нет')}</p>`;
     return;
   }
+  const isBcast = msgrKind === 'broadcasts';
   wrap.innerHTML = list.map(r => {
     const name = msgrDialogName(r);
-    const unread = r.unreadCount || 0;
+    // Рассылка — исходящее объявление: индикатор непрочитанных не показываем
+    const unread = isBcast ? 0 : (r.unreadCount || 0);
     const initial = (name.replace(/^не работает\s*/i, '').trim()[0] || '?').toUpperCase();
     return `<button type="button" class="msgr-item${r.id === currentRequestId ? ' active' : ''}${r.status === 'closed' ? ' closed' : ''}" onclick="openDialog(${r.id})">
-      <span class="msgr-ava${msgrIsBroadcast(r) ? ' bcast' : ''}">${msgrIsBroadcast(r) ? '📣' : esc(initial)}</span>
+      <span class="msgr-ava${isBcast ? ' bcast' : ''}">${isBcast ? '📣' : esc(initial)}</span>
       <span class="msgr-item-b">
         <span class="msgr-item-t"><span class="msgr-item-name">${esc(name)}</span><span class="msgr-item-time">${msgrTime(r.lastActivityAt || r.createdAt)}</span></span>
         <span class="msgr-item-prev"><span class="msgr-item-text">${reqPreview(r) || '<span style="opacity:.6">без сообщений</span>'}</span>${unread > 0 ? `<span class="msgr-unread">${unread > 99 ? '99+' : unread}</span>` : ''}</span>

@@ -48,13 +48,15 @@ export async function createEmployeeInitiatedRequest(opts: {
   const text = (opts.text ?? '').trim();
   if (!text && !opts.fileUrl) throw new Error('Нужен текст или файл');
 
-  // Месенджер-логика: если у сотрудника уже есть open thread (где он target
-  // ИЛИ инициатор) — пишем туда вместо создания нового. WhatsApp-стиль.
+  // Мессенджер-логика: продолжаем существующий ЛИЧНЫЙ тред сотрудника, если он
+  // открыт. ЛИЧНЫЙ = он инициатор (initiated_by_employee_id) ИЛИ это direct-чат
+  // админ→он (target_employee_id). НЕ рассылка: раньше матчили по request_targets,
+  // и входящее падало в последнюю рассылку, где сотрудник — 1 из многих получателей
+  // (баг 30.07.2026: «непрочитанное показывается в рассылке, а не в чате»).
   const { rows: existing } = await pool.query<{ id: number }>(
     `SELECT r.id FROM employee_requests r
-     LEFT JOIN request_targets rt ON rt.request_id = r.id AND rt.employee_id = $1
      WHERE r.status <> 'closed'
-       AND (rt.employee_id = $1 OR r.initiated_by_employee_id = $1)
+       AND (r.initiated_by_employee_id = $1 OR r.target_employee_id = $1)
      ORDER BY r.updated_at DESC LIMIT 1`,
     [opts.employeeId]
   );
