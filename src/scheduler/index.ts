@@ -14,6 +14,7 @@ import { alertOwner } from '../bot/notifications/sender';
 import { refreshCatalog, isProxyConfigured } from '../services/oneCCatalog.service';
 import { remindUnansweredRequests } from '../services/request.service';
 import { refreshGis2RatingsJob } from './jobs/refreshGis2Ratings';
+import { vpnConflictNotify } from './jobs/vpnConflictNotify';
 
 /** Обёртка над cron-задачей: ловит ошибки, обновляет статус, шлёт алерт владельцу */
 function safeRun(name: string, fn: () => Promise<void>, alertOnError = false): () => Promise<void> {
@@ -112,6 +113,12 @@ export function initScheduler(bot: Bot<BotContext>): void {
       console.log(`[scheduler] remindUnansweredRequests: sent=${r.sent} skipped=${r.skipped}`);
     }
   }), { timezone: 'Asia/Irkutsk' });
+
+  // ── 3h. «Ай-ай-ай»: попытка активировать VPN-код на втором устройстве ────
+  // Панель помечает конфликт (codes.conflict_at), мы раз в 5 минут шлём
+  // владельцу кода шутливое TG-предупреждение + как восстановить доступ.
+  cron.schedule('*/5 * * * *', safeRun('vpnConflictNotify', () => vpnConflictNotify(sendMessage)),
+    { timezone: 'Asia/Irkutsk' });
 
   // Keep-alive крон'ы (Neon SELECT 1 каждую минуту, Render HTTP-пинг каждые 13 мин)
   // удалены 2026-05-21 после переезда БД на свой Postgres на VPS — локальный pg
