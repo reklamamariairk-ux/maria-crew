@@ -10,6 +10,8 @@ export type AuditAction =
   | 'employee_store_change'
   | 'employee_deactivate'
   | 'employee_activate'
+  | 'employee_fire'
+  | 'employee_restore'
   | 'metrics_save'
   | 'metrics_process'
   | 'store_ratings_save'
