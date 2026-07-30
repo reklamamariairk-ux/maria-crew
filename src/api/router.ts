@@ -7,6 +7,7 @@ import webappRoutes    from './routes/webapp';
 import storeRoutes     from './routes/stores';
 import employeeRoutes  from './routes/employees';
 import metricsRoutes   from './routes/metrics';
+import cakePrizeRoutes from './routes/cakePrizes';
 import coinsRoutes     from './routes/coins';
 import exchangeRoutes  from './routes/exchanges';
 import leaderboardRoutes from './routes/leaderboard';
@@ -78,6 +79,7 @@ router.use('/coins',       coinsRoutes);                          // POST /award
 router.use('/employees',   employeeRoutes);                       // POST /bulk-coins тоже внутри
 router.use('/stores',      denyForCoinAdmin, storeRoutes);
 router.use('/metrics',     denyForCoinAdmin, metricsRoutes);
+router.use('/cake-prizes', denyForCoinAdmin, cakePrizeRoutes); // «Торты месяца» (таб Рейтинги)
 router.use('/exchanges',   denyForCoinAdmin, exchangeRoutes);
 router.use('/leaderboard', denyForCoinAdmin, leaderboardRoutes);
 router.use('/quiz',        denyForCoinAdmin, quizRoutes);

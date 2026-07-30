@@ -251,7 +251,7 @@ export async function notifyTopStore(
  *  строка в канал. Вызывается ТОЛЬКО для свежесозданных призов (created=true) —
  *  идемпотентность обеспечивает awardMonthlyCakes. */
 export async function notifyCakePrizes(
-  winners: Array<{ kind: 'top_store' | 'best_employee'; storeId: number | null; employeeId: number | null; name: string; score: number; created: boolean }>,
+  winners: Array<{ kind: 'top_store' | 'best_employee'; storeId: number | null; employeeId: number | null; name: string; score: number | null; created: boolean }>,
   month: number,
   year: number
 ): Promise<void> {
@@ -263,9 +263,11 @@ export async function notifyCakePrizes(
         [w.employeeId]
       );
       if (rows[0]) {
+        // у добавленных руками баллов месяца может не быть — строка с баллами опциональна
+        const scoreLine = w.score != null && w.score > 0 ? ` · <b>${w.score.toFixed(2)} баллов</b>` : '';
         await send(rows[0].telegramId,
-          `🎂 <b>Ты — лучший сотрудник всей сети!</b>\n\n` +
-          `${monthName(month)} ${year} · <b>${w.score.toFixed(2)} баллов</b>\n\n` +
+          `🎂 <b>Ты — в числе лучших сотрудников сети!</b>\n\n` +
+          `${monthName(month)} ${year}${scoreLine}\n\n` +
           `Тебе полагается <b>торт или пирог «Мария»</b> — забери у своего руководителя. Поздравляем! 🎉`);
       }
     }

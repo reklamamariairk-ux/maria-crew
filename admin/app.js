@@ -1502,6 +1502,50 @@ function renderEmployees() {
 
 function filterEmployees() { renderEmployees(); }
 
+// ── «Торты месяца» (таб Рейтинги) ───────────────────────────────────────────
+async function loadCakePrizes() {
+  const list = document.getElementById('cake-list');
+  const sel = document.getElementById('cake-emp-select');
+  if (!list || !sel) return;
+  const [prizes, emps] = await Promise.all([
+    api('GET', `/cake-prizes?year=${state.year}&month=${state.month}`).catch(() => []),
+    api('GET', '/employees').catch(() => []),
+  ]);
+  const KIND = { top_store: '🏆 Лучшая точка', best_employee: '🎂 Лучший сотрудник' };
+  list.innerHTML = (prizes && prizes.length)
+    ? prizes.map(p => `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+        <span style="font-size:13px">${KIND[p.kind] || p.kind}: <strong>${esc(p.employeeName || p.storeName || '?')}</strong>${p.kind === 'best_employee' && p.storeName ? ` <span class="text-muted">(${esc(p.storeName)})</span>` : ''}</span>
+        <button class="btn btn-ghost btn-sm" title="Убрать запись" onclick="deleteCakePrize(${p.id})"><i data-lucide="x"></i></button>
+      </div>`).join('')
+    : '<span class="text-muted" style="font-size:13px">Пока никому. Торты назначатся при «Обработать месяц» или добавь вручную.</span>';
+  const awarded = new Set((prizes || []).filter(p => p.employeeId).map(p => p.employeeId));
+  sel.innerHTML = '<option value="">— Выбери сотрудника —</option>' +
+    (emps || []).filter(e => !awarded.has(e.id))
+      .map(e => `<option value="${e.id}">${esc(e.name)}${e.storeName ? ' · ' + esc(e.storeName) : ''}</option>`).join('');
+  renderIcons();
+}
+
+async function addCakePrize() {
+  const sel = document.getElementById('cake-emp-select');
+  const employeeId = parseInt(sel.value, 10);
+  if (!employeeId) { toast('⚠️ Выбери сотрудника'); return; }
+  try {
+    await api('POST', '/cake-prizes/employee', { year: state.year, month: state.month, employeeId });
+    toast('🎂 Торт назначен, сотруднику ушло поздравление');
+    loadCakePrizes();
+  } catch (e) { toastError(e); }
+}
+
+async function deleteCakePrize(id) {
+  const ok = await confirmDialog({ title: 'Убрать торт?', message: 'Запись удалится. Если поздравление уже ушло сотруднику, оно не отзовётся.', danger: true, confirmText: 'Убрать' });
+  if (!ok) return;
+  try {
+    await api('DELETE', `/cake-prizes/${id}`);
+    toast('Убрано');
+    loadCakePrizes();
+  } catch (e) { toastError(e); }
+}
+
 // ── Увольнение / вкладка «Уволенные» ────────────────────────────────────────
 const FIRE_VPN_TOAST = {
   ok: 'VPN отозван',
@@ -1733,6 +1777,7 @@ async function toggleEmployee(id, isActive) {
 // ── Рейтинги ─────────────────────────────────────────────────────────────────
 async function loadLeaderboard() {
   document.getElementById('lb-period-label').textContent = `${MONTH_NAMES[state.month]} ${state.year}`;
+  loadCakePrizes(); // секция «Торты месяца» — параллельно, не блокирует рейтинг
 
   // Если точка выбрана — фильтруем; иначе показываем сотрудников всех точек
   const empUrl = state.storeId
