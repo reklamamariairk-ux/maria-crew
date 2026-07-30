@@ -64,6 +64,22 @@ router.get('/balance/:employeeId', async (req: Request, res: Response, next: Nex
   } catch (err) { next(err); }
 });
 
+// GET /api/coins/recent?limit=20 — лента последних операций по ВСЕМ сотрудникам
+// (вкладка Монеты до выбора конкретного человека).
+router.get('/recent', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const limit = Math.min(parseInt(String(req.query.limit ?? '20'), 10) || 20, 100);
+    const { rows } = await pool.query(
+      `SELECT ct.id, ct.amount, ct.reason, ct.note, ct.created_at AS "createdAt",
+              e.id AS "employeeId", e.name AS "employeeName", s.name AS "storeName"
+       FROM coin_transactions ct
+       JOIN employees e ON e.id = ct.employee_id
+       LEFT JOIN stores s ON s.id = e.store_id
+       ORDER BY ct.id DESC LIMIT $1`, [limit]);
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
 // GET /api/coins/history/:employeeId
 router.get('/history/:employeeId', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {

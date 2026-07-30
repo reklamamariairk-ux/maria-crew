@@ -994,8 +994,6 @@ async function loadCoinEmployees() {
     return a.isActive ? -1 : 1;
   });
 
-  document.getElementById('coins-history-tbody').innerHTML =
-    '<tr><td colspan="4" class="empty">Выберите сотрудника</td></tr>';
   document.getElementById('coins-balance-display').textContent = '';
 
   const sel = document.getElementById('coin-employee');
@@ -1008,12 +1006,66 @@ async function loadCoinEmployees() {
     sel.appendChild(opt);
   });
   sel.onchange = loadCoinHistory;
+  loadCoinRecent(); // пока сотрудник не выбран — живая лента последних операций
 }
+
+// Лента последних операций по всем сотрудникам (видна сразу при входе на вкладку)
+async function loadCoinRecent() {
+  const tbody = document.getElementById('coins-history-tbody');
+  tbody.innerHTML = skeletonRows(4, 5);
+  const rows = await api('GET', '/coins/recent?limit=25').catch(() => []);
+  if (!rows || rows.length === 0) {
+    tbody.innerHTML = emptyRow(4, 'coins', 'Операций ещё не было');
+    renderIcons(); return;
+  }
+  tbody.innerHTML = rows.map(t => `<tr>
+    <td style="color:var(--muted);font-size:12px">${formatDate(t.createdAt)}</td>
+    <td style="color:${t.amount > 0 ? 'var(--green)' : 'var(--red)'};font-weight:600">${t.amount > 0 ? '+' : ''}${t.amount}</td>
+    <td style="font-size:13px"><strong style="cursor:pointer;color:var(--pink)" onclick="coinComboPick(${t.employeeId})">${esc(t.employeeName)}</strong> · ${COIN_LABELS[t.reason] ?? t.reason}</td>
+    <td style="color:var(--text-2);font-size:12px">${esc(t.note ?? '')}</td>
+  </tr>`).join('');
+  renderIcons();
+}
+
+// ── Комбобокс сотрудника (Монеты): один инпут вместо пары поиск+селект ───────
+function coinComboFilter() {
+  const input = document.getElementById('coin-employee-combo');
+  const list = document.getElementById('coin-employee-list');
+  const q = input.value.trim().toLowerCase();
+  const items = (state.employees || [])
+    .filter(e => !q || e.name.toLowerCase().includes(q) || (e.storeName ?? '').toLowerCase().includes(q))
+    .slice(0, 12);
+  if (!items.length) { list.classList.add('hidden'); return; }
+  list.innerHTML = items.map(e =>
+    `<button type="button" class="combo-item" onclick="coinComboPick(${e.id})">
+       ${esc(e.name)}<span class="text-muted" style="font-size:11.5px"> · ${esc(e.storeName ?? '')}${e.isActive ? '' : ' · скрыт'}</span>
+     </button>`).join('');
+  list.classList.remove('hidden');
+}
+
+function coinComboPick(id) {
+  const e = (state.employees || []).find(x => x.id === id);
+  const sel = document.getElementById('coin-employee');
+  const input = document.getElementById('coin-employee-combo');
+  const list = document.getElementById('coin-employee-list');
+  if (!e || !sel) return;
+  sel.value = String(id);
+  if (input) input.value = e.name;
+  if (list) list.classList.add('hidden');
+  loadCoinHistory();
+}
+
+document.addEventListener('click', (ev) => {
+  const list = document.getElementById('coin-employee-list');
+  if (list && !ev.target.closest('#coin-employee-combo') && !ev.target.closest('#coin-employee-list')) {
+    list.classList.add('hidden');
+  }
+});
 
 async function loadCoinHistory() {
   const id = document.getElementById('coin-employee').value;
   const balanceEl = document.getElementById('coins-balance-display');
-  if (!id) { balanceEl.textContent = ''; return; }
+  if (!id) { balanceEl.textContent = ''; loadCoinRecent(); return; }
 
   const tbody = document.getElementById('coins-history-tbody');
   tbody.innerHTML = skeletonRows(4, 5);
@@ -1502,6 +1554,31 @@ function renderEmployees() {
 
 function filterEmployees() { renderEmployees(); }
 
+// ── Плашка готовности месяца (таб Рейтинги) ─────────────────────────────────
+async function loadMonthStatus() {
+  const box = document.getElementById('month-status');
+  if (!box) return;
+  const s = await api('GET', `/metrics/month-status?year=${state.year}&month=${state.month}`).catch(() => null);
+  if (!s) { box.classList.add('hidden'); return; }
+  const chip = (ok, textOk, textNo) => ok
+    ? `<span class="badge" style="background:#e8f7ee;color:#1d7a3f;font-weight:700">${textOk}</span>`
+    : `<span class="badge" style="background:#fdf1e3;color:#a05e0b;font-weight:700">${textNo}</span>`;
+  const processedDate = s.processedAt ? new Date(s.processedAt) : null;
+  const processedLabel = processedDate
+    ? `Обработан ${processedDate.toLocaleDateString('ru-RU')} ${processedDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
+    : 'Не обработан';
+  box.innerHTML = `
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <strong style="font-size:13.5px">${MONTH_NAMES[state.month]} ${state.year}:</strong>
+      ${chip(s.employeesWithMetrics > 0, `Метрики: ${s.employeesWithMetrics} сотрудников`, 'Метрики сотрудников не заполнены')}
+      ${chip(s.storesWithRatings >= s.storesTotal, `Рейтинги точек: ${s.storesWithRatings}/${s.storesTotal}`, `Рейтинги точек: ${s.storesWithRatings}/${s.storesTotal}`)}
+      ${chip(!!s.processedAt, processedLabel, processedLabel)}
+      ${s.cakePrizes > 0 ? `<span class="badge" style="background:#fdeef3;color:#a02a52;font-weight:700">Тортов: ${s.cakePrizes}</span>` : ''}
+      <span class="text-muted" style="font-size:12px">Порядок: заполнить Метрики → проверить баллы здесь → «Обработать месяц» (повторное нажатие наград не задваивает)</span>
+    </div>`;
+  box.classList.remove('hidden');
+}
+
 // ── «Торты месяца» (таб Рейтинги) ───────────────────────────────────────────
 async function loadCakePrizes() {
   const list = document.getElementById('cake-list');
@@ -1557,6 +1634,62 @@ const RESTORE_VPN_TOAST = {
   no_vpn: 'VPN не был выдан',
   unavailable: '⚠️ VPN-панель недоступна: реактивируй ключ вручную позже',
 };
+
+// ── Ctrl+K: глобальный поиск сотрудника из любой вкладки ────────────────────
+let kSearchEmps = null;
+function openKSearch() {
+  let ov = document.getElementById('ksearch-ov');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'ksearch-ov';
+    ov.innerHTML = `<div id="ksearch-box">
+      <input type="text" id="ksearch-input" placeholder="Найти сотрудника… (Esc — закрыть)" autocomplete="off">
+      <div id="ksearch-list"></div>
+    </div>`;
+    document.body.appendChild(ov);
+    ov.addEventListener('click', (e) => { if (e.target === ov) closeKSearch(); });
+    document.getElementById('ksearch-input').addEventListener('input', renderKSearch);
+    document.getElementById('ksearch-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { const first = document.querySelector('#ksearch-list .combo-item'); if (first) first.click(); }
+      if (e.key === 'Escape') closeKSearch();
+    });
+  }
+  ov.classList.remove('hidden');
+  const input = document.getElementById('ksearch-input');
+  input.value = ''; input.focus();
+  if (!kSearchEmps) api('GET', '/employees?fired=all').then(l => { kSearchEmps = l || []; }).catch(() => { kSearchEmps = []; });
+  renderKSearch();
+}
+function closeKSearch() { const ov = document.getElementById('ksearch-ov'); if (ov) ov.classList.add('hidden'); }
+function renderKSearch() {
+  const q = (document.getElementById('ksearch-input')?.value ?? '').trim().toLowerCase();
+  const list = document.getElementById('ksearch-list');
+  const items = (kSearchEmps || [])
+    .filter(e => !q || e.name.toLowerCase().includes(q) || (e.storeName ?? '').toLowerCase().includes(q) || (e.telegramUsername ?? '').toLowerCase().includes(q))
+    .slice(0, 10);
+  list.innerHTML = items.length
+    ? items.map(e => `<button type="button" class="combo-item" onclick="closeKSearch(); showEmployeeModal(${e.id})">
+        ${esc(e.name)}<span class="text-muted" style="font-size:11.5px"> · ${esc(e.storeName ?? '—')}${e.firedAt ? ' · уволен' : ''}</span>
+      </button>`).join('')
+    : `<div class="text-muted" style="padding:10px;font-size:13px">${q ? 'Никого не нашлось' : 'Начни вводить имя, точку или @username'}</div>`;
+}
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openKSearch(); }
+});
+
+// Быстрое начисление из модалки сотрудника (reason=manual, сумма ±)
+async function quickCoinAward(employeeId, btn) {
+  const amount = parseInt(document.getElementById('emp-quick-amount')?.value, 10);
+  const note = (document.getElementById('emp-quick-note')?.value ?? '').trim();
+  if (isNaN(amount) || amount === 0) { toast('⚠️ Укажи сумму (можно с минусом)'); return; }
+  if (btn) btn.disabled = true;
+  try {
+    await api('POST', '/coins/award', { employeeId, reason: 'manual', amount, note: note || undefined });
+    toast(amount > 0 ? `✅ +${amount} монет` : `✅ ${amount} монет`);
+    showEmployeeModal(employeeId); // перерисовать с новым балансом и историей
+  } catch (e) { toastError(e); }
+  finally { if (btn) btn.disabled = false; }
+}
 
 async function fireEmployeeAct(id, name) {
   if (!confirm(`Уволить «${name}»? VPN будет отозван сразу, вход в приложение закроется. Вернуть можно во вкладке «Уволенные».`)) return;
@@ -1778,6 +1911,7 @@ async function toggleEmployee(id, isActive) {
 async function loadLeaderboard() {
   document.getElementById('lb-period-label').textContent = `${MONTH_NAMES[state.month]} ${state.year}`;
   loadCakePrizes(); // секция «Торты месяца» — параллельно, не блокирует рейтинг
+  loadMonthStatus(); // плашка готовности месяца — тоже параллельно
 
   // Если точка выбрана — фильтруем; иначе показываем сотрудников всех точек
   const empUrl = state.storeId
@@ -1805,6 +1939,13 @@ async function loadLeaderboard() {
 
   if (!empData || empData.length === 0) {
     empTbody.innerHTML = emptyRow(colCount, 'trophy', 'Нет данных за этот период');
+  } else if (empData.every(e => e.mvpScore === null || e.mvpScore === undefined)) {
+    // Метрики месяца ещё не вводили — алфавитный список с пустыми баллами только
+    // путает. Честная заглушка с дорогой к действию.
+    empTbody.innerHTML = `<tr><td colspan="${colCount}" class="empty" style="padding:26px 12px;text-align:center">
+      <div style="font-size:14px;margin-bottom:8px">Баллы за ${MONTH_NAMES[state.month]} ещё не рассчитаны: метрики не заполнены.</div>
+      <button class="btn btn-primary btn-sm" onclick="switchTab('metrics')"><i data-lucide="bar-chart-3"></i> Заполнить метрики</button>
+    </td></tr>`;
   } else {
     // Нумерация рангом 🥇🥈🥉 — только когда выбрана конкретная точка.
     // Когда показываем все точки скопом — рангу неоткуда взяться (он пер-точка), просто #.
@@ -3797,7 +3938,7 @@ async function loadDashboard() {
   const periodEl = document.getElementById('dash-perf-period');
   if (periodEl) {
     const irkNow = new Date(Date.now() + 8 * 60 * 60 * 1000);
-    periodEl.textContent = `· ${MONTH_NAMES[irkNow.getUTCMonth() + 1]} ${irkNow.getUTCFullYear()}`;
+    periodEl.textContent = `· ${MONTH_NAMES[irkNow.getUTCMonth() + 1]} ${irkNow.getUTCFullYear()} (текущий)`;
   }
   if (data.topPerformers && data.topPerformers.length > 0) {
     perfEl.innerHTML = data.topPerformers.map((p, i) => {
@@ -4472,6 +4613,17 @@ async function showEmployeeModal(id) {
         <div style="font-size:13px">${sourceBadges(summary)}</div>
       </div>
     </div>
+
+    ${(state.role === 'superadmin' || state.role === 'coin_admin' || state.role === 'editor') ? `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px;padding:12px;background:var(--pink-50,#fdeef3);border-radius:8px">
+      <span style="font-size:13px;font-weight:700;flex:none">Быстрые действия:</span>
+      ${(state.role === 'superadmin' || state.role === 'coin_admin') ? `
+        <input type="number" id="emp-quick-amount" placeholder="±монеты" style="width:100px">
+        <input type="text" id="emp-quick-note" placeholder="за что (примечание)" style="flex:1;min-width:130px">
+        <button class="btn btn-primary btn-sm" onclick="quickCoinAward(${summary.id}, this)"><i data-lucide="coins"></i> Начислить</button>` : ''}
+      ${state.role !== 'coin_admin' ? `
+        <button class="btn btn-ghost btn-sm" style="color:var(--red,#c0392b)" onclick="document.getElementById('modal-employee').classList.add('hidden'); fireEmployeeAct(${summary.id}, '${esc(summary.name).replace(/'/g, '&#39;')}')"><i data-lucide="briefcase"></i> Уволить</button>` : ''}
+    </div>` : ''}
 
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;padding:12px;background:var(--bg-2,#f8f8f8);border-radius:8px">
       <i data-lucide="phone" style="width:16px;height:16px;color:var(--text-2)"></i>

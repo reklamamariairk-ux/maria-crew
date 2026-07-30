@@ -81,36 +81,42 @@
     </div>
 
     <nav class="sidebar-nav">
+      <div class="nav-section">Каждый день</div>
       <button class="nav-item active" data-tab="dashboard" onclick="switchTab('dashboard')">
         <i data-lucide="layout-dashboard"></i> Дашборд
-      </button>
-      <button class="nav-item" data-tab="metrics" onclick="switchTab('metrics')">
-        <i data-lucide="bar-chart-3"></i> Метрики
-      </button>
-      <button class="nav-item" data-tab="coins" onclick="switchTab('coins')">
-        <i data-lucide="coins"></i> Монеты
-      </button>
-      <button class="nav-item" data-tab="cards" onclick="switchTab('cards')">
-        <i data-lucide="layers"></i> Карточки
       </button>
       <button class="nav-item" data-tab="exchanges" onclick="switchTab('exchanges')">
         <i data-lucide="shopping-bag"></i> Заявки
         <span id="nav-pending-badge" class="nav-badge hidden">0</span>
       </button>
+      <button class="nav-item" data-tab="coins" onclick="switchTab('coins')">
+        <i data-lucide="coins"></i> Монеты
+      </button>
+      <button class="nav-item" data-tab="requests" onclick="switchTab('requests')">
+        <i data-lucide="message-square"></i> Мессенджер
+        <span id="nav-requests-badge" class="nav-badge hidden">0</span>
+      </button>
+
+      <div class="nav-section">Команда</div>
       <button class="nav-item" data-tab="employees" onclick="switchTab('employees')">
         <i data-lucide="users"></i> Сотрудники
       </button>
       <button class="nav-item" data-tab="fired" onclick="switchTab('fired')">
         <i data-lucide="user-x"></i> Уволенные
       </button>
+      <button class="nav-item role-superadmin-only" data-tab="vpn" onclick="switchTab('vpn')">
+        <i data-lucide="globe-lock"></i> VPN
+      </button>
+
+      <div class="nav-section">Мотивация</div>
+      <button class="nav-item" data-tab="metrics" onclick="switchTab('metrics')">
+        <i data-lucide="bar-chart-3"></i> Метрики
+      </button>
       <button class="nav-item" data-tab="leaderboard" onclick="switchTab('leaderboard')">
         <i data-lucide="trophy"></i> Рейтинги
       </button>
-      <button class="nav-item" data-tab="quiz" onclick="switchTab('quiz')">
-        <i data-lucide="brain"></i> Квиз
-      </button>
-      <button class="nav-item" data-tab="storesAdmin" onclick="switchTab('storesAdmin')">
-        <i data-lucide="store"></i> Точки
+      <button class="nav-item" data-tab="cards" onclick="switchTab('cards')">
+        <i data-lucide="layers"></i> Карточки
       </button>
       <button class="nav-item" data-tab="prizes" onclick="switchTab('prizes')">
         <i data-lucide="gift"></i> Призы
@@ -121,21 +127,22 @@
       <button class="nav-item" data-tab="heroes" onclick="switchTab('heroes')">
         <i data-lucide="image"></i> Герои
       </button>
+      <button class="nav-item" data-tab="quiz" onclick="switchTab('quiz')">
+        <i data-lucide="brain"></i> Квиз
+      </button>
+
+      <div class="nav-section">Система</div>
+      <button class="nav-item" data-tab="storesAdmin" onclick="switchTab('storesAdmin')">
+        <i data-lucide="store"></i> Точки
+      </button>
       <button class="nav-item" data-tab="audit" onclick="switchTab('audit')">
         <i data-lucide="file-clock"></i> Журнал
-      </button>
-      <button class="nav-item" data-tab="requests" onclick="switchTab('requests')">
-        <i data-lucide="message-square"></i> Мессенджер
-        <span id="nav-requests-badge" class="nav-badge hidden">0</span>
       </button>
       <button class="nav-item role-superadmin-only" data-tab="settings" onclick="switchTab('settings')">
         <i data-lucide="settings"></i> Настройки
       </button>
       <button class="nav-item role-superadmin-only" data-tab="adminUsers" onclick="switchTab('adminUsers')">
         <i data-lucide="shield"></i> Доступы
-      </button>
-      <button class="nav-item role-superadmin-only" data-tab="vpn" onclick="switchTab('vpn')">
-        <i data-lucide="globe-lock"></i> VPN
       </button>
     </nav>
 
@@ -187,13 +194,13 @@
 
       <div class="dashboard-grid">
         <div class="card card-pad">
-          <p class="section-title"><i data-lucide="trophy" style="width:14px;height:14px"></i> Топ-3 лучших сотрудников месяца</p>
+          <p class="section-title"><i data-lucide="trophy" style="width:14px;height:14px"></i> Топ-3 по итогам <span id="dash-top3-period" class="text-muted" style="font-size:12px;font-weight:400"></span></p>
           <div id="dash-top3">
             <p class="text-muted">Нет данных за текущий месяц</p>
           </div>
         </div>
         <div class="card card-pad">
-          <p class="section-title"><i data-lucide="zap" style="width:14px;height:14px"></i> Топ-10 за месяц <span id="dash-perf-period" class="text-muted" style="font-size:12px;font-weight:400"></span></p>
+          <p class="section-title"><i data-lucide="zap" style="width:14px;height:14px"></i> Топ-10 по монетам <span id="dash-perf-period" class="text-muted" style="font-size:12px;font-weight:400"></span></p>
           <p class="text-muted" style="font-size:12px;line-height:1.5;margin:0 0 10px">
             Сумма монет за месяц по сотруднику. Только начисления, списания и обмены не учитываются.<br>
             Категории: <span style="color:#6366F1;font-weight:600">🧠 квиз</span> · <span style="color:#10B981;font-weight:600">✅ чек-лист 100%</span> · <span style="color:#F59E0B;font-weight:600">🔥 челленджи</span> · <span style="color:var(--pink);font-weight:600">⭐ прочее</span> (отзывы, наставничество, идеи, выполнение плана и т.п.).
@@ -390,8 +397,12 @@
         <p class="section-title">Начислить или списать</p>
         <div class="form-row">
           <label>Сотрудник
-            <input type="text" id="coin-employee-search" class="input" placeholder="🔍 Поиск…" oninput="filterSelectOptions('coin-employee', this.value)" style="width:240px;margin-bottom:4px;display:block">
-            <select id="coin-employee" style="width:240px">
+            <span style="position:relative;display:inline-block">
+              <input type="text" id="coin-employee-combo" class="input" placeholder="Начни вводить имя или точку…" autocomplete="off"
+                oninput="coinComboFilter()" onfocus="coinComboFilter()" style="width:240px;display:block">
+              <span id="coin-employee-list" class="combo-list hidden"></span>
+            </span>
+            <select id="coin-employee" class="hidden" aria-hidden="true">
               <option value="">— выбери —</option>
             </select>
           </label>
@@ -672,6 +683,8 @@
           <button class="btn btn-ghost" onclick="exportLeaderboardCsv()"><i data-lucide="download"></i> CSV</button>
         </div>
       </div>
+
+      <div id="month-status" class="card card-pad hidden" style="margin-bottom:16px;font-size:13px"></div>
 
       <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:18px;flex-wrap:wrap">
         <div>

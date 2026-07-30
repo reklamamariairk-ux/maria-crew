@@ -155,6 +155,62 @@ nav.sidebar-nav {
   padding: 6px 12px;
   display: flex; flex-direction: column; gap: 2px;
 }
+.nav-section {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase;
+  color: var(--muted, #9aa0ab); padding: 12px 12px 4px;
+  user-select: none;
+}
+.nav-section:first-child { padding-top: 4px; }
+
+/* Комбобокс сотрудника (Монеты, Ctrl+K): выпадающий список под инпутом */
+.combo-list {
+  position: absolute; left: 0; top: calc(100% + 4px); z-index: 60;
+  min-width: 260px; max-height: 300px; overflow-y: auto;
+  background: var(--surface, #fff); border: 1px solid var(--border, #e3e5ea);
+  border-radius: 10px; box-shadow: 0 8px 26px rgba(20, 20, 40, .14);
+  display: flex; flex-direction: column; padding: 4px;
+}
+.combo-item {
+  display: block; width: 100%; text-align: left;
+  background: transparent; border: none; cursor: pointer;
+  padding: 8px 10px; border-radius: 7px; font-size: 13px;
+}
+.combo-item:hover, .combo-item.active { background: var(--pink-50, #fdeef3); }
+
+/* Ctrl+K: глобальный поиск сотрудника */
+#ksearch-ov {
+  position: fixed; inset: 0; z-index: 400;
+  background: rgba(20, 16, 24, .45);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 12vh;
+}
+#ksearch-ov.hidden { display: none; }
+#ksearch-box {
+  width: min(480px, 92vw);
+  background: var(--surface, #fff); border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(20, 20, 40, .3);
+  padding: 10px;
+}
+#ksearch-input {
+  width: 100%; box-sizing: border-box; font-size: 15px;
+  padding: 11px 13px; border: 1px solid var(--border, #e3e5ea); border-radius: 9px;
+  margin-bottom: 6px;
+}
+#ksearch-list { display: flex; flex-direction: column; max-height: 46vh; overflow-y: auto; }
+
+/* Мобильный список сотрудников: таблица превращается в карточки */
+@media (max-width: 640px) {
+  #tab-employees .table-wrap table, #tab-employees table { display: block; }
+  #tab-employees table thead { display: none; }
+  #tab-employees table tbody { display: flex; flex-direction: column; gap: 10px; }
+  #tab-employees table tbody tr {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+    border: 1px solid var(--border, #e3e5ea); border-radius: 12px;
+    padding: 10px 12px; background: var(--surface, #fff);
+  }
+  #tab-employees table tbody tr > td { display: flex; align-items: center; border: none; padding: 0; }
+  #tab-employees table tbody tr > td.col-hide-sm { display: none; }
+}
 .nav-item {
   display: flex; align-items: center; gap: 11px;
   padding: 9px 12px;

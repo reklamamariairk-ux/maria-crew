@@ -119,6 +119,37 @@ router.post('/batch', async (req: Request, res: Response, next: NextFunction): P
   } catch (err) { next(err); }
 });
 
+// GET /api/metrics/month-status?year=&month= — сводка готовности месяца для
+// плашки в табе Рейтинги: сколько точек с метриками, обработан ли месяц, торты.
+router.get('/month-status', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const year = parseInt(String(req.query.year), 10);
+    const month = parseInt(String(req.query.month), 10);
+    if (!year || !month) { res.status(400).json({ error: 'year, month обязательны' }); return; }
+    const [stores, ratings, emps, processed, cakes] = await Promise.all([
+      pool.query<{ n: string }>(`SELECT COUNT(*)::text n FROM stores WHERE is_active = true`),
+      pool.query<{ n: string }>(
+        `SELECT COUNT(*)::text n FROM store_monthly_stats
+         WHERE year = $1 AND month = $2 AND avg_rating_score IS NOT NULL`, [year, month]),
+      pool.query<{ n: string; scored: string }>(
+        `SELECT COUNT(*)::text n, COUNT(mvp_score)::text scored FROM monthly_metrics
+         WHERE year = $1 AND month = $2`, [year, month]),
+      pool.query<{ at: string | null }>(
+        `SELECT MAX(processed_at)::text at FROM monthly_metrics WHERE year = $1 AND month = $2`, [year, month]),
+      pool.query<{ n: string }>(
+        `SELECT COUNT(*)::text n FROM monthly_prizes WHERE year = $1 AND month = $2`, [year, month]),
+    ]);
+    res.json({
+      storesTotal: parseInt(stores.rows[0].n, 10),
+      storesWithRatings: parseInt(ratings.rows[0].n, 10),
+      employeesWithMetrics: parseInt(emps.rows[0].n, 10),
+      employeesScored: parseInt(emps.rows[0].scored, 10),
+      processedAt: processed.rows[0].at,
+      cakePrizes: parseInt(cakes.rows[0].n, 10),
+    });
+  } catch (err) { next(err); }
+});
+
 // PUT /api/metrics/:id
 router.put('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
