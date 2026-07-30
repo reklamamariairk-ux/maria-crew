@@ -347,7 +347,9 @@ async function showApp() {
   updatePeriodLabels();
   renderIcons();
   await Promise.all([loadStores(), loadCloudinaryConfig(), loadActiveChallengesForCoins()]);
-  switchTab('dashboard');
+  // После обновления страницы возвращаемся на вкладку, где был админ
+  // (switchTab сам откатит на dashboard, если вкладка роли недоступна)
+  switchTab(localStorage.getItem('mc_last_tab') || 'dashboard');
 
   // Раз в 2 минуты подтягиваем счётчики ожидающих заявок + unread-запросов
   const refreshBadges = async () => {
@@ -479,10 +481,14 @@ function switchTab(tab) {
     tab = 'dashboard';
   }
 
+  // Страховка от протухшего сохранённого имени вкладки (переименовали/удалили)
+  if (!document.getElementById(`tab-${tab}`)) tab = 'dashboard';
+
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
   document.getElementById(`tab-${tab}`).classList.remove('hidden');
   state.currentTab = tab;
+  localStorage.setItem('mc_last_tab', tab); // выжить при F5: showApp() восстановит
   closeSidebar();
   // Сбрасываем состояние аналитики при переходе со вкладки квиза
   if (tab !== 'quiz') {
