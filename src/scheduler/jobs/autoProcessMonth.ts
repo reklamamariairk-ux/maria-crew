@@ -1,7 +1,8 @@
 import { pool } from '../../db/pool';
 import { processMonthAllStores } from '../../services/rating.service';
-import { notifyMvp, notifyTopStore, publishMonthResults } from '../../bot/notifications/sender';
+import { notifyMvp, notifyTopStore, publishMonthResults, notifyCakePrizes } from '../../bot/notifications/sender';
 import { logAudit } from '../../services/audit.service';
+import { awardMonthlyCakes } from '../../services/cakePrize.service';
 
 /**
  * 1-го числа каждого месяца в 03:00 Иркутска: автоматически обрабатывает прошедший месяц.
@@ -42,6 +43,8 @@ export async function autoProcessMonth(): Promise<void> {
     if (result.topStore) tasks.push(notifyTopStore(result.storeId, storeName, month, year, result.storeScore));
   }
   tasks.push(publishMonthResults(results, month, year));
+  // «Торт месяца»: топ-точке и лучшему сотруднику сети (идемпотентно внутри)
+  tasks.push(awardMonthlyCakes(year, month).then(w => notifyCakePrizes(w, month, year)));
 
   const outcomes = await Promise.allSettled(tasks);
   const failed = outcomes.filter(r => r.status === 'rejected').length;

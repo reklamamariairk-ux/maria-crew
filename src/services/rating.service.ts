@@ -20,6 +20,16 @@ import type {
  * Используется для тайного покупателя и чек-листа. Тайного можно временно
  * отключить через mystery_shopper_weight=0 (тогда штрафа тоже не будет).
  */
+/**
+ * pg возвращает NUMERIC-колонки СТРОКАМИ («4.60») — приводим к числу на границе
+ * чтения. Без этого typeof-фильтры (numAvg/safe) молча превращали строки в 0/null:
+ * именно так рейтинг точек за июнь-2026 подвёлся нулями с хаотичными рангами.
+ */
+export function toNum(v: unknown): number | null {
+  const n = typeof v === 'string' && v.trim() !== '' ? parseFloat(v) : v;
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
+}
+
 function thresholdScore(value: number | null, threshold: number, weight: number): number {
   if (value === null || weight === 0) return 0;
   if (value >= threshold) {
@@ -103,10 +113,10 @@ export function calcStoreScore(s: {
   avgChecklist: number | null;
   revenuePercent: number | null;
 }): number {
-  // Безопасный приёмник: null/NaN/Infinity → 0. Иначе одно NaN в исходных
-  // данных распространяется через арифметику и весь Store Score становится NaN.
-  const safe = (v: number | null | undefined): number =>
-    typeof v === 'number' && Number.isFinite(v) ? v : 0;
+  // Безопасный приёмник: null/NaN/Infinity → 0, числовые СТРОКИ из pg — парсим.
+  // Иначе одно NaN в исходных данных распространяется через арифметику и весь
+  // Store Score становится NaN, а строка «4.60» молча превращалась в 0.
+  const safe = (v: number | string | null | undefined): number => toNum(v) ?? 0;
   const mystery   = (safe(s.avgMysteryShoper) / 100) * 30;
   const rating    = (safe(s.avgRatingScore) / 5) * 25;
   const checklist = (safe(s.avgChecklist) / 100) * 25;
@@ -160,7 +170,17 @@ async function getStoreMetrics(
        AND e.is_active = true`,
     [storeId, year, month]
   );
-  return rows;
+  // NUMERIC → число на границе: дальше по коду метрики сравниваются/усредняются
+  // как числа (calcMvpScore, calcCardAwards, numAvg)
+  return rows.map(r => ({
+    ...r,
+    mysteryShopperScore: toNum(r.mysteryShopperScore),
+    checklistPercent:    toNum(r.checklistPercent),
+    revenuePercent:      toNum(r.revenuePercent),
+    attestationPercent:  toNum(r.attestationPercent),
+    mvpScore:            toNum(r.mvpScore),
+    reviewsCount:        toNum(r.reviewsCount) ?? 0,
+  }));
 }
 
 /**
@@ -353,8 +373,9 @@ export async function recomputeMonthScores(
          FROM store_monthly_stats WHERE store_id = $1 AND year = $2 AND month = $3`,
         [store.id, year, month]
       );
-      avgRatingScoreVal = existing[0]?.avgRatingScore ?? null;
-      revenuePercentVal = existing[0]?.revenuePercent ?? null;
+      // NUMERIC из БД — строки; без toNum calcStoreScore обнулял их (баг июня-2026)
+      avgRatingScoreVal = toNum(existing[0]?.avgRatingScore);
+      revenuePercentVal = toNum(existing[0]?.revenuePercent);
     }
     const avgMystery = numAvg(metrics.map(m => m.mysteryShopperScore));
     const avgChecklist = numAvg(metrics.map(m => m.checklistPercent));
@@ -527,10 +548,10 @@ export async function getStoreLeaderboard(
 
 // ─── Утилиты ─────────────────────────────────────────────────────────────────
 
-function numAvg(values: (number | null)[]): number | null {
+function numAvg(values: (number | string | null)[]): number | null {
   // Отсеваем не только null, но и NaN/Infinity — иначе средняя «заразится»
-  // и попадёт в БД как NaN, после чего всё дерево расчётов ломается.
-  const valid = values.filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+  // и попадёт в БД как NaN. Числовые строки из pg парсим, а не выбрасываем.
+  const valid = values.map(toNum).filter((v): v is number => v !== null);
   if (valid.length === 0) return null;
   return valid.reduce((s, v) => s + v, 0) / valid.length;
 }

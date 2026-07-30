@@ -247,6 +247,53 @@ export async function notifyTopStore(
   await Promise.allSettled(rows.map(r => send(r.telegramId, text)));
 }
 
+/** «Торт месяца»: лички победителям (сотрудник сети / команда топ-точки) +
+ *  строка в канал. Вызывается ТОЛЬКО для свежесозданных призов (created=true) —
+ *  идемпотентность обеспечивает awardMonthlyCakes. */
+export async function notifyCakePrizes(
+  winners: Array<{ kind: 'top_store' | 'best_employee'; storeId: number | null; employeeId: number | null; name: string; score: number; created: boolean }>,
+  month: number,
+  year: number
+): Promise<void> {
+  const fresh = winners.filter(w => w.created);
+  for (const w of fresh) {
+    if (w.kind === 'best_employee' && w.employeeId) {
+      const { rows } = await pool.query<{ telegramId: bigint }>(
+        `SELECT telegram_id AS "telegramId" FROM employees WHERE id = $1 AND telegram_id IS NOT NULL`,
+        [w.employeeId]
+      );
+      if (rows[0]) {
+        await send(rows[0].telegramId,
+          `🎂 <b>Ты — лучший сотрудник всей сети!</b>\n\n` +
+          `${monthName(month)} ${year} · <b>${w.score.toFixed(2)} баллов</b>\n\n` +
+          `Тебе полагается <b>торт или пирог «Мария»</b> — забери у своего руководителя. Поздравляем! 🎉`);
+      }
+    }
+    if (w.kind === 'top_store' && w.storeId) {
+      const { rows } = await pool.query<{ telegramId: bigint }>(
+        `SELECT telegram_id AS "telegramId" FROM employees
+         WHERE store_id = $1 AND is_active = true AND telegram_id IS NOT NULL`,
+        [w.storeId]
+      );
+      const text =
+        `🎂 <b>Вашей точке — торт!</b>\n\n` +
+        `${esc(w.name)} — лучшая кондитерская сети за ${monthName(month)} ${year}.\n` +
+        `Торт или пирог «Мария» приедет вместе с поздравлением. Вы молодцы! 🎉`;
+      await Promise.allSettled(rows.map(r => send(r.telegramId, text)));
+    }
+  }
+  if (fresh.length && _bot && process.env.CREW_CHANNEL_ID) {
+    const lines = fresh.map(w => w.kind === 'top_store'
+      ? `🎂 Торт месяца (точка): <b>${esc(w.name)}</b>`
+      : `🎂 Торт месяца (сотрудник): <b>${esc(w.name)}</b>`);
+    try {
+      await _bot.api.sendMessage(process.env.CREW_CHANNEL_ID, lines.join('\n'), { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('Ошибка публикации тортов в канал:', err);
+    }
+  }
+}
+
 /** Уведомляет менеджеров точки и всех админов о новой заявке на обмен */
 export async function notifyAdminNewExchange(
   employeeId: number,

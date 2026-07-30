@@ -34,12 +34,16 @@ export function calcCardAwards(
     | 'cardThresholdChecklist'
     | 'cardThresholdRevenue'
     | 'cardThresholdCertification'
-  >
+  > & Partial<Pick<MvpConfig, 'mysteryShopperWeight'>>
 ): CardAwardItem[] {
   const t = cfg ?? DEFAULT_THRESHOLDS;
   const awards: CardAwardItem[] = [];
 
-  if (metrics.mysteryShopperScore !== null && metrics.mysteryShopperScore >= t.cardThresholdMysteryShopper) {
+  // Программа «тайный покупатель» выключена (вес 0 в конфиге) → карточка за неё
+  // тоже не выдаётся. Раньше порог карточки жил отдельно от веса — при
+  // отключённой программе карточки всё равно раздавались (жалоба 30.07.2026).
+  const mysteryActive = cfg?.mysteryShopperWeight === undefined || Number(cfg.mysteryShopperWeight) > 0;
+  if (mysteryActive && metrics.mysteryShopperScore !== null && metrics.mysteryShopperScore >= t.cardThresholdMysteryShopper) {
     awards.push({ source: 'mystery_shopper', isMvp: false });
   }
 

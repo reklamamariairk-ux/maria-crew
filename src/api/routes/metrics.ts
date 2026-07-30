@@ -1,7 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { upsertMetrics, processMonthAllStores, recomputeMonthScores, commitMonthRewards, calcStoreScore } from '../../services/rating.service';
-import { notifyMvp, notifyTopStore, publishMonthResults } from '../../bot/notifications/sender';
+import { awardMonthlyCakes } from '../../services/cakePrize.service';
+import { notifyMvp, notifyTopStore, publishMonthResults, notifyCakePrizes } from '../../bot/notifications/sender';
 import { logAudit } from '../../services/audit.service';
 import type { MonthlyMetricsInput } from '../../types';
 
@@ -190,6 +191,10 @@ router.post('/process', async (req: Request, res: Response, next: NextFunction):
       if (result.topStore) notifications.push(notifyTopStore(result.storeId, storeName, month, year, result.storeScore));
     }
     notifications.push(publishMonthResults(results, month, year));
+    // «Торт месяца»: топ-точке и лучшему сотруднику сети (идемпотентно внутри)
+    notifications.push(
+      awardMonthlyCakes(year, month).then(w => notifyCakePrizes(w, month, year))
+    );
 
     Promise.allSettled(notifications).then(rs => {
       const failed = rs.filter(r => r.status === 'rejected').length;

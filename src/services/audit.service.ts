@@ -12,6 +12,7 @@ export type AuditAction =
   | 'employee_activate'
   | 'employee_fire'
   | 'employee_restore'
+  | 'cake_prize'
   | 'metrics_save'
   | 'metrics_process'
   | 'store_ratings_save'
