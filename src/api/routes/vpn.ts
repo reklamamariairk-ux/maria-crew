@@ -65,8 +65,9 @@ router.post('/link', async (req: Request, res: Response, next: NextFunction): Pr
     if (!Number.isInteger(employeeId) || !vpnName) { res.status(400).json({ error: 'bad_request' }); return; }
     const panelUsers = await listPanelUsers();
     if (!panelUsers.some(u => u.name === vpnName)) { res.status(400).json({ error: 'vpn_user_not_found' }); return; }
-    const emp = await pool.query('SELECT id FROM employees WHERE id = $1', [employeeId]);
+    const emp = await pool.query('SELECT id, fired_at FROM employees WHERE id = $1', [employeeId]);
     if (!emp.rows.length) { res.status(400).json({ error: 'employee_not_found' }); return; }
+    if (emp.rows[0].firedAt) { res.status(403).json({ error: 'employee_fired' }); return; }
     await pool.query(
       'INSERT INTO employee_vpn (employee_id, vpn_name) VALUES ($1, $2)', [employeeId, vpnName]);
     res.json({ ok: true });
@@ -90,8 +91,9 @@ router.post('/issue', async (req: Request, res: Response, next: NextFunction): P
   try {
     const employeeId = Number(req.body?.employeeId);
     if (!Number.isInteger(employeeId)) { res.status(400).json({ error: 'bad_request' }); return; }
-    const emp = await pool.query('SELECT id, name FROM employees WHERE id = $1', [employeeId]);
+    const emp = await pool.query('SELECT id, name, fired_at FROM employees WHERE id = $1', [employeeId]);
     if (!emp.rows.length) { res.status(400).json({ error: 'employee_not_found' }); return; }
+    if (emp.rows[0].firedAt) { res.status(403).json({ error: 'employee_fired' }); return; }
     if (await vpnNameByEmployee(employeeId)) { res.status(400).json({ error: 'already_linked' }); return; }
 
     const taken = new Set((await listPanelUsers()).map(u => u.name));
@@ -112,7 +114,7 @@ router.post('/issue-bulk', async (req: Request, res: Response, next: NextFunctio
     if (!ids.length) { res.status(400).json({ error: 'bad_request' }); return; }
 
     const [emps, links, panelUsers] = await Promise.all([
-      pool.query(`SELECT id, name, telegram_id::text AS telegram_id FROM employees WHERE id = ANY($1)`, [ids]),
+      pool.query(`SELECT id, name, telegram_id::text AS telegram_id, fired_at FROM employees WHERE id = ANY($1)`, [ids]),
       pool.query('SELECT employee_id FROM employee_vpn'),
       listPanelUsers(),
     ]);
@@ -122,7 +124,8 @@ router.post('/issue-bulk', async (req: Request, res: Response, next: NextFunctio
     type Plan = { employeeId: number; name: string; vpnName: string; telegramId: string | null };
     const plan: Plan[] = [];
     const results: Array<Record<string, unknown>> = [];
-    for (const e of emps.rows as Array<{ id: number; name: string; telegramId: string | null }>) {
+    for (const e of emps.rows as Array<{ id: number; name: string; telegramId: string | null; firedAt?: string | null }>) {
+      if (e.firedAt) { results.push({ employeeId: e.id, name: e.name, error: 'employee_fired' }); continue; }
       if (linkedIds.has(e.id)) { results.push({ employeeId: e.id, name: e.name, error: 'already_linked' }); continue; }
       const vpnName = pickVpnName(e.name, taken);
       taken.add(vpnName);

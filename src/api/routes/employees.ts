@@ -6,6 +6,7 @@ import { logAudit } from '../../services/audit.service';
 import { notifyCoinAward } from '../../bot/notifications/sender';
 import { requireRole } from '../middleware/adminAuth';
 import { normalizePhone } from '../../services/employeeAuth.service';
+import { FIRED_NAME_RE, fireEmployee, restoreEmployee } from '../../services/employeeFire.service';
 
 const router = Router();
 
@@ -30,6 +31,11 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
     const wheres: string[] = [];
     if (storeId) { params.push(storeId); wheres.push(`e.store_id = $${params.length}`); }
     if (recentOnly) { wheres.push(`e.last_seen_at IS NOT NULL`); }
+    // Уволенные по умолчанию скрыты отовсюду (монеты/лидерборд/выдачи); ?fired=only —
+    // вкладка «Уволенные», ?fired=all — всё вместе (экспорт/аудит).
+    const firedParam = String(req.query.fired ?? '');
+    if (firedParam === 'only') wheres.push(`e.fired_at IS NOT NULL`);
+    else if (firedParam !== 'all') wheres.push(`e.fired_at IS NULL`);
 
     const where = wheres.length ? `WHERE ${wheres.join(' AND ')}` : '';
     const order = recentOnly
@@ -38,6 +44,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
 
     const base = `SELECT e.id, e.name, e.role,
               e.is_active         AS "isActive",
+              e.fired_at          AS "firedAt",
               e.joined_at         AS "joinedAt",
               e.telegram_id       AS "telegramId",
               e.telegram_username AS "telegramUsername",
@@ -154,7 +161,7 @@ router.get('/:id/summary', async (req: Request, res: Response, next: NextFunctio
               e.telegram_id AS "telegramId", e.telegram_username AS "telegramUsername",
               e.telegram_photo_url AS "telegramPhotoUrl", e.last_seen_at AS "lastSeenAt",
               e.last_seen_tg_at AS "lastSeenTgAt", e.last_seen_app_at AS "lastSeenAppAt",
-              e.phone AS "phone", e.email AS "email",
+              e.phone AS "phone", e.email AS "email", e.fired_at AS "firedAt",
               e.store_id AS "storeId", s.name AS "storeName"
        FROM employees e JOIN stores s ON s.id = e.store_id
        WHERE e.id = $1`,
@@ -199,6 +206,10 @@ router.post('/', denyCoinAdminForWrites, async (req: Request, res: Response, nex
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
       [name, storeId, role, joinedAt ?? null, username]
     );
+    // 1С-пометка «не работает» в имени → сразу уволен (VPN отозван, вход закрыт)
+    if (FIRED_NAME_RE.test(name)) {
+      await fireEmployee(rows[0].id, 'auto_1c', `admin#${req.adminUserId ?? '?'}`);
+    }
     res.status(201).json(rows[0]);
     logAudit('employee_create', { employeeId: rows[0].id, name, storeId, role, telegramUsername: username }).catch(() => {});
   } catch (err) { next(err); }
@@ -220,8 +231,38 @@ router.patch('/:id/name', async (req: Request, res: Response, next: NextFunction
       [name.trim(), id]
     );
     if (!rows[0]) { res.status(404).json({ error: 'Не найден' }); return; }
+    // переименовали с 1С-пометкой «не работает» → авто-увольнение (обратное
+    // переименование БЕЗ пометки ничего не делает — возврат только кнопкой)
+    if (FIRED_NAME_RE.test(name) && !rows[0].firedAt) {
+      await fireEmployee(id, 'auto_1c', `admin#${req.adminUserId ?? '?'}`);
+    }
     res.json(rows[0]);
     logAudit('employee_update', { employeeId: id, name: name.trim(), via: 'patch_name' }).catch(() => {});
+  } catch (err) { next(err); }
+});
+
+// POST /api/employees/:id/fire — уволить: VPN отзывается, вход закрывается,
+// сотрудник переезжает во вкладку «Уволенные». VPN-ошибки не блокируют
+// (vpn: 'ok'|'unavailable'|'no_vpn' в ответе).
+router.post('/:id/fire', denyCoinAdminForWrites, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Неверный id' }); return; }
+    const result = await fireEmployee(id, 'manual', `admin#${req.adminUserId ?? '?'}`);
+    if (!result) { res.status(404).json({ error: 'Не найден' }); return; }
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
+// POST /api/employees/:id/restore — вернуть в компанию: ключи реактивируются,
+// вход снова работает, сотрудник возвращается во вкладку «Сотрудники».
+router.post('/:id/restore', denyCoinAdminForWrites, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Неверный id' }); return; }
+    const result = await restoreEmployee(id, `admin#${req.adminUserId ?? '?'}`);
+    if (!result) { res.status(404).json({ error: 'Не найден' }); return; }
+    res.json(result);
   } catch (err) { next(err); }
 });
 
@@ -303,6 +344,10 @@ router.put('/:id', denyCoinAdminForWrites, async (req: Request, res: Response, n
       ]
     );
     if (!rows[0]) { res.status(404).json({ error: 'Не найден' }); return; }
+    // 1С-пометка «не работает» в новом имени → авто-увольнение (однократно)
+    if (name !== undefined && FIRED_NAME_RE.test(name) && !rows[0].firedAt) {
+      await fireEmployee(empId, 'auto_1c', `admin#${req.adminUserId ?? '?'}`);
+    }
     res.json(rows[0]);
 
     if (storeId !== undefined) {

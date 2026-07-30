@@ -100,6 +100,9 @@
       <button class="nav-item" data-tab="employees" onclick="switchTab('employees')">
         <i data-lucide="users"></i> Сотрудники
       </button>
+      <button class="nav-item" data-tab="fired" onclick="switchTab('fired')">
+        <i data-lucide="user-x"></i> Уволенные
+      </button>
       <button class="nav-item" data-tab="leaderboard" onclick="switchTab('leaderboard')">
         <i data-lucide="trophy"></i> Рейтинги
       </button>
@@ -630,6 +633,22 @@
     </div>
 
     <!-- ── Рейтинги ────────────────────────────────────────────────── -->
+    <!-- ── Уволенные ──────────────────────────────────────────────── -->
+    <div id="tab-fired" class="tab-content hidden">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Уволенные</h1>
+          <p class="page-subtitle">VPN отозван, вход в приложение закрыт. Кнопка «Вернуть» восстанавливает всё разом</p>
+        </div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th>Имя</th><th>Точка</th><th class="col-hide-sm">Уволен</th><th></th></tr></thead>
+          <tbody id="fired-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <div id="tab-leaderboard" class="tab-content hidden">
       <div class="page-head">
         <div>

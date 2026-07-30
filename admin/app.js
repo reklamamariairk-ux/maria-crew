@@ -497,6 +497,7 @@ function refreshCurrentTab() {
   if (state.currentTab === 'dashboard')   loadDashboard();
   if (state.currentTab === 'metrics')     loadMetrics();
   if (state.currentTab === 'coins')       loadCoinEmployees();
+  if (state.currentTab === 'fired')       loadFired();
   if (state.currentTab === 'exchanges')   loadExchanges();
   if (state.currentTab === 'employees')   loadEmployees();
   if (state.currentTab === 'leaderboard') loadLeaderboard();
@@ -1482,10 +1483,11 @@ function renderEmployees() {
       <td class="col-hide-md">${heroes}</td>
       <td class="col-hide-sm" style="font-size:12px">${lastSeenLabel(e.lastSeenAt)}</td>
       <td class="col-hide-sm" style="font-size:12px">${sourceBadges(e)}</td>
-      <td>
+      <td style="white-space:nowrap">
         ${e.isActive
           ? `<button class="btn btn-ghost btn-sm" onclick="toggleEmployee(${e.id}, false)"><i data-lucide="user-x"></i> Скрыть</button>`
           : `<button class="btn btn-ghost btn-sm" onclick="toggleEmployee(${e.id}, true)"><i data-lucide="user-check"></i> Активировать</button>`}
+        <button class="btn btn-ghost btn-sm" title="Уволить: VPN отзывается сразу" onclick="fireEmployeeAct(${e.id}, '${esc(e.name).replace(/'/g, '&#39;')}')"><i data-lucide="briefcase"></i> Уволить</button>
       </td>
     </tr>`;
   }).join('');
@@ -1493,6 +1495,52 @@ function renderEmployees() {
 }
 
 function filterEmployees() { renderEmployees(); }
+
+// ── Увольнение / вкладка «Уволенные» ────────────────────────────────────────
+const FIRE_VPN_TOAST = {
+  ok: 'VPN отозван',
+  no_vpn: 'VPN не был выдан',
+  unavailable: '⚠️ VPN-панель недоступна: отзови ключ вручную позже',
+};
+const RESTORE_VPN_TOAST = {
+  ok: 'VPN снова работает',
+  no_vpn: 'VPN не был выдан',
+  unavailable: '⚠️ VPN-панель недоступна: реактивируй ключ вручную позже',
+};
+
+async function fireEmployeeAct(id, name) {
+  if (!confirm(`Уволить «${name}»? VPN будет отозван сразу, вход в приложение закроется. Вернуть можно во вкладке «Уволенные».`)) return;
+  const r = await api('POST', `/employees/${id}/fire`);
+  if (!r) return;
+  toast(`Уволен(а). ${FIRE_VPN_TOAST[r.vpn] || ''}`);
+  loadEmployees();
+}
+
+async function restoreEmployeeAct(id, name) {
+  if (!confirm(`Вернуть «${name}» в компанию? VPN и вход в приложение снова заработают.`)) return;
+  const r = await api('POST', `/employees/${id}/restore`);
+  if (!r) return;
+  toast(`С возвращением! ${RESTORE_VPN_TOAST[r.vpn] || ''}`);
+  loadFired();
+}
+
+async function loadFired() {
+  const tbody = document.getElementById('fired-tbody');
+  tbody.innerHTML = skeletonRows(4, 4);
+  const list = await api('GET', '/employees?fired=only') || [];
+  if (!list.length) {
+    tbody.innerHTML = emptyRow(4, 'users', 'Уволенных нет');
+    renderIcons();
+    return;
+  }
+  tbody.innerHTML = list.map(e => `<tr>
+    <td><strong>${esc(e.name)}</strong></td>
+    <td style="color:var(--muted)">${esc(e.storeName || '—')}</td>
+    <td class="col-hide-sm" style="font-size:12px;color:var(--muted)">${e.firedAt ? formatDate(e.firedAt) : '—'}</td>
+    <td><button class="btn btn-ghost btn-sm" onclick="restoreEmployeeAct(${e.id}, '${esc(e.name).replace(/'/g, '&#39;')}')"><i data-lucide="user-check"></i> Вернуть</button></td>
+  </tr>`).join('');
+  renderIcons();
+}
 
 function toggleEmployeeSelect(id, checkbox) {
   if (checkbox.checked) selectedEmployeeIds.add(id);
