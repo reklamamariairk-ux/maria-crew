@@ -1460,64 +1460,46 @@
         </div>
       </div>
 
-      <div class="toolbar">
-        <div class="search-input">
-          <i data-lucide="filter"></i>
-          <select id="req-status-filter" onchange="loadRequests()" class="input" style="width:200px">
-            <option value="">Все статусы</option>
-            <option value="open">Открытые</option>
-            <option value="answered">Отвечены</option>
-            <option value="closed">Закрытые</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th style="width:50px">#</th>
-            <th>Кому</th>
-            <th>Текст</th>
-            <th style="width:90px" class="col-hide-sm">Ответов</th>
-            <th style="width:110px">Статус</th>
-            <th style="width:140px" class="col-hide-md">Создан</th>
-            <th style="width:90px"></th>
-          </tr></thead>
-          <tbody id="requests-tbody">
-            <tr><td colspan="7" class="empty">Загрузка...</td></tr>
-          </tbody>
-        </table>
+      <div class="msgr" id="msgr">
+        <aside class="msgr-side" id="msgr-side">
+          <div class="msgr-side-top">
+            <div class="msgr-seg">
+              <button id="msgr-seg-chats" class="on" onclick="msgrSetKind('chats')">Чаты</button>
+              <button id="msgr-seg-broadcasts" onclick="msgrSetKind('broadcasts')">Рассылки</button>
+            </div>
+            <input type="text" id="msgr-search" class="input" placeholder="Поиск…" oninput="renderDialogs()">
+          </div>
+          <div id="msgr-dialogs" class="msgr-dialogs">
+            <p class="text-muted" style="padding:14px;font-size:13px">Загрузка…</p>
+          </div>
+        </aside>
+        <section class="msgr-chat" id="msgr-chat-pane">
+          <div class="msgr-chat-head" id="msgr-chat-head">
+            <span class="text-muted" style="font-size:13.5px">Выбери диалог слева, или нажми «Написать сотруднику»</span>
+          </div>
+          <div id="modal-req-body" class="msgr-chat-body">
+            <div class="msgr-chat-empty"><i data-lucide="messages-square" style="width:40px;height:40px;opacity:.3"></i></div>
+          </div>
+          <div id="modal-req-attachment-preview" class="hidden" style="padding:6px 14px;border-top:1px solid var(--border);background:var(--bg);display:flex;gap:8px;align-items:center">
+            <div id="modal-req-attachment-info" style="flex:1;font-size:12px;color:var(--muted)">—</div>
+            <button class="btn btn-ghost btn-sm" onclick="clearReqAttachment()" title="Убрать"><i data-lucide="x"></i></button>
+          </div>
+          <div id="modal-req-compose" class="hidden" style="border-top:1px solid var(--border);padding:10px 14px;display:flex;gap:6px;align-items:flex-end;background:var(--surface)">
+            <input type="file" id="modal-req-file-input" style="display:none" onchange="onReqFileSelected(event)" accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt">
+            <button class="btn btn-ghost" onclick="document.getElementById('modal-req-file-input').click()" id="modal-req-attach-btn" title="Прикрепить файл">
+              <i data-lucide="paperclip"></i>
+            </button>
+            <textarea id="modal-req-input" class="input" rows="2" placeholder="Написать… (Enter — отправить, Shift+Enter — новая строка)" style="flex:1;resize:none;min-height:40px;max-height:140px"></textarea>
+            <button class="btn btn-primary" onclick="sendManagerMessage()" id="modal-req-send-btn" title="Отправить">
+              <i data-lucide="send"></i>
+            </button>
+          </div>
+        </section>
       </div>
     </div>
 
   </main>
 </div>
-
-<!-- ── Модалка: чат запроса ─────────────────────────────────────────── -->
-<div id="modal-request" class="modal-overlay hidden" onclick="if(event.target===this)closeRequestModal()">
-  <div class="modal-box" style="max-width:720px;width:95%;display:flex;flex-direction:column;max-height:90vh">
-    <div class="modal-header">
-      <h2 class="modal-title" id="modal-req-title">Запрос</h2>
-      <button class="modal-close" onclick="closeRequestModal()"><i data-lucide="x"></i></button>
-    </div>
-    <div id="modal-req-body" style="overflow-y:auto;flex:1;padding:16px;min-height:200px">
-      <p class="text-muted">Загрузка...</p>
-    </div>
-    <div id="modal-req-attachment-preview" class="hidden" style="padding:6px 14px;border-top:1px solid var(--border);background:var(--bg);display:flex;gap:8px;align-items:center">
-      <div id="modal-req-attachment-info" style="flex:1;font-size:12px;color:var(--muted)">—</div>
-      <button class="btn btn-ghost btn-sm" onclick="clearReqAttachment()" title="Убрать"><i data-lucide="x"></i></button>
-    </div>
-    <div id="modal-req-compose" style="border-top:1px solid var(--border);padding:10px 14px;display:flex;gap:6px;align-items:flex-end;background:var(--surface)">
-      <input type="file" id="modal-req-file-input" style="display:none" onchange="onReqFileSelected(event)" accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt">
-      <button class="btn btn-ghost" onclick="document.getElementById('modal-req-file-input').click()" id="modal-req-attach-btn" title="Прикрепить файл">
-        <i data-lucide="paperclip"></i>
-      </button>
-      <textarea id="modal-req-input" class="input" rows="2" placeholder="Написать сотруднику…" style="flex:1;resize:none;min-height:40px;max-height:140px"></textarea>
-      <button class="btn btn-primary" onclick="sendManagerMessage()" id="modal-req-send-btn" title="Отправить">
-        <i data-lucide="send"></i>
-      </button>
-    </div>
-  </div>
 </div>
 <style>
   /* Chat bubbles в модалке запроса */

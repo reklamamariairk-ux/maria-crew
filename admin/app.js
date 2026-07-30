@@ -298,7 +298,9 @@ function updatePendingBadge(count) {
   }
 }
 
+const BASE_TITLE = document.title;
 function updateRequestsBadge(count) {
+  document.title = count > 0 ? `(${count}) ${BASE_TITLE}` : BASE_TITLE;
   const badge = document.getElementById('nav-requests-badge');
   if (!badge) return;
   if (count && count > 0) {
@@ -364,7 +366,7 @@ async function showApp() {
   };
   refreshBadges();
   if (!state.pendingPoll) {
-    state.pendingPoll = setInterval(refreshBadges, 120_000);
+    state.pendingPoll = setInterval(refreshBadges, 30_000); // мессенджеру нужен живой бейдж
   }
 }
 
@@ -4049,58 +4051,94 @@ function reqPreview(r) {
   return '<span style="color:var(--muted)">— личный чат —</span>';
 }
 
+// ── Мессенджер: список диалогов (двухпанельный вид) ─────────────────────────
+let msgrAll = [];            // все треды с бэка
+let msgrKind = 'chats';      // chats | broadcasts
+let msgrDialogsTimer = null; // поллинг списка (20с)
+let msgrThreadTimer = null;  // поллинг открытого чата (5с)
+let msgrLastSig = '';        // подпись открытого треда (не перерисовывать без изменений)
+
+function msgrIsBroadcast(r) {
+  return !!(r.targetStoreName || r.targetCount > 1);
+}
+function msgrDialogName(r) {
+  if (r.initiatedByName) return r.initiatedByName;
+  if (r.targetEmployeeName) return r.targetEmployeeName;
+  if (r.targetStoreName) return `${r.targetStoreName} (${r.targetCount})`;
+  if (r.targetCount > 0) {
+    const names = (r.targetNames || []).slice(0, 2).join(', ');
+    return r.targetCount > 2 ? `${names} +${r.targetCount - 2}` : names;
+  }
+  return `Диалог #${r.id}`;
+}
+function msgrTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso), now = new Date();
+  return d.toDateString() === now.toDateString()
+    ? d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+    : d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+}
+
 async function loadRequests() {
-  const tbody = document.getElementById('requests-tbody');
-  if (!tbody) return;
-  tbody.innerHTML = skeletonRows(6, 5);
-  const status = document.getElementById('req-status-filter')?.value || '';
-  const qs = status ? `?status=${encodeURIComponent(status)}` : '';
-  const list = await api('GET', '/requests' + qs) || [];
-  if (list.length === 0) {
-    tbody.innerHTML = emptyRow(7, 'inbox', 'Запросов нет');
-    renderIcons();
+  msgrAll = await api('GET', '/requests') || [];
+  renderDialogs();
+  msgrStartPolls();
+}
+
+function msgrSetKind(kind) {
+  msgrKind = kind;
+  document.getElementById('msgr-seg-chats')?.classList.toggle('on', kind === 'chats');
+  document.getElementById('msgr-seg-broadcasts')?.classList.toggle('on', kind === 'broadcasts');
+  renderDialogs();
+}
+
+function renderDialogs() {
+  const wrap = document.getElementById('msgr-dialogs');
+  if (!wrap) return;
+  const q = (document.getElementById('msgr-search')?.value ?? '').trim().toLowerCase();
+  let list = msgrAll.filter(r => msgrIsBroadcast(r) === (msgrKind === 'broadcasts'));
+  if (q) list = list.filter(r => msgrDialogName(r).toLowerCase().includes(q) || (r.lastMessageText ?? '').toLowerCase().includes(q));
+  // живое сверху: сортировка по последней активности, закрытые в хвост
+  list.sort((a, b) => {
+    if ((a.status === 'closed') !== (b.status === 'closed')) return a.status === 'closed' ? 1 : -1;
+    return new Date(b.lastActivityAt || b.createdAt) - new Date(a.lastActivityAt || a.createdAt);
+  });
+  if (!list.length) {
+    wrap.innerHTML = `<p class="text-muted" style="padding:14px;font-size:13px;text-align:center">${q ? 'Ничего не нашлось' : (msgrKind === 'chats' ? 'Чатов пока нет. Нажми «Написать сотруднику»' : 'Рассылок пока нет')}</p>`;
     return;
   }
-  tbody.innerHTML = list.map(r => {
-    let target;
-    if (r.initiatedByName) {
-      // Сотрудник сам написал нам — иконка 📨 «От: …»
-      target = `📨 от ${esc(r.initiatedByName)}`;
-    } else if (r.targetEmployeeName) {
-      target = `👤 ${esc(r.targetEmployeeName)}`;
-    } else if (r.targetStoreName) {
-      target = `🏪 ${esc(r.targetStoreName)} <span style="color:var(--muted);font-size:11px">(${r.targetCount})</span>`;
-    } else if (r.targetCount > 0) {
-      const names = (r.targetNames || []).slice(0, 2).map(esc).join(', ');
-      const more = r.targetCount > 2 ? ` +${r.targetCount - 2}` : '';
-      target = `👥 ${names}${more}`;
-    } else {
-      target = '—';
-    }
-    const activity = new Date(r.lastActivityAt || r.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
+  wrap.innerHTML = list.map(r => {
+    const name = msgrDialogName(r);
     const unread = r.unreadCount || 0;
-    const rowStyle = unread > 0
-      ? 'cursor:pointer;background:rgba(25,118,210,.06);font-weight:500'
-      : 'cursor:pointer';
-    const unreadBadge = unread > 0
-      ? ` <span style="display:inline-block;background:#1976d2;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:600;margin-left:6px;min-width:18px;text-align:center">${unread > 99 ? '99+' : unread}</span>`
-      : '';
-    return `<tr style="${rowStyle}" onclick="openRequestModal(${r.id})">
-      <td style="color:var(--muted);font-size:12px">${r.id}</td>
-      <td>${target}${unreadBadge}</td>
-      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${reqPreview(r)}</td>
-      <td class="col-hide-sm">${r.responseCount} / ${r.notificationsSent}</td>
-      <td>${REQUEST_STATUS_LABELS[r.status] || r.status}</td>
-      <td class="col-hide-md" style="color:var(--muted);font-size:12px">${activity}</td>
-      <td onclick="event.stopPropagation()">
-        <div style="display:flex;gap:3px">
-          ${r.status !== 'closed' ? `<button class="btn btn-ghost btn-sm btn-icon" onclick="closeReq(${r.id})" title="Закрыть (оставить в истории)"><i data-lucide="x"></i></button>` : ''}
-          <button class="btn btn-danger btn-sm btn-icon" onclick="deleteReq(${r.id})" title="Удалить диалог полностью"><i data-lucide="trash-2"></i></button>
-        </div>
-      </td>
-    </tr>`;
+    const initial = (name.replace(/^не работает\s*/i, '').trim()[0] || '?').toUpperCase();
+    return `<button type="button" class="msgr-item${r.id === currentRequestId ? ' active' : ''}${r.status === 'closed' ? ' closed' : ''}" onclick="openDialog(${r.id})">
+      <span class="msgr-ava${msgrIsBroadcast(r) ? ' bcast' : ''}">${msgrIsBroadcast(r) ? '📣' : esc(initial)}</span>
+      <span class="msgr-item-b">
+        <span class="msgr-item-t"><span class="msgr-item-name">${esc(name)}</span><span class="msgr-item-time">${msgrTime(r.lastActivityAt || r.createdAt)}</span></span>
+        <span class="msgr-item-prev"><span class="msgr-item-text">${reqPreview(r) || '<span style="opacity:.6">без сообщений</span>'}</span>${unread > 0 ? `<span class="msgr-unread">${unread > 99 ? '99+' : unread}</span>` : ''}</span>
+      </span>
+    </button>`;
   }).join('');
-  renderIcons();
+}
+
+// поллинг: список каждые 20с, открытый чат каждые 5с; глушится при уходе с вкладки
+function msgrStartPolls() {
+  if (!msgrDialogsTimer) {
+    msgrDialogsTimer = setInterval(async () => {
+      if (state.currentTab !== 'requests') return;
+      msgrAll = await api('GET', '/requests').catch(() => msgrAll) || msgrAll;
+      renderDialogs();
+    }, 20000);
+  }
+}
+function msgrStopPolls() {
+  if (msgrDialogsTimer) { clearInterval(msgrDialogsTimer); msgrDialogsTimer = null; }
+  if (msgrThreadTimer) { clearInterval(msgrThreadTimer); msgrThreadTimer = null; }
+}
+
+function msgrThreadSig(data) {
+  const last = data.responses[data.responses.length - 1];
+  return `${data.responses.length}:${last ? last.id ?? last.createdAt : 0}`;
 }
 
 let reqEmployeesCache = [];
@@ -4259,8 +4297,9 @@ async function closeReq(id) {
   if (!ok) return;
   try {
     await api('POST', `/requests/${id}/close`);
-    toast('✅ Запрос закрыт');
-    loadRequests();
+    toast('✅ Диалог закрыт');
+    await loadRequests();
+    if (currentRequestId === id) msgrRenderChatHead(id); // обновить кнопки в шапке
   } catch (e) { toastError(e); }
 }
 
@@ -4273,7 +4312,17 @@ async function deleteReq(id) {
   if (!ok) return;
   try {
     await api('DELETE', `/requests/${id}`);
-    toast('🗑 Запрос удалён');
+    toast('🗑 Диалог удалён');
+    if (currentRequestId === id) {
+      // открытый диалог стёрли — чистим правую панель и глушим её поллинг
+      closeRequestModal();
+      const body = document.getElementById('modal-req-body');
+      if (body) body.innerHTML = '<div class="msgr-chat-empty"><i data-lucide="messages-square" style="width:40px;height:40px;opacity:.3"></i></div>';
+      const head = document.getElementById('msgr-chat-head');
+      if (head) head.innerHTML = '<span class="text-muted" style="font-size:13.5px">Выбери диалог слева</span>';
+      document.getElementById('modal-req-compose')?.classList.add('hidden');
+      renderIcons();
+    }
     loadRequests();
   } catch (e) { toastError(e); }
 }
@@ -4281,20 +4330,62 @@ async function deleteReq(id) {
 let currentRequestId = null;
 let currentReqAttachment = null;
 
-async function openRequestModal(id) {
+// Открыть диалог в правой панели (бывшая модалка). Имя оставлено для
+// совместимости с openDirectChat и старыми вызовами.
+async function openDialog(id) {
   currentRequestId = id;
   currentReqAttachment = null;
-  const modal = document.getElementById('modal-request');
-  modal.classList.remove('hidden');
-  document.getElementById('modal-req-title').textContent = `Запрос #${id}`;
-  document.getElementById('modal-req-input').value = '';
+  msgrLastSig = '';
+  const input = document.getElementById('modal-req-input');
+  if (input) input.value = '';
   clearReqAttachment();
+  document.getElementById('modal-req-compose')?.classList.remove('hidden');
+  document.getElementById('msgr')?.classList.add('chat-open'); // мобильный: показать чат
+  renderDialogs(); // подсветить активный
+  msgrRenderChatHead(id);
   await renderRequestChat(id);
   // Обновляем badge после mark viewed (бэк это делает в GET /:id)
   try {
     const r = await api('GET', '/requests/unread-count');
     updateRequestsBadge(r?.count || 0);
   } catch { /* ignore */ }
+  // локально погасить кружок у этого диалога
+  const row = msgrAll.find(x => x.id === id);
+  if (row) { row.unreadCount = 0; renderDialogs(); }
+  // живой чат: подтягиваем новые сообщения каждые 5с, перерисовка только при изменениях
+  if (msgrThreadTimer) clearInterval(msgrThreadTimer);
+  msgrThreadTimer = setInterval(async () => {
+    if (state.currentTab !== 'requests' || currentRequestId !== id) return;
+    try {
+      const data = await api('GET', `/requests/${id}`);
+      if (msgrThreadSig(data) !== msgrLastSig) {
+        await renderRequestChat(id);
+        msgrAll = await api('GET', '/requests').catch(() => msgrAll) || msgrAll;
+        renderDialogs();
+      }
+    } catch { /* сеть мигнула — следующий тик */ }
+  }, 5000);
+}
+const openRequestModal = openDialog;
+
+function msgrBackToList() {
+  document.getElementById('msgr')?.classList.remove('chat-open');
+}
+
+function msgrRenderChatHead(id) {
+  const head = document.getElementById('msgr-chat-head');
+  const r = msgrAll.find(x => x.id === id);
+  if (!head) return;
+  const name = r ? msgrDialogName(r) : `Диалог #${id}`;
+  const status = r && r.status === 'closed'
+    ? '<span class="badge badge-neutral" style="font-size:11px">закрыт</span>' : '';
+  head.innerHTML = `
+    <button class="btn btn-ghost btn-sm msgr-back" onclick="msgrBackToList()" title="К списку"><i data-lucide="arrow-left"></i></button>
+    <strong style="font-size:14px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</strong>
+    ${status}
+    ${r && r.status !== 'closed' ? `<button class="btn btn-ghost btn-sm" onclick="closeReq(${id})" title="Закрыть диалог (останется в истории)"><i data-lucide="check-check"></i> Закрыть</button>` : ''}
+    <button class="btn btn-ghost btn-sm" style="color:var(--red,#c0392b)" onclick="deleteReq(${id})" title="Удалить навсегда"><i data-lucide="trash-2"></i></button>`;
+  renderIcons();
 }
 
 async function renderRequestChat(id) {
@@ -4451,8 +4542,10 @@ function clearReqAttachment() {
 }
 
 function closeRequestModal() {
-  document.getElementById('modal-request').classList.add('hidden');
+  // модалки больше нет — «закрыть чат» = вернуться к списку (мобильный режим)
+  msgrBackToList();
   currentRequestId = null;
+  if (msgrThreadTimer) { clearInterval(msgrThreadTimer); msgrThreadTimer = null; }
 }
 
 // ── Рассылка ──────────────────────────────────────────────────────────────────

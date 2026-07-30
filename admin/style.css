@@ -198,6 +198,69 @@ nav.sidebar-nav {
 }
 #ksearch-list { display: flex; flex-direction: column; max-height: 46vh; overflow-y: auto; }
 
+/* ── Мессенджер: две панели, слева диалоги, справа чат ── */
+.msgr {
+  display: flex; gap: 0; height: calc(100vh - 190px); min-height: 420px;
+  border: 1px solid var(--border, #e3e5ea); border-radius: 14px;
+  background: var(--surface, #fff); overflow: hidden;
+}
+.msgr-side {
+  width: 320px; min-width: 260px; flex: none;
+  border-right: 1px solid var(--border, #e3e5ea);
+  display: flex; flex-direction: column;
+}
+.msgr-side-top { padding: 10px 10px 8px; border-bottom: 1px solid var(--border, #e3e5ea); }
+.msgr-seg { display: flex; gap: 4px; background: var(--bg, #f4f4f7); border-radius: 9px; padding: 3px; margin-bottom: 8px; }
+.msgr-seg button {
+  flex: 1; border: none; background: transparent; cursor: pointer;
+  padding: 6px 8px; border-radius: 7px; font-size: 12.5px; font-weight: 600; color: var(--muted, #888);
+}
+.msgr-seg button.on { background: var(--surface, #fff); color: var(--text, #222); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.msgr-side-top .input { width: 100%; box-sizing: border-box; font-size: 13px; }
+.msgr-dialogs { flex: 1; overflow-y: auto; padding: 6px; }
+.msgr-item {
+  display: flex; gap: 10px; align-items: center; width: 100%;
+  padding: 9px 10px; border: none; background: transparent; border-radius: 10px;
+  cursor: pointer; text-align: left;
+}
+.msgr-item:hover { background: var(--bg, #f4f4f7); }
+.msgr-item.active { background: var(--pink-50, #fdeef3); }
+.msgr-ava {
+  width: 38px; height: 38px; flex: none; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 15px; color: #fff;
+  background: linear-gradient(135deg, #d4526e, #a02a52);
+}
+.msgr-ava.bcast { background: linear-gradient(135deg, #7986cb, #3f51b5); }
+.msgr-item-b { flex: 1; min-width: 0; }
+.msgr-item-t { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.msgr-item-name { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.msgr-item-time { font-size: 11px; color: var(--muted, #888); flex: none; }
+.msgr-item-prev { display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-top: 2px; }
+.msgr-item-text { font-size: 12.5px; color: var(--text-2, #666); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.msgr-item.closed .msgr-item-name, .msgr-item.closed .msgr-item-text { color: var(--muted, #999); }
+.msgr-unread {
+  flex: none; min-width: 19px; height: 19px; border-radius: 10px;
+  background: var(--pink, #d4526e); color: #fff; font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; padding: 0 5px;
+}
+.msgr-chat { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.msgr-chat-head {
+  padding: 10px 14px; border-bottom: 1px solid var(--border, #e3e5ea);
+  display: flex; align-items: center; gap: 10px; min-height: 46px; box-sizing: border-box;
+}
+.msgr-chat-body { flex: 1; overflow-y: auto; padding: 16px; background: var(--bg, #fafafb); }
+.msgr-chat-empty { display: flex; align-items: center; justify-content: center; height: 100%; }
+.msgr-back { display: none; }
+@media (max-width: 760px) {
+  .msgr { height: calc(100vh - 150px); position: relative; }
+  .msgr-side { width: 100%; border-right: none; }
+  .msgr.chat-open .msgr-side { display: none; }
+  .msgr-chat { display: none; }
+  .msgr.chat-open .msgr-chat { display: flex; width: 100%; }
+  .msgr-back { display: inline-flex; }
+}
+
 /* Мобильный список сотрудников: таблица превращается в карточки */
 @media (max-width: 640px) {
   #tab-employees .table-wrap table, #tab-employees table { display: block; }
