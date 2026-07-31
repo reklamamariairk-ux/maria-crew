@@ -1,11 +1,10 @@
-# Собирает НЕПОДПИСАННЫЙ .ipa приложения «Мария · Админ» на macOS-раннере.
-# Неподписанный — потому что подпишет его Sideloadly бесплатным Apple ID юзера
-# прямо при установке на iPhone. Никаких Apple-сертификатов тут не нужно.
-# Артефакт .ipa качаем из вкладки Actions → этот запуск → Artifacts.
-name: iOS Admin — unsigned IPA (Sideloadly)
+# Builds an UNSIGNED .ipa of "Maria Admin" on a macOS runner.
+# Unsigned because Sideloadly re-signs it with the user's free Apple ID on install.
+# No Apple certificates needed. Download the .ipa artifact from the run.
+name: iOS Admin unsigned IPA
 
 on:
-  workflow_dispatch: {}       # запуск вручную (кнопкой или API)
+  workflow_dispatch:
 
 jobs:
   build:
@@ -21,18 +20,22 @@ jobs:
           node-version: '20'
 
       - name: npm install
-        run: npm ci || npm install
+        run: |
+          npm ci || npm install
 
-      - name: Добавить iOS-платформу
-        run: npx cap add ios || echo "ios уже есть"
+      - name: Add iOS platform
+        run: |
+          npx cap add ios || echo "ios already added"
 
-      - name: Иконки/сплэш
-        run: npx capacitor-assets generate --ios || echo "иконки: пропущено"
+      - name: Generate icons
+        run: |
+          npx capacitor-assets generate --ios || echo "icons skipped"
 
-      - name: cap sync (+ pod install)
-        run: npx cap sync ios
+      - name: cap sync
+        run: |
+          npx cap sync ios
 
-      - name: Собрать unsigned archive
+      - name: Build unsigned archive
         run: |
           cd ios/App
           xcodebuild \
@@ -42,12 +45,10 @@ jobs:
             -sdk iphoneos \
             -archivePath "$PWD/build/App.xcarchive" \
             archive \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            PROVISIONING_PROFILE_SPECIFIER=""
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" PROVISIONING_PROFILE_SPECIFIER=""
 
-      - name: Упаковать unsigned .ipa
+      - name: Package unsigned IPA
         run: |
           cd ios/App/build
           mkdir -p Payload
