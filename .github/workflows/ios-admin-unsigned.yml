@@ -1,0 +1,62 @@
+# Собирает НЕПОДПИСАННЫЙ .ipa приложения «Мария · Админ» на macOS-раннере.
+# Неподписанный — потому что подпишет его Sideloadly бесплатным Apple ID юзера
+# прямо при установке на iPhone. Никаких Apple-сертификатов тут не нужно.
+# Артефакт .ipa качаем из вкладки Actions → этот запуск → Artifacts.
+name: iOS Admin — unsigned IPA (Sideloadly)
+
+on:
+  workflow_dispatch: {}       # запуск вручную (кнопкой или API)
+
+jobs:
+  build:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: mobile-admin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: npm install
+        run: npm ci || npm install
+
+      - name: Добавить iOS-платформу
+        run: npx cap add ios || echo "ios уже есть"
+
+      - name: Иконки/сплэш
+        run: npx capacitor-assets generate --ios || echo "иконки: пропущено"
+
+      - name: cap sync (+ pod install)
+        run: npx cap sync ios
+
+      - name: Собрать unsigned archive
+        run: |
+          cd ios/App
+          xcodebuild \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$PWD/build/App.xcarchive" \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE_SPECIFIER=""
+
+      - name: Упаковать unsigned .ipa
+        run: |
+          cd ios/App/build
+          mkdir -p Payload
+          cp -R App.xcarchive/Products/Applications/App.app Payload/App.app
+          zip -qr MariaAdmin-unsigned.ipa Payload
+          ls -la MariaAdmin-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MariaAdmin-unsigned-ipa
+          path: mobile-admin/ios/App/build/MariaAdmin-unsigned.ipa
+          if-no-files-found: error
