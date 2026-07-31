@@ -1,0 +1,33 @@
+{
+  "appId": "ru.mariairk.crew.admin",
+  "appName": "Мария · Админ",
+  "webDir": "www",
+  "server": {
+    "url": "https://crew.145-223-121-47.sslip.io/",
+    "androidScheme": "https",
+    "cleartext": false,
+    "allowNavigation": ["crew.145-223-121-47.sslip.io", "*.sslip.io", "api.cloudinary.com"]
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 500,
+      "launchAutoHide": true,
+      "backgroundColor": "#b3123c",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "style": "LIGHT",
+      "backgroundColor": "#b3123c"
+    }
+  },
+  "ios": {
+    "contentInset": "always",
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "android": {
+    "backgroundColor": "#ffffff",
+    "allowMixedContent": false,
+    "captureInput": true
+  }
+}

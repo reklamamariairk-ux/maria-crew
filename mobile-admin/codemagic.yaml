@@ -1,0 +1,94 @@
+# Облачная сборка «Мария · Админ» (iOS + Android) на Codemagic.
+# Нужен, потому что iOS .ipa собирается только на macOS, а локального Mac нет.
+# Codemagic поднимает macOS-раннер, клонирует репо, генерит iOS-проект из Capacitor
+# и собирает подписанный .ipa для App Store Connect (Unlisted/TestFlight).
+#
+# ЧТО НАСТРОИТЬ В CODEMAGIC (один раз, руками — нужны твои Apple-креды):
+#  1. Подключить репозиторий maria-crew, рабочая папка — mobile-admin/.
+#  2. Team settings → Code signing identities → загрузить Apple Distribution
+#     сертификат (.p12) и provisioning profile ЛИБО включить «Automatic» +
+#     App Store Connect API key (Issuer ID, Key ID, .p8) — проще автоматический.
+#  3. App Store Connect: создать приложение с Bundle ID ru.mariairk.crew.admin,
+#     Distribution = Unlisted (или загрузка в TestFlight для внутренних тестеров).
+#  4. Переменные окружения группы `appstore`: APP_STORE_CONNECT_* (см. интеграцию
+#     Codemagic ↔ App Store Connect — заводится в пару кликов).
+
+workflows:
+  ios-admin:
+    name: Мария Админ — iOS
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      app_store_connect: MariaAdminKey   # имя API-ключа, заведённого в Codemagic
+    environment:
+      groups:
+        - appstore
+      vars:
+        BUNDLE_ID: "ru.mariairk.crew.admin"
+        XCODE_WORKSPACE: "App.xcworkspace"
+        XCODE_SCHEME: "App"
+      node: 20
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: npm install (mobile-admin)
+        script: |
+          cd mobile-admin
+          npm ci || npm install
+      - name: Добавить/синхронизировать iOS-платформу
+        script: |
+          cd mobile-admin
+          npx cap add ios || echo "ios уже добавлен"
+          npx capacitor-assets generate --ios || echo "иконки: пропущено"
+          npx cap sync ios
+      - name: Автоподпись (App Store Connect API)
+        script: |
+          cd mobile-admin/ios/App
+          xcode-project use-profiles
+      - name: Собрать .ipa
+        script: |
+          cd mobile-admin/ios/App
+          xcode-project build-ipa \
+            --workspace "$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME"
+    artifacts:
+      - mobile-admin/ios/App/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        # Внутренняя раздача — TestFlight-группа для руководителей. На публичный
+        # App Store НЕ отправляем (админка одной компании — Apple 3.2 → Unlisted).
+        submit_to_testflight: true
+        beta_groups:
+          - Руководители
+
+  android-admin:
+    name: Мария Админ — Android
+    instance_type: linux_x2
+    max_build_duration: 30
+    environment:
+      android_signing:
+        - maria_admin_keystore   # загрузить keystore в Codemagic (можно тот же, что mobile/)
+      groups:
+        - google_play
+      vars:
+        PACKAGE_NAME: "ru.mariairk.crew.admin"
+      node: 20
+    scripts:
+      - name: npm install
+        script: |
+          cd mobile-admin
+          npm ci || npm install
+      - name: cap sync android
+        script: |
+          cd mobile-admin
+          npx cap sync android
+      - name: Собрать подписанный AAB
+        script: |
+          cd mobile-admin/android
+          ./gradlew bundleRelease
+    artifacts:
+      - mobile-admin/android/app/build/outputs/**/*.aab
+      - mobile-admin/android/app/build/outputs/**/*.apk
+    # Публикацию в Google Play / RuStore делаем вручную из артефакта (closed track).

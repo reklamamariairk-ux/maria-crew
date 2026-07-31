@@ -1,0 +1,10 @@
+node_modules/
+android/
+ios/
+.DS_Store
+*.log
+
+# Подпись — не коммитим
+*.keystore
+keystore.properties
+ios-config/
