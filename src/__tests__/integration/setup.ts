@@ -157,6 +157,46 @@ export function newTestPool(): { pool: TestPool; db: IMemoryDb } {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(employee_id, year, month)
     );
+
+    -- Мессенджер: диалоги (личные входящие / direct / рассылки) + сообщения
+    CREATE TABLE IF NOT EXISTS employee_requests (
+      id SERIAL PRIMARY KEY,
+      requested_by INT,
+      target_employee_id INT REFERENCES employees(id),
+      target_store_id INT REFERENCES stores(id),
+      initiated_by_employee_id INT REFERENCES employees(id),
+      request_text TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      last_viewed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS request_targets (
+      id SERIAL PRIMARY KEY,
+      request_id INT REFERENCES employee_requests(id),
+      employee_id INT REFERENCES employees(id),
+      UNIQUE(request_id, employee_id)
+    );
+    CREATE TABLE IF NOT EXISTS request_responses (
+      id SERIAL PRIMARY KEY,
+      request_id INT REFERENCES employee_requests(id),
+      employee_id INT,
+      sender_type TEXT NOT NULL,
+      text_content TEXT,
+      file_url TEXT,
+      file_thumbnail_url TEXT,
+      file_type TEXT,
+      file_name TEXT,
+      telegram_message_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS request_employee_views (
+      id SERIAL PRIMARY KEY,
+      request_id INT REFERENCES employee_requests(id),
+      employee_id INT REFERENCES employees(id),
+      last_viewed_at TIMESTAMPTZ,
+      UNIQUE(request_id, employee_id)
+    );
   `);
 
   // Адаптируем pg-mem под pg.Pool API + camelize (как в нашем pool.ts).
