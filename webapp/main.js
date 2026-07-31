@@ -1505,12 +1505,14 @@ async function renderChatThread(quiet) {
       const who = side === 'employee' ? 'Вы' : (m.adminUsername || 'руководитель');
       let fileBlock = '';
       if (m.fileUrl) {
+        // URL в атрибутах экранируем (defense-in-depth к серверной валидации) — иначе XSS
+        const fu = escapeAttr(m.fileUrl), ft = escapeAttr(m.fileThumbnailUrl || m.fileUrl);
         if (m.fileType === 'photo') {
-          fileBlock = `<a href="${m.fileUrl}" target="_blank"><img src="${m.fileThumbnailUrl || m.fileUrl}" alt="фото"></a>`;
+          fileBlock = `<a href="${fu}" target="_blank"><img src="${ft}" alt="фото"></a>`;
         } else if (m.fileType === 'video') {
-          fileBlock = `<video src="${m.fileUrl}" controls preload="metadata" poster="${m.fileThumbnailUrl || ''}"></video>`;
+          fileBlock = `<video src="${fu}" controls preload="metadata" poster="${escapeAttr(m.fileThumbnailUrl || '')}"></video>`;
         } else if (m.fileType === 'document') {
-          fileBlock = `<a href="${m.fileUrl}" target="_blank" download="${escapeHtml(m.fileName || 'файл')}" style="color:inherit;text-decoration:underline">📎 ${escapeHtml(m.fileName || 'файл')}</a>`;
+          fileBlock = `<a href="${fu}" target="_blank" download="${escapeHtml(m.fileName || 'файл')}" style="color:inherit;text-decoration:underline">📎 ${escapeHtml(m.fileName || 'файл')}</a>`;
         }
       }
       html += `<div class="chat-row ${side}"><div style="display:flex;flex-direction:column;align-items:${side === 'employee' ? 'flex-end' : 'flex-start'}">

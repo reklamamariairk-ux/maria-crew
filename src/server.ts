@@ -19,11 +19,37 @@ export function createServer(bot: Bot<BotContext>, webhookSecret: string): expre
   });
 
   app.use(helmet({
-    contentSecurityPolicy: false,
+    // CSP: 'unsafe-inline' для script неизбежен (139 onclick в admin/index.html,
+    // 36 в webapp) — строгий script-src сломал бы UI. Зато жёстко ограничиваем
+    // connect-src (главная польза: даже если XSS проскочит, украсть-и-отправить
+    // токен на чужой хост нельзя — только 'self'+cloudinary) и frame-ancestors
+    // (clickjacking). img-src https: — аватары сотрудников из разных CDN (картинки
+    // не исполняются). Вместе с серверной валидацией Cloudinary-URL и esc это
+    // многослойная защита от stored XSS в мессенджере.
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        'default-src': ["'self'"],
+        'script-src': ["'self'", "'unsafe-inline'", 'https://unpkg.com'],
+        'style-src': ["'self'", "'unsafe-inline'"],
+        'img-src': ["'self'", 'https:', 'data:', 'blob:'],
+        'media-src': ["'self'", 'https://res.cloudinary.com', 'blob:'],
+        'connect-src': ["'self'", 'https://api.cloudinary.com'],
+        'font-src': ["'self'", 'data:'],
+        'frame-ancestors': ["'self'"],
+        'object-src': ["'none'"],
+        'base-uri': ["'self'"],
+        'form-action': ["'self'"],
+      },
+    },
     crossOriginOpenerPolicy: false,
     crossOriginResourcePolicy: false,
-    frameguard: false,
+    // X-Frame-Options: SAMEORIGIN — вторая линия против clickjacking (старые браузеры)
+    frameguard: { action: 'sameorigin' },
   }));
+  // CORS открыт (auth = Bearer-токен в заголовке, НЕ cookie → wildcard не даёт
+  // credentialed-CSRF/ATO). Ограничение origin сломало бы APK (Capacitor шлёт с
+  // capacitor://localhost) ради LOW-риска — сознательно оставлено открытым.
   app.use(cors());
   app.use(express.json());
 
@@ -141,8 +167,11 @@ export function createServer(bot: Bot<BotContext>, webhookSecret: string): expre
   app.get('*', (_req, res) => res.sendFile(path.join(adminDir, 'index.html')));
 
   app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+    // Полный текст ошибки — только в лог (может содержать детали схемы/констрейнтов
+    // БД). Клиенту — обобщённое сообщение (info-disclosure).
     console.error(`API error [${req.method} ${req.path}]:`, err.message);
-    res.status(500).json({ error: err.message || 'Внутренняя ошибка сервера' });
+    if (res.headersSent) return;
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
   });
 
   return app;

@@ -11,6 +11,7 @@
 // handleEmployeeReply (request.service).
 
 import { pool } from '../db/pool';
+import { sanitizeAttachment } from './attachments';
 
 export interface EmployeeRequestSummary {
   id: number;
@@ -46,6 +47,9 @@ export async function createEmployeeInitiatedRequest(opts: {
   fileName?: string | null;
 }): Promise<{ requestId: number }> {
   const text = (opts.text ?? '').trim();
+  // Вложение — только валидный наш Cloudinary-URL (защита от stored XSS через href/src)
+  const att = sanitizeAttachment(opts.fileUrl, opts.fileThumbnailUrl);
+  opts = { ...opts, fileUrl: att.fileUrl, fileThumbnailUrl: att.fileThumbnailUrl };
   if (!text && !opts.fileUrl) throw new Error('Нужен текст или файл');
 
   // Мессенджер-логика: продолжаем существующий ЛИЧНЫЙ тред сотрудника, если он
@@ -267,7 +271,9 @@ export async function sendEmployeeMessage(opts: {
   if (!access[0]) return null;
 
   const text = (opts.text ?? '').trim() || null;
-  if (!text && !opts.fileUrl) {
+  // Вложение — только валидный наш Cloudinary-URL (защита от stored XSS)
+  const att = sanitizeAttachment(opts.fileUrl, opts.fileThumbnailUrl);
+  if (!text && !att.fileUrl) {
     throw new Error('Пустое сообщение');
   }
 
@@ -276,7 +282,7 @@ export async function sendEmployeeMessage(opts: {
        (request_id, employee_id, sender_type, text_content, file_url, file_thumbnail_url, file_type, file_name)
      VALUES ($1, $2, 'employee', $3, $4, $5, $6, $7)
      RETURNING id`,
-    [opts.requestId, opts.employeeId, text, opts.fileUrl ?? null, opts.fileThumbnailUrl ?? null, opts.fileType ?? null, opts.fileName ?? null]
+    [opts.requestId, opts.employeeId, text, att.fileUrl, att.fileThumbnailUrl, att.fileUrl ? (opts.fileType ?? null) : null, att.fileUrl ? (opts.fileName ?? null) : null]
   );
 
   // Сотрудник написал — переоткрываем запрос если был closed (chat-mode)

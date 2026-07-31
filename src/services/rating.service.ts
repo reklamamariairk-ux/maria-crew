@@ -421,6 +421,22 @@ export async function recomputeMonthScores(
  * Это то, что делает кнопка «Обработать месяц» в табе Рейтинг.
  */
 export async function commitMonthRewards(year: number, month: number): Promise<ProcessMonthResult[]> {
+  // Сериализуем обработку одного месяца: cron (1-го числа) и ручная кнопка
+  // «Обработать месяц» могут стартовать одновременно → без лока бонус топ-точки
+  // (check-then-insert без уникального ключа) начислился бы дважды. Advisory-lock
+  // (session-level) держим на ВЫДЕЛЕННОМ client — иначе unlock уйдёт на другой
+  // коннект пула и не сработает. Лок глобальный по (year, month), виден всем сессиям.
+  const lockClient = await pool.connect();
+  try {
+    await lockClient.query(`SELECT pg_advisory_lock($1, $2)`, [year, month]);
+    return await commitMonthRewardsInner(year, month);
+  } finally {
+    await lockClient.query(`SELECT pg_advisory_unlock($1, $2)`, [year, month]).catch(() => {});
+    lockClient.release();
+  }
+}
+
+async function commitMonthRewardsInner(year: number, month: number): Promise<ProcessMonthResult[]> {
   const { rows: stores } = await pool.query<{ id: number; name: string }>(
     `SELECT id, name FROM stores WHERE is_active = true ORDER BY id`
   );

@@ -107,6 +107,29 @@ describe('coin.service: spend (обмен в магазине)', () => {
   });
 });
 
+describe('coin.service: earn — санитайз суммы (защита от манипуляций coin_admin)', () => {
+  it('отвергает сумму сверх бизнес-потолка (>100000)', async () => {
+    const { employeeId } = await seedEmployee(testPool);
+    await expect(earn({ employeeId, reason: 'manual', amount: 2_000_000_000 }))
+      .rejects.toThrow(/диапазон/i);
+  });
+  it('отвергает дробную сумму', async () => {
+    const { employeeId } = await seedEmployee(testPool);
+    await expect(earn({ employeeId, reason: 'manual', amount: 10.5 }))
+      .rejects.toThrow(/целым/i);
+  });
+  it('отвергает Infinity / NaN', async () => {
+    const { employeeId } = await seedEmployee(testPool);
+    await expect(earn({ employeeId, reason: 'manual', amount: Infinity })).rejects.toThrow(/целым/i);
+    await expect(earn({ employeeId, reason: 'manual', amount: NaN })).rejects.toThrow(/целым/i);
+  });
+  it('нормальную сумму в пределах — пропускает', async () => {
+    const { employeeId } = await seedEmployee(testPool);
+    await earn({ employeeId, reason: 'manual', amount: 5000 });
+    expect(await getBalance(employeeId)).toBe(5000);
+  });
+});
+
 // getMonthlySummary использует AT TIME ZONE 'Asia/Irkutsk' — pg-mem
 // этого синтаксиса не поддерживает. Тестируется через unit-тесты
 // (irkutskDate) и интеграционно вручную на проде.

@@ -76,6 +76,7 @@ router.post('/store-ratings', async (req: Request, res: Response, next: NextFunc
     if (!year || !month || !Array.isArray(items)) {
       res.status(400).json({ error: 'year, month, items обязательны' }); return;
     }
+    if (items.length > 500) { res.status(400).json({ error: 'Слишком много точек (максимум 500)' }); return; }
     for (const it of items) {
       await pool.query(
         `INSERT INTO store_monthly_stats
@@ -105,6 +106,7 @@ router.post('/batch', async (req: Request, res: Response, next: NextFunction): P
     if (!Array.isArray(items) || items.length === 0) {
       res.status(400).json({ error: 'Ожидается массив метрик' }); return;
     }
+    if (items.length > 2000) { res.status(400).json({ error: 'Слишком много записей (максимум 2000)' }); return; }
     const saved = await Promise.all(items.map(m => upsertMetrics(m)));
 
     const year = items[0]?.year;

@@ -65,6 +65,16 @@ export async function earn(params: {
   if (amount === undefined) {
     throw new Error(`Для причины '${reason}' нужно передать сумму явно`);
   }
+  // Санитайз суммы: только конечное целое в разумных бизнес-пределах. Раньше при
+  // reason='manual' сумма шла из req.body без верхней границы — coin_admin (самая
+  // низкодоверенная роль) мог начислить до int4-макс (монеты = реальные призы).
+  if (!Number.isFinite(amount) || !Number.isInteger(amount)) {
+    throw new Error('Сумма должна быть целым числом');
+  }
+  const MAX_ABS = 100_000; // разумный потолок разовой операции
+  if (Math.abs(amount) > MAX_ABS) {
+    throw new Error(`Сумма вне допустимого диапазона (не более ${MAX_ABS} за операцию)`);
+  }
   if (amount === 0) throw new Error('Сумма не может быть равна нулю');
 
   // Для отрицательных операций: баланс не уходит ниже 0

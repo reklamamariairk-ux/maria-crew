@@ -226,6 +226,11 @@ router.patch('/:id/name', async (req: Request, res: Response, next: NextFunction
     const { name } = req.body as { name?: string };
     if (!name || !name.trim()) { res.status(400).json({ error: 'name обязателен' }); return; }
     if (name.trim().length > 100) { res.status(400).json({ error: 'name слишком длинный (максимум 100 символов)' }); return; }
+    // coin_admin («только монеты») не должен увольнять через переименование в
+    // «не работает» (обход denyCoinAdminForWrites: авто-fire отзывает VPN + блок входа).
+    if (req.adminRole === 'coin_admin' && FIRED_NAME_RE.test(name)) {
+      res.status(403).json({ error: 'Увольнение (пометка «не работает») недоступно для роли «Только монеты»' }); return;
+    }
     const { rows } = await pool.query(
       `UPDATE employees SET name = $1 WHERE id = $2 RETURNING *`,
       [name.trim(), id]
@@ -387,6 +392,8 @@ router.post('/bulk-coins', requireRole('superadmin', 'coin_admin'), async (req: 
     if (!Array.isArray(employeeIds) || employeeIds.length === 0) {
       res.status(400).json({ error: 'employeeIds обязателен' }); return;
     }
+    // кап размера — защита от исчерпания пула соединений огромным массивом
+    if (employeeIds.length > 500) { res.status(400).json({ error: 'Слишком много получателей (максимум 500)' }); return; }
     if (!reason) { res.status(400).json({ error: 'reason обязателен' }); return; }
 
     const results = await Promise.all(employeeIds.map(async (employeeId) => {
@@ -428,6 +435,8 @@ router.post('/bulk-active', denyCoinAdminForWrites, async (req: Request, res: Re
     const { employeeIds, isActive } = req.body as { employeeIds: number[]; isActive: boolean };
     if (!Array.isArray(employeeIds) || employeeIds.length === 0) {
       res.status(400).json({ error: 'employeeIds обязателен' }); return;
+    }
+    if (employeeIds.length > 1000) { res.status(400).json({ error: 'Слишком много (максимум 1000)' }); return;
     }
     if (typeof isActive !== 'boolean') {
       res.status(400).json({ error: 'isActive обязателен' }); return;

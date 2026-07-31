@@ -4429,13 +4429,16 @@ async function renderRequestChat(id) {
       const time = new Date(resp.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
       let fileBlock = '';
       if (resp.fileUrl) {
+        // fileUrl/thumbnailUrl экранируем в атрибутах (defense-in-depth к серверной
+        // валидации Cloudinary-URL) — иначе stored XSS через onerror/атрибут-breakout
+        const fu = esc(resp.fileUrl), ft = esc(resp.fileThumbnailUrl || resp.fileUrl);
         if (resp.fileType === 'photo') {
-          fileBlock = `<a href="${resp.fileUrl}" target="_blank" rel="noopener"><img src="${resp.fileThumbnailUrl || resp.fileUrl}" alt="фото"></a>`;
+          fileBlock = `<a href="${fu}" target="_blank" rel="noopener"><img src="${ft}" alt="фото"></a>`;
         } else if (resp.fileType === 'video') {
-          fileBlock = `<video src="${resp.fileUrl}" controls preload="metadata" poster="${resp.fileThumbnailUrl || ''}"></video>`;
+          fileBlock = `<video src="${fu}" controls preload="metadata" poster="${esc(resp.fileThumbnailUrl || '')}"></video>`;
         } else if (resp.fileType === 'document') {
           const fname = resp.fileName || 'файл';
-          fileBlock = `<a href="${resp.fileUrl}" target="_blank" rel="noopener" download="${esc(fname)}" style="display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border:1px solid var(--border);border-radius:4px;text-decoration:none;color:inherit;background:var(--surface);margin-top:4px;font-size:11px"><i data-lucide="file"></i> ${esc(fname)}</a>`;
+          fileBlock = `<a href="${fu}" target="_blank" rel="noopener" download="${esc(fname)}" style="display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border:1px solid var(--border);border-radius:4px;text-decoration:none;color:inherit;background:var(--surface);margin-top:4px;font-size:11px"><i data-lucide="file"></i> ${esc(fname)}</a>`;
         }
       }
       const meta = side === 'manager'

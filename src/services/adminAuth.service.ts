@@ -80,6 +80,35 @@ export function verifyToken(token: string): TokenPayload | null {
   }
 }
 
+// ── Проверка актуальности админа по БД (отзыв доступа) ──────────────────────
+// Токен stateless и живёт 7 дней; чтобы деактивация/понижение роли применялись
+// СРАЗУ (а не через 7 дней), adminAuth на каждый запрос сверяет uid с БД. Кэш
+// 15с — чтобы polling-запросы админки не молотили БД; отзыв применится за ≤15с.
+interface LiveAdmin { role: AdminRole; isActive: boolean; }
+const liveCache = new Map<number, { at: number; val: LiveAdmin | null }>();
+const LIVE_TTL_MS = 15_000;
+
+export async function getLiveAdmin(uid: number): Promise<LiveAdmin | null> {
+  const now = Date.now();
+  const c = liveCache.get(uid);
+  if (c && now - c.at < LIVE_TTL_MS) return c.val;
+  let val: LiveAdmin | null = null;
+  try {
+    const { rows } = await pool.query<{ role: AdminRole; isActive: boolean }>(
+      `SELECT role, is_active AS "isActive" FROM admin_users WHERE id = $1`, [uid]);
+    if (rows[0]) val = { role: rows[0].role, isActive: rows[0].isActive };
+  } catch {
+    // БД мигнула — считаем токен временно валидным (не роняем всю админку),
+    // но НЕ кэшируем: следующий запрос перепроверит.
+    return c?.val ?? null;
+  }
+  liveCache.set(uid, { at: now, val });
+  return val;
+}
+
+/** Сбросить кэш для админа (после смены роли/деактивации — применить сразу). */
+export function invalidateLiveAdmin(uid: number): void { liveCache.delete(uid); }
+
 // ── Бутстрап начального суперадмина ─────────────────────────────────────────
 // Username: 'admin', пароль = effectiveAdminSecret (из env ADMIN_SECRET).
 

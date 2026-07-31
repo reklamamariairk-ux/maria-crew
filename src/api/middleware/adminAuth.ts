@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { verifyToken, type AdminRole } from '../../services/adminAuth.service';
+import { verifyToken, getLiveAdmin, type AdminRole } from '../../services/adminAuth.service';
 
 export { effectiveAdminSecret } from './secret';
 
@@ -18,9 +18,18 @@ export function adminAuth(req: Request, res: Response, next: NextFunction): void
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
-  req.adminUserId = payload.uid;
-  req.adminRole = payload.role;
-  next();
+  // Токен валиден по подписи, но сверяем с БД: деактивированный/удалённый админ
+  // должен терять доступ СРАЗУ, а роль берём АКТУАЛЬНУЮ (понижение применяется
+  // до истечения токена). Кэш 15с внутри getLiveAdmin бережёт БД.
+  getLiveAdmin(payload.uid).then((live) => {
+    if (!live || !live.isActive) {
+      res.status(401).json({ error: 'Доступ отозван' });
+      return;
+    }
+    req.adminUserId = payload.uid;
+    req.adminRole = live.role; // из БД, не из токена
+    next();
+  }).catch((err) => next(err));
 }
 
 /** Middleware-фабрика: пропускает только указанные роли. */

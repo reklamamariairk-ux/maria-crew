@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
-import { hashPassword, validatePassword, type AdminRole } from '../../services/adminAuth.service';
+import { hashPassword, validatePassword, invalidateLiveAdmin, type AdminRole } from '../../services/adminAuth.service';
 import { logAudit } from '../../services/audit.service';
 
 const router = Router();
@@ -121,6 +121,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
       vals
     );
     if (!rows[0]) { res.status(404).json({ error: 'Не найден' }); return; }
+    invalidateLiveAdmin(id); // смена роли/деактивация применяется СРАЗУ (не через кэш 15с)
     res.json(rows[0]);
     logAudit('admin_user_update', { adminUserId: id, role, isActive, passwordChanged: password !== undefined }, req.ip).catch(() => {});
   } catch (err) { next(err); }
@@ -154,6 +155,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction): P
     }
 
     await pool.query(`DELETE FROM admin_users WHERE id = $1`, [id]);
+    invalidateLiveAdmin(id); // удалённый админ теряет доступ СРАЗУ
     res.json({ ok: true });
     logAudit('admin_user_delete', { adminUserId: id }, req.ip).catch(() => {});
   } catch (err) { next(err); }

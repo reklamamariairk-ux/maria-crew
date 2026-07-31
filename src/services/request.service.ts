@@ -15,6 +15,7 @@ import type { BotContext } from '../bot/context';
 import { pool } from '../db/pool';
 import { uploadFileFromUrl, isCloudinaryConfigured } from './cloudinary.service';
 import type { CloudinaryResource } from './cloudinary.service';
+import { sanitizeAttachment } from './attachments';
 import { sendPushToEmployee } from './push.service';
 
 const BOT_TOKEN = (process.env.BOT_TOKEN ?? '').trim();
@@ -446,6 +447,8 @@ export async function sendManagerMessage(opts: {
   const targets = await getTargetEmployees(opts.requestId);
   if (targets.length === 0) throw new Error('У запроса нет получателей');
 
+  // Вложение — только валидный наш Cloudinary-URL (defense-in-depth от XSS)
+  const att = sanitizeAttachment(opts.fileUrl, opts.fileThumbnailUrl);
   // Записываем сообщение в БД (employee_id = первого target, для записи).
   const { rows: insRows } = await pool.query<{ id: number }>(
     `INSERT INTO request_responses
@@ -454,8 +457,8 @@ export async function sendManagerMessage(opts: {
      VALUES ($1, $2, 'manager', $3, $4, $5, $6, $7, $8) RETURNING id`,
     [opts.requestId, targets[0].id, opts.adminUserId ?? null,
      text || null,
-     opts.fileUrl ?? null, opts.fileThumbnailUrl ?? null,
-     opts.fileType ?? null, opts.fileName ?? null]
+     att.fileUrl, att.fileThumbnailUrl,
+     att.fileUrl ? (opts.fileType ?? null) : null, att.fileUrl ? (opts.fileName ?? null) : null]
   );
 
   // Рассылаем DM каждому получателю. Связываем reply→этот же запрос
