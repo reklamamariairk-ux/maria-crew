@@ -63,6 +63,51 @@ workflows:
         beta_groups:
           - Руководители
 
+  ios-unsigned:
+    # Неподписанный .ipa для Sideloadly. Сертификаты Apple НЕ нужны — подпишет
+    # Sideloadly бесплатным Apple ID юзера прямо при установке на iPhone.
+    # Скачать артефакт .ipa из результатов сборки, отдать в Sideloadly.
+    name: Мария Админ — iOS unsigned (Sideloadly)
+    instance_type: mac_mini_m2
+    max_build_duration: 45
+    environment:
+      node: 20
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: npm install
+        script: |
+          cd mobile-admin
+          npm ci || npm install
+      - name: Добавить/синхронизировать iOS
+        script: |
+          cd mobile-admin
+          npx cap add ios || echo "ios уже есть"
+          npx capacitor-assets generate --ios || echo "иконки: пропущено"
+          npx cap sync ios
+      - name: Собрать unsigned archive
+        script: |
+          cd mobile-admin/ios/App
+          xcodebuild \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$PWD/build/App.xcarchive" \
+            archive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" PROVISIONING_PROFILE_SPECIFIER=""
+      - name: Упаковать unsigned .ipa
+        script: |
+          cd mobile-admin/ios/App/build
+          mkdir -p Payload
+          cp -R App.xcarchive/Products/Applications/App.app Payload/App.app
+          zip -qr MariaAdmin-unsigned.ipa Payload
+          ls -la MariaAdmin-unsigned.ipa
+    artifacts:
+      - mobile-admin/ios/App/build/MariaAdmin-unsigned.ipa
+    # Публикации нет — просто скачиваем .ipa и несём в Sideloadly.
+
   android-admin:
     name: Мария Админ — Android
     instance_type: linux_x2
