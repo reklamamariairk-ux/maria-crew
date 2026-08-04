@@ -306,10 +306,11 @@
               <th data-sort="checklistPercent" class="sortable num">Чек-лист %</th>
               <th data-sort="revenuePercent" class="sortable num">План %</th>
               <th data-sort="attestationPercent" class="sortable num">Аттестация %</th>
+              <th data-sort="isMvp" class="sortable" style="text-align:center" title="Отметь лучших сотрудников — на точке их может быть несколько. Отмеченные звёзды сохраняются при «Сохранить», система дополнительно предложит своего кандидата по баллам">Лучший ⭐</th>
             </tr>
           </thead>
           <tbody id="metrics-tbody">
-            <tr><td colspan="7" class="empty">Выберите точку или режим «Все точки»</td></tr>
+            <tr><td colspan="8" class="empty">Выберите точку или режим «Все точки»</td></tr>
           </tbody>
         </table>
       </div>
@@ -318,6 +319,7 @@
         <button class="btn btn-primary" onclick="saveMetrics()"><i data-lucide="save"></i> Сохранить</button>
         <span class="text-muted" style="font-size:13px">
           После сохранения баллы рассчитаются автоматически — посмотри их в табе <b>Рейтинг</b>. Там же кнопка «Обработать месяц» для финальной выдачи наград.
+          Звёзды «Лучший» (можно несколько на точке) сохраняются вместе с метриками; система может добавить своего кандидата по баллам.
         </span>
       </div>
     </div>

@@ -544,8 +544,11 @@ function updatePeriodLabels() {
 // Состояние сортировки таблиц метрик
 const metricsSortState = { col: 'name', dir: 'asc' };
 const storeRatingsSortState = { col: 'storeName', dir: 'asc' };
-let metricsAllRows = []; // [{employeeId, employeeName, storeId, storeName, isActive, mysteryShopperScore, ...}]
+let metricsAllRows = []; // [{employeeId, employeeName, storeId, storeName, isActive, mysteryShopperScore, ..., isMvp}]
 let storeRatingsRows = []; // [{storeId, storeName, avgRatingScore, revenuePercent}]
+// Кого админ явно тронул звёздой «Лучший» в этой сессии (снятие тоже считается) —
+// только их false отправляем на бэк, нетронутые следуют авторасчёту.
+let mvpTouched = new Set();
 
 async function loadMetrics() {
   const tbody = document.getElementById('metrics-tbody');
@@ -594,8 +597,10 @@ async function loadMetrics() {
       checklistPercent: m.checklistPercent ?? null,
       revenuePercent: m.revenuePercent ?? null,
       attestationPercent: m.attestationPercent ?? null,
+      isMvp: m.isMvp ?? false,
     };
   });
+  mvpTouched = new Set();
 
   storeRatingsRows = (ratingsRows || []).map(r => ({
     storeId: r.storeId,
@@ -647,8 +652,10 @@ async function loadMetricsSingleStore(storeId) {
       checklistPercent: m.checklistPercent ?? null,
       revenuePercent: m.revenuePercent ?? null,
       attestationPercent: m.attestationPercent ?? null,
+      isMvp: m.isMvp ?? false,
     };
   });
+  mvpTouched = new Set();
 
   // В single-mode сортируем по имени по умолчанию (активные сверху)
   metricsSortState.col = 'name';
@@ -661,7 +668,7 @@ async function loadMetricsSingleStore(storeId) {
 function renderMetricsTable() {
   const tbody = document.getElementById('metrics-tbody');
   const showStore = !state.storeId;
-  const colspan = showStore ? 7 : 6;
+  const colspan = showStore ? 8 : 7;
 
   const sorted = sortRows(metricsAllRows, metricsSortState);
   // Активные сверху всегда, потом по выбранной сортировке
@@ -688,6 +695,7 @@ function renderMetricsTable() {
       <td><input type="number" class="m-checklist" min="0" max="100" step="0.1" value="${r.checklistPercent ?? ''}" placeholder="—"></td>
       <td><input type="number" class="m-revenue"   min="0" max="300" step="0.1" value="${r.revenuePercent ?? ''}" placeholder="—"></td>
       <td><input type="number" class="m-attest"    min="0" max="100" step="0.1" value="${r.attestationPercent ?? ''}" placeholder="—"></td>
+      <td style="text-align:center"><input type="checkbox" class="m-mvp" title="Лучший сотрудник (можно нескольких на точке)" ${r.isMvp ? 'checked' : ''} onchange="onMvpToggle(${r.employeeId}, this.checked)"></td>
     </tr>`;
   }).join('');
   updateSortIndicators('#metrics-table', metricsSortState);
@@ -767,7 +775,15 @@ function collectCurrentEdits() {
     r.checklistPercent    = num('.m-checklist');
     r.revenuePercent      = num('.m-revenue');
     r.attestationPercent  = num('.m-attest');
+    r.isMvp               = tr.querySelector('.m-mvp').checked;
   });
+}
+
+// Клик по звезде «Лучший» — запоминаем состояние и факт ручного вмешательства
+function onMvpToggle(employeeId, checked) {
+  const r = metricsAllRows.find(x => x.employeeId === employeeId);
+  if (r) r.isMvp = checked;
+  mvpTouched.add(employeeId);
 }
 
 function collectCurrentStoreRatingEdits() {
@@ -785,10 +801,17 @@ function collectCurrentStoreRatingEdits() {
 async function saveMetrics() {
   const rows = document.querySelectorAll('#metrics-tbody tr[data-employee-id]');
   const batch = [];
+  // Звёзды «Лучший»: все отмеченные шлём true ПОСЛЕ сохранения метрик (авто-
+  // пересчёт на бэке перезаписывает is_mvp своим кандидатом — поверх возвращаем
+  // ручные отметки); явно снятые в этой сессии (mvpTouched) шлём false.
+  const mvpOverrides = [];
   rows.forEach(row => {
     const id = parseInt(row.dataset.employeeId);
     const storeId = parseInt(row.dataset.storeId) || state.storeId;
     if (!storeId) return; // сотрудник без точки — пропускаем
+    const starred = row.querySelector('.m-mvp').checked;
+    if (starred) mvpOverrides.push({ employeeId: id, storeId, isMvp: true });
+    else if (mvpTouched.has(id)) mvpOverrides.push({ employeeId: id, storeId, isMvp: false });
     const val = sel => { const v = row.querySelector(sel).value; return v === '' ? undefined : parseFloat(v); };
     const mystery   = val('.m-mystery');
     const reviews   = parseInt(row.querySelector('.m-reviews').value) || 0;
@@ -807,7 +830,8 @@ async function saveMetrics() {
     });
   });
 
-  if (batch.length === 0) { toast('Нечего сохранять — заполни хотя бы одно поле'); return; }
+  // Разрешаем сохранение «только звёзды» — метрики могут быть ещё не заполнены
+  if (batch.length === 0 && mvpOverrides.length === 0) { toast('Нечего сохранять — заполни хотя бы одно поле'); return; }
 
   try {
     // В режиме «Одна точка» — попутно сохраним метрики точки (avgRatingScore + revenuePercent).
@@ -823,8 +847,15 @@ async function saveMetrics() {
         });
       }
     }
-    await api('POST', '/metrics/batch', batch);
-    toast(`✅ Сохранено: ${batch.length}. Баллы пересчитаны — смотри в табе «Рейтинг»`);
+    if (batch.length > 0) await api('POST', '/metrics/batch', batch);
+    // Ручные звёзды — строго после /metrics/batch (его авто-пересчёт затирает is_mvp)
+    for (const o of mvpOverrides) {
+      await api('PUT', `/leaderboard/employees/${o.employeeId}`, {
+        year: state.year, month: state.month, storeId: o.storeId, isMvp: o.isMvp,
+      });
+    }
+    const starCount = mvpOverrides.filter(o => o.isMvp).length;
+    toast(`✅ Сохранено: ${batch.length}${starCount ? ` · лучших отмечено: ${starCount}` : ''}. Баллы пересчитаны — смотри в табе «Рейтинг»`);
     loadMetrics();
   } catch (e) { toastError(e); }
 }
