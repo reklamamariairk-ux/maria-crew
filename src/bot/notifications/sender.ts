@@ -509,10 +509,12 @@ export async function publishMonthResults(
 
   text += `<b>Лучшие сотрудники по точкам:</b>\n`;
   for (const result of results) {
-    const mvp = result.employees.find(e => e.isMvp);
-    if (mvp) {
+    // Лучших на точке может быть несколько — перечисляем всех отмеченных
+    const mvps = result.employees.filter(e => e.isMvp);
+    if (mvps.length > 0) {
       const storeName = storeMap.get(result.storeId) ?? '';
-      text += `⭐ ${esc(storeName)}: <b>${esc(mvp.name)}</b> (${mvp.mvpScore.toFixed(2)} б.)\n`;
+      const names = mvps.map(m => `<b>${esc(m.name)}</b> (${m.mvpScore.toFixed(2)} б.)`).join(', ');
+      text += `⭐ ${esc(storeName)}: ${names}\n`;
     }
   }
 

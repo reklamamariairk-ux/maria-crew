@@ -1,15 +1,18 @@
 /**
- * «Торт месяца»: физический приз (торт или пирог «Мария») двум победителям сети —
- * лучшей точке (is_top в store_monthly_stats) и лучшему сотруднику СЕТИ
- * (максимальный mvp_score месяца среди всех точек, не ниже mvpMinScore).
+ * «Торт месяца»: физический приз (торт или пирог «Мария») победителям —
+ * лучшей точке (is_top в store_monthly_stats) и КАЖДОМУ сотруднику со статусом
+ * «Лучший» (is_mvp в monthly_metrics — авторасчёт или отметка админа в Рейтинге;
+ * лучших на точке может быть несколько).
  *
- * Идемпотентно: UNIQUE(year, month, kind) — повторное «Обработать месяц» не
- * задваивает призы и не рассылает повторные уведомления (created=false).
+ * Идемпотентно: уникальный индекс monthly_prizes_uniq — повторное «Обработать
+ * месяц» не задваивает призы и не рассылает повторные уведомления
+ * (created=false), но ДОБАВЛЯЕТ торты сотрудникам, отмеченным после прошлого
+ * прогона. Снятие статуса «Лучший» уже выданный торт не отзывает — лишнюю
+ * запись админ удаляет руками в секции «Торты месяца».
  * Запись в monthly_prizes — источник правды для админа, кто в этом месяце
  * получает торт.
  */
 import { pool } from '../db/pool';
-import { getMvpConfig } from './mvpConfig.service';
 import { toNum } from './rating.service';
 import { logAudit } from './audit.service';
 
@@ -27,9 +30,10 @@ const CONFLICT = `(year, month, kind, COALESCE(employee_id, 0), COALESCE(store_i
 
 export async function awardMonthlyCakes(year: number, month: number): Promise<CakeWinner[]> {
   const winners: CakeWinner[] = [];
-  // Авто-выдача — только если приза этого вида в месяце ещё НЕТ: иначе повторный
-  // «Обработать месяц» после правки баллов добавил бы ВТОРОЙ авто-торт другому
-  // лидеру. Дополнительные торты — осознанно, руками (addManualCakePrize).
+  // Топ-точка — только если приза этого вида в месяце ещё НЕТ: иначе повторный
+  // «Обработать месяц» после правки баллов добавил бы ВТОРОЙ авто-торт другой
+  // точке. Сотрудники же идут по флагам is_mvp — там повторный прогон ДОЛЖЕН
+  // доначислять отмеченным позже (дубли режет уникальный индекс).
   const { rows: existing } = await pool.query<{ kind: string }>(
     `SELECT DISTINCT kind FROM monthly_prizes WHERE year = $1 AND month = $2`, [year, month]);
   const hasKind = new Set(existing.map(r => r.kind));
@@ -57,31 +61,27 @@ export async function awardMonthlyCakes(year: number, month: number): Promise<Ca
     }
   }
 
-  // ── лучший сотрудник сети ──
-  if (!hasKind.has('best_employee')) {
-    const cfg = await getMvpConfig();
-    const { rows: best } = await pool.query<{ employeeId: number; name: string; storeId: number; mvpScore: string | null }>(
-      `SELECT mm.employee_id AS "employeeId", e.name, e.store_id AS "storeId", mm.mvp_score AS "mvpScore"
-       FROM monthly_metrics mm JOIN employees e ON e.id = mm.employee_id
-       WHERE mm.year = $1 AND mm.month = $2 AND e.is_active = true AND e.fired_at IS NULL
-         AND mm.mvp_score IS NOT NULL
-       ORDER BY mm.mvp_score DESC, e.name ASC
-       LIMIT 1`,
-      [year, month]
+  // ── лучшие сотрудники (все отмеченные is_mvp, лучших на точке может быть несколько) ──
+  // Порога по баллам нет: флаг is_mvp — уже осознанное решение (авторасчёт с
+  // порогом внутри либо ручная отметка руководителя, как в addManualCakePrize).
+  const { rows: mvps } = await pool.query<{ employeeId: number; name: string; storeId: number | null; mvpScore: string | null }>(
+    `SELECT mm.employee_id AS "employeeId", e.name, e.store_id AS "storeId", mm.mvp_score AS "mvpScore"
+     FROM monthly_metrics mm JOIN employees e ON e.id = mm.employee_id
+     WHERE mm.year = $1 AND mm.month = $2 AND mm.is_mvp = true AND e.fired_at IS NULL
+     ORDER BY e.name ASC`,
+    [year, month]
+  );
+  for (const m of mvps) {
+    const ins = await pool.query(
+      `INSERT INTO monthly_prizes (year, month, kind, employee_id, store_id) VALUES ($1, $2, 'best_employee', $3, $4)
+       ON CONFLICT ${CONFLICT} DO NOTHING RETURNING id`,
+      [year, month, m.employeeId, m.storeId]
     );
-    const bestScore = best[0] ? (toNum(best[0].mvpScore) ?? 0) : 0;
-    if (best[0] && bestScore >= cfg.mvpMinScore) {
-      const ins = await pool.query(
-        `INSERT INTO monthly_prizes (year, month, kind, employee_id, store_id) VALUES ($1, $2, 'best_employee', $3, $4)
-         ON CONFLICT ${CONFLICT} DO NOTHING RETURNING id`,
-        [year, month, best[0].employeeId, best[0].storeId]
-      );
-      winners.push({
-        kind: 'best_employee', storeId: best[0].storeId, employeeId: best[0].employeeId,
-        name: best[0].name, score: bestScore,
-        created: ins.rows.length > 0,
-      });
-    }
+    winners.push({
+      kind: 'best_employee', storeId: m.storeId, employeeId: m.employeeId,
+      name: m.name, score: toNum(m.mvpScore),
+      created: ins.rows.length > 0,
+    });
   }
 
   const fresh = winners.filter(w => w.created);

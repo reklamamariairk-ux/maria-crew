@@ -44,8 +44,9 @@ router.put('/employees/:employeeId', async (req: Request, res: Response, next: N
     };
     if (!year || !month || !storeId) { res.status(400).json({ error: 'year, month, storeId обязательны' }); return; }
 
-    // Атомарно: гарантия записи + (если нужно) сброс MVP у других + сохранение значений.
-    // Без транзакции возможна гонка — два параллельных PUT с isMvp=true дают двух MVP.
+    // «Лучших» на точке может быть НЕСКОЛЬКО (решение руководителя):
+    // isMvp=true ставит флаг только этому сотруднику, остальных не трогает.
+    // Снятие — только явным isMvp=false по конкретному человеку.
     await client.query('BEGIN');
 
     await client.query(
@@ -54,14 +55,6 @@ router.put('/employees/:employeeId', async (req: Request, res: Response, next: N
        ON CONFLICT (employee_id, year, month) DO NOTHING`,
       [employeeId, storeId, year, month]
     );
-
-    if (isMvp === true) {
-      await client.query(
-        `UPDATE monthly_metrics SET is_mvp = false, updated_at = NOW()
-         WHERE store_id = $1 AND year = $2 AND month = $3 AND employee_id <> $4`,
-        [storeId, year, month, employeeId]
-      );
-    }
 
     const sets: string[] = [];
     const vals: (number | boolean | null)[] = [];

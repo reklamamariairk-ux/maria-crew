@@ -219,8 +219,9 @@ router.post('/process', async (req: Request, res: Response, next: NextFunction):
     const notifications: Promise<unknown>[] = [];
     for (const result of results) {
       const storeName = storeNames.get(result.storeId) ?? '';
-      const mvp = result.employees.find(e => e.isMvp);
-      if (mvp) notifications.push(notifyMvp(mvp.employeeId, storeName, month, year, mvp.mvpScore));
+      for (const mvp of result.employees.filter(e => e.isMvp)) {
+        notifications.push(notifyMvp(mvp.employeeId, storeName, month, year, mvp.mvpScore));
+      }
       if (result.topStore) notifications.push(notifyTopStore(result.storeId, storeName, month, year, result.storeScore));
     }
     notifications.push(publishMonthResults(results, month, year));

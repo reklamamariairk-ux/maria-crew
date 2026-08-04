@@ -1,48 +1,61 @@
-/** «Торт месяца»: авто-выдача (только пока приза вида нет), ручное добавление, пороги. */
+/** «Торт месяца»: топ-точка (пока приза вида нет) + все отмеченные is_mvp, ручное добавление. */
 jest.mock('../db/pool', () => ({ pool: { query: jest.fn() } }));
-jest.mock('../services/mvpConfig.service', () => ({ getMvpConfig: jest.fn() }));
 jest.mock('../services/audit.service', () => ({ logAudit: jest.fn(() => Promise.resolve()) }));
 
 import { pool } from '../db/pool';
-import { getMvpConfig } from '../services/mvpConfig.service';
 import { awardMonthlyCakes, addManualCakePrize } from '../services/cakePrize.service';
 
 const mockQuery = pool.query as jest.Mock;
-const mockCfg = getMvpConfig as jest.Mock;
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockCfg.mockResolvedValue({ mvpMinScore: 40 });
 });
 
 describe('awardMonthlyCakes', () => {
-  test('первый прогон: топ-точка + лучший сотрудник, оба created', async () => {
+  test('первый прогон: топ-точка + ВСЕ отмеченные «Лучшие» (нескольким с одной точки), все created', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [] })  // существующих призов нет
       .mockResolvedValueOnce({ rows: [{ storeId: 9, name: 'Баррикад', totalScore: '71.20' }] })
       .mockResolvedValueOnce({ rows: [{ id: 1 }] })
-      .mockResolvedValueOnce({ rows: [{ employeeId: 31, name: 'Виталина', storeId: 2, mvpScore: '88.00' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 2 }] });
+      .mockResolvedValueOnce({ rows: [  // все is_mvp месяца, двое с точки 2
+        { employeeId: 31, name: 'Виталина', storeId: 2, mvpScore: '88.00' },
+        { employeeId: 44, name: 'Ольга', storeId: 2, mvpScore: '75.50' },
+        { employeeId: 57, name: 'Пётр', storeId: 5, mvpScore: null },
+      ] })
+      .mockResolvedValueOnce({ rows: [{ id: 2 }] })
+      .mockResolvedValueOnce({ rows: [{ id: 3 }] })
+      .mockResolvedValueOnce({ rows: [{ id: 4 }] });
+    const w = await awardMonthlyCakes(2026, 7);
+    expect(w).toHaveLength(4);
+    expect(w[0]).toMatchObject({ kind: 'top_store', storeId: 9, created: true, score: 71.2 });
+    expect(w[1]).toMatchObject({ kind: 'best_employee', employeeId: 31, storeId: 2, created: true, score: 88 });
+    expect(w[2]).toMatchObject({ kind: 'best_employee', employeeId: 44, storeId: 2, created: true, score: 75.5 });
+    expect(w[3]).toMatchObject({ kind: 'best_employee', employeeId: 57, storeId: 5, created: true, score: null });
+  });
+
+  test('повторный прогон: старым created=false, отмеченному ПОСЛЕ прошлого прогона — created=true', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ kind: 'top_store' }, { kind: 'best_employee' }] })
+      // top_store уже есть → селект точки пропускается; сразу is_mvp
+      .mockResolvedValueOnce({ rows: [
+        { employeeId: 31, name: 'Виталина', storeId: 2, mvpScore: '88.00' },
+        { employeeId: 44, name: 'Ольга', storeId: 2, mvpScore: '75.50' },
+      ] })
+      .mockResolvedValueOnce({ rows: [] })          // Виталина: конфликт, торт уже был
+      .mockResolvedValueOnce({ rows: [{ id: 9 }] }); // Ольга: отмечена позже — торт доезжает
     const w = await awardMonthlyCakes(2026, 7);
     expect(w).toHaveLength(2);
-    expect(w[0]).toMatchObject({ kind: 'top_store', storeId: 9, created: true, score: 71.2 });
-    expect(w[1]).toMatchObject({ kind: 'best_employee', employeeId: 31, created: true, score: 88 });
+    expect(w[0]).toMatchObject({ employeeId: 31, created: false });
+    expect(w[1]).toMatchObject({ employeeId: 44, created: true });
   });
 
-  test('повторный прогон: призы вида уже есть → авто ничего не добавляет (и не шлёт)', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [{ kind: 'top_store' }, { kind: 'best_employee' }] });
-    const w = await awardMonthlyCakes(2026, 7);
-    expect(w).toHaveLength(0);
-    expect(mockQuery).toHaveBeenCalledTimes(1); // дальше даже не ходили
-  });
-
-  test('нет топ-точки; сотрудник ниже mvpMinScore → без призов', async () => {
+  test('нет топ-точки и никто не отмечен → без призов', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })  // нет is_top
-      .mockResolvedValueOnce({ rows: [{ employeeId: 5, name: 'Тест', storeId: 1, mvpScore: '12.00' }] });
+      .mockResolvedValueOnce({ rows: [] }); // нет is_mvp
     const w = await awardMonthlyCakes(2026, 7);
-    expect(w).toHaveLength(0); // 12 < 40 — торт не уезжает кому попало
+    expect(w).toHaveLength(0);
   });
 });
 

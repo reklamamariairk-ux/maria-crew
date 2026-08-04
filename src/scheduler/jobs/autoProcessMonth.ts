@@ -38,12 +38,13 @@ export async function autoProcessMonth(): Promise<void> {
   const tasks: Promise<unknown>[] = [];
   for (const result of results) {
     const storeName = storeNames.get(result.storeId) ?? '';
-    const mvp = result.employees.find(e => e.isMvp);
-    if (mvp) tasks.push(notifyMvp(mvp.employeeId, storeName, month, year, mvp.mvpScore));
+    for (const mvp of result.employees.filter(e => e.isMvp)) {
+      tasks.push(notifyMvp(mvp.employeeId, storeName, month, year, mvp.mvpScore));
+    }
     if (result.topStore) tasks.push(notifyTopStore(result.storeId, storeName, month, year, result.storeScore));
   }
   tasks.push(publishMonthResults(results, month, year));
-  // «Торт месяца»: топ-точке и лучшему сотруднику сети (идемпотентно внутри)
+  // «Торт месяца»: топ-точке и каждому «Лучшему» (идемпотентно внутри)
   tasks.push(awardMonthlyCakes(year, month).then(w => notifyCakePrizes(w, month, year)));
 
   const outcomes = await Promise.allSettled(tasks);
