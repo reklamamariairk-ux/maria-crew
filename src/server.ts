@@ -36,7 +36,11 @@ export function createServer(bot: Bot<BotContext>, webhookSecret: string): expre
         'media-src': ["'self'", 'https://res.cloudinary.com', 'blob:'],
         'connect-src': ["'self'", 'https://api.cloudinary.com'],
         'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com'],
-        'frame-ancestors': ["'self'"],
+        // Telegram Desktop/Web открывает Mini App во фрейме. На мобильных это
+        // WebView, поэтому запрет проявлялся только у части сотрудников как
+        // полностью пустой экран. Разрешаем исключительно официальные origin'ы
+        // Telegram; остальные сайты по-прежнему не смогут встроить приложение.
+        'frame-ancestors': ["'self'", 'https://telegram.org', 'https://*.telegram.org'],
         'object-src': ["'none'"],
         'base-uri': ["'self'"],
         'form-action': ["'self'"],
@@ -44,8 +48,10 @@ export function createServer(bot: Bot<BotContext>, webhookSecret: string): expre
     },
     crossOriginOpenerPolicy: false,
     crossOriginResourcePolicy: false,
-    // X-Frame-Options: SAMEORIGIN — вторая линия против clickjacking (старые браузеры)
-    frameguard: { action: 'sameorigin' },
+    // X-Frame-Options не умеет allowlist из нескольких доменов и SAMEORIGIN
+    // перебивает корректный CSP в Telegram Desktop/Web. Контроль встраивания
+    // выполняет frame-ancestors выше.
+    frameguard: false,
   }));
   // CORS открыт (auth = Bearer-токен в заголовке, НЕ cookie → wildcard не даёт
   // credentialed-CSRF/ATO). Ограничение origin сломало бы APK (Capacitor шлёт с
