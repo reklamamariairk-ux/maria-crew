@@ -1214,6 +1214,26 @@ async function register() {
     tg?.HapticFeedback?.notificationOccurred('success');
     showWelcome(data.stats);
   } catch (err) {
+    // INSERT/привязка сотрудника могли успешно пройти, а ответ оборваться уже на
+    // загрузке статистики. В таком случае повторный /me надёжно подтверждает
+    // регистрацию и не оставляет человека навечно на этой кнопке.
+    try {
+      const me = await apiFetch('/me', {}, 3);
+      if (me && me.id) {
+        employee = me;
+        myStatsCache = me;
+        isNewUser = true;
+        saveCachedMe(me);
+        tg?.HapticFeedback?.notificationOccurred('success');
+        showWelcome({
+          availableCards: me.availableCards ?? 0,
+          coinBalance: me.coinBalance ?? 0,
+          uniqueHeroes: me.uniqueHeroes ?? 0,
+        });
+        return;
+      }
+    } catch { /* регистрация действительно не прошла — покажем исходную ошибку */ }
+
     showToast(err.message || 'Ошибка регистрации. Попробуй ещё раз.');
     btn.disabled = false; btn.textContent = 'Присоединиться к команде 🎉';
     tg?.HapticFeedback?.notificationOccurred('error');
