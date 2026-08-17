@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Maria Crew · Admin</title>
+  <meta name="description" content="Панель управления системой мотивации Maria Crew">
+  <meta name="robots" content="noindex, nofollow">
   <link rel="icon" type="image/png" href="/webapp/assets/favicon.png">
   <!-- PWA: установка на домашний экран iPhone/Android как отдельное приложение -->
   <link rel="manifest" href="/manifest.json">
@@ -14,7 +16,7 @@
   <meta name="apple-mobile-web-app-title" content="Мария · Админ">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="style.css">
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
   <style>
     /* Autocomplete для подбора товара 1С в форме «Призы» */
     .ac-wrap { position: relative; }
@@ -45,14 +47,14 @@
 <body>
 
 <!-- ── Login ─────────────────────────────────────────────────────────── -->
-<div id="login-screen">
-  <h1>Maria Crew</h1>
+<main id="login-screen" aria-labelledby="login-title">
+  <h1 id="login-title">Maria Crew</h1>
   <p>Панель управления</p>
-  <input type="text" id="login-username" placeholder="Логин" autocomplete="username">
-  <input type="password" id="login-password" placeholder="Пароль" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
+  <input type="text" id="login-username" aria-label="Логин" placeholder="Логин" autocomplete="username">
+  <input type="password" id="login-password" aria-label="Пароль" placeholder="Пароль" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
   <button onclick="login()">Войти</button>
   <p id="login-error" style="color:var(--red);font-size:13px"></p>
-</div>
+</main>
 
 <!-- ── App ───────────────────────────────────────────────────────────── -->
 <div id="app">

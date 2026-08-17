@@ -18,6 +18,9 @@ const token = process.env.BOT_TOKEN;
 if (!token) throw new Error('BOT_TOKEN не задан');
 
 const port = parseInt(process.env.PORT ?? '3000', 10);
+const databaseSsl = /sslmode=disable/.test(process.env.DATABASE_URL ?? '')
+  ? false
+  : { rejectUnauthorized: true } as const;
 
 const serviceUrl = (
   process.env.WEBHOOK_URL ??
@@ -80,7 +83,7 @@ async function checkDatabase(): Promise<void> {
 
   const client = new Client({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: databaseSsl,
     connectionTimeoutMillis: TIMEOUT_MS,
   });
 
@@ -108,7 +111,7 @@ async function checkDatabase(): Promise<void> {
 function makeDirectClient(): import('pg').Client {
   return new Client({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: databaseSsl,
     connectionTimeoutMillis: 120_000,
   });
 }
