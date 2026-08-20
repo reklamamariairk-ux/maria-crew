@@ -2,14 +2,32 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { logAudit } from '../../services/audit.service';
 import { fetchGis2Rating, refreshAllGis2Ratings, discoverGis2IdsForAllStores } from '../../services/gis2.service';
+import { isOfficeWorkspace, isStoreInWorkspace, workspaceForRequest } from '../../services/adminWorkspace.service';
 
 const router = Router();
 
+router.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  if (isOfficeWorkspace(req) && (req.path === '/discover-gis2-ids' || req.path === '/refresh-gis2-ratings')) {
+    res.status(403).json({ error: 'Эта операция недоступна в офисном контуре' });
+    return;
+  }
+  const idMatch = req.path.match(/^\/(\d+)(?:\/|$)/);
+  if (idMatch && !await isStoreInWorkspace(Number(idMatch[1]), workspaceForRequest(req))) {
+    res.status(403).json({ error: 'Эта команда недоступна в текущем контуре' });
+    return;
+  }
+  next();
+});
+
 // GET /api/stores
-router.get('/', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, name, address, gis2_id AS "gis2Id", is_active AS "isActive" FROM stores ORDER BY id`
+      `SELECT id, name, address, gis2_id AS "gis2Id", is_active AS "isActive"
+         FROM stores
+        WHERE workspace = $1
+        ORDER BY id`,
+      [isOfficeWorkspace(req) ? 'office' : 'retail'],
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -49,9 +67,9 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
       return;
     }
     const { rows } = await pool.query(
-      `INSERT INTO stores (name, address) VALUES ($1, $2)
+      `INSERT INTO stores (name, address, workspace) VALUES ($1, $2, $3)
        RETURNING id, name, address, is_active AS "isActive"`,
-      [name.trim(), address?.trim() || null]
+      [name.trim(), address?.trim() || null, isOfficeWorkspace(req) ? 'office' : 'retail']
     );
     res.status(201).json(rows[0]);
     logAudit('store_create', { storeId: rows[0].id, name: rows[0].name }).catch(() => {});

@@ -206,6 +206,21 @@
         </button>
       </div>
 
+      <div id="office-sales-summary" class="dash-stats hidden" style="margin-top:16px">
+        <div class="stat-card">
+          <div class="stat-card-icon"><i data-lucide="warehouse"></i></div>
+          <div class="value" id="office-sales-gp-count">—</div>
+          <div class="label">Продаж из 1С · Склад ГП</div>
+          <div id="office-sales-gp-detail" class="text-muted" style="font-size:12px;margin-top:6px">Загрузка…</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-icon"><i data-lucide="shopping-cart"></i></div>
+          <div class="value" id="office-sales-site-count">—</div>
+          <div class="label">Продаж из 1С · Склад Сайт</div>
+          <div id="office-sales-site-detail" class="text-muted" style="font-size:12px;margin-top:6px">Загрузка…</div>
+        </div>
+      </div>
+
       <div class="dashboard-grid">
         <div class="card card-pad">
           <p class="section-title"><i data-lucide="trophy" style="width:14px;height:14px"></i> Топ-3 по итогам <span id="dash-top3-period" class="text-muted" style="font-size:12px;font-weight:400"></span></p>
@@ -573,6 +588,11 @@
           <button class="btn btn-ghost" onclick="exportEmployeesCsv()"><i data-lucide="download"></i> CSV</button>
           <button class="btn btn-primary" onclick="showAddEmployee()"><i data-lucide="user-plus"></i> Добавить</button>
         </div>
+      </div>
+
+      <div id="office-telegram-guide" class="card card-pad hidden" style="margin-bottom:16px;border-left:4px solid var(--pink)">
+        <p class="section-title"><i data-lucide="send" style="width:15px;height:15px"></i> Как подключить сотрудника к Telegram</p>
+        <p class="text-muted" style="margin:0;line-height:1.6">Нажми «Добавить», укажи имя, команду и Telegram <strong>@username</strong>. Затем сотрудник открывает тот же бот Maria Crew и нажимает «Старт» — профиль, монеты и VPN привяжутся к нему автоматически.</p>
       </div>
 
       <div class="toolbar">

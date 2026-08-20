@@ -2,8 +2,85 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { getMvpConfig } from '../../services/mvpConfig.service';
 import { calcMvpScore } from '../../services/rating.service';
+import { isOfficeStore, isOfficeWorkspace, isStoreInWorkspace } from '../../services/adminWorkspace.service';
+import { getOneCSalesSummary } from '../../services/oneCSalesSummary.service';
 
 const router = Router();
+
+async function loadOfficeDashboard(req: Request, res: Response, year: number, month: number): Promise<void> {
+  const storeId = req.query.storeId ? Number(req.query.storeId) : null;
+  if (storeId !== null && (!Number.isInteger(storeId) || !await isOfficeStore(storeId))) {
+    res.status(403).json({ error: 'Офисной роли недоступна эта команда' });
+    return;
+  }
+
+  const storeClause = storeId ? 'AND e.store_id = $3' : '';
+  const storeParams = storeId ? [year, month, storeId] : [year, month];
+  const period = `${year}-${String(month).padStart(2, '0')}`;
+  const [employees, coins, performers, oneCSales] = await Promise.all([
+    pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+         FROM employees e JOIN stores s ON s.id = e.store_id
+        WHERE e.is_active = true AND e.fired_at IS NULL AND s.workspace = 'office'
+          ${storeId ? 'AND e.store_id = $1' : ''}`,
+      storeId ? [storeId] : [],
+    ),
+    pool.query<{ total: string }>(
+      `SELECT COALESCE(SUM(ct.amount), 0)::text AS total
+         FROM coin_transactions ct
+         JOIN employees e ON e.id = ct.employee_id
+         JOIN stores s ON s.id = e.store_id
+        WHERE ct.amount > 0 AND s.workspace = 'office'
+          AND EXTRACT(YEAR FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $1
+          AND EXTRACT(MONTH FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $2
+          ${storeClause}`,
+      storeParams,
+    ),
+    pool.query<{
+      id: number; name: string; storeName: string | null; totalCoins: string;
+      quizCoins: string; checklistCoins: string; challengeCoins: string;
+    }>(
+      `SELECT e.id, e.name, s.name AS "storeName",
+              SUM(ct.amount)::text AS "totalCoins",
+              SUM(CASE WHEN ct.reason = 'quiz' THEN ct.amount ELSE 0 END)::text AS "quizCoins",
+              SUM(CASE WHEN ct.reason = 'checklist_day' THEN ct.amount ELSE 0 END)::text AS "checklistCoins",
+              SUM(CASE WHEN ct.reason = 'manual' AND ct.note LIKE 'Челлендж #%' THEN ct.amount ELSE 0 END)::text AS "challengeCoins"
+         FROM employees e
+         JOIN stores s ON s.id = e.store_id
+         JOIN coin_transactions ct ON ct.employee_id = e.id AND ct.amount > 0
+        WHERE s.workspace = 'office' AND e.is_active = true AND e.fired_at IS NULL
+          AND EXTRACT(YEAR FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $1
+          AND EXTRACT(MONTH FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $2
+          ${storeClause}
+        GROUP BY e.id, e.name, s.name
+        ORDER BY SUM(ct.amount) DESC LIMIT 10`,
+      storeParams,
+    ),
+    getOneCSalesSummary(period),
+  ]);
+
+  const topPerformers = performers.rows.map(row => {
+    const total = Number(row.totalCoins);
+    const quiz = Number(row.quizCoins);
+    const checklist = Number(row.checklistCoins);
+    const challenge = Number(row.challengeCoins);
+    return {
+      id: row.id, name: row.name, storeName: row.storeName, totalCoins: total,
+      byCategory: { quiz, checklist, challenge, other: total - quiz - checklist - challenge },
+    };
+  });
+
+  res.json({
+    activeEmployees: Number(employees.rows[0]?.count ?? 0),
+    pendingExchanges: 0,
+    top3Mvp: [],
+    mvpPeriod: null,
+    coinsIssuedThisMonth: Number(coins.rows[0]?.total ?? 0),
+    topPerformers,
+    oneCSales,
+    storeId,
+  });
+}
 
 // GET /api/dashboard?storeId=N — сводная статистика для главной страницы.
 // Параметр storeId фильтрует все блоки (активные сотрудники, заявки, монеты,
@@ -16,11 +93,20 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
     const year = irkNow.getUTCFullYear();
     const month = irkNow.getUTCMonth() + 1;
 
+    if (isOfficeWorkspace(req)) {
+      await loadOfficeDashboard(req, res, year, month);
+      return;
+    }
+
     const storeIdRaw = req.query.storeId;
     const storeId = storeIdRaw && !Array.isArray(storeIdRaw)
       ? parseInt(String(storeIdRaw), 10)
       : NaN;
     const hasStore = Number.isInteger(storeId) && storeId > 0;
+    if (hasStore && !await isStoreInWorkspace(storeId, 'retail')) {
+      res.status(403).json({ error: 'Эта точка недоступна в розничном контуре' });
+      return;
+    }
 
     const [empResult, pendingResult, top3Result, coinsResult, topPerformersResult] = await Promise.all([
       hasStore
@@ -29,7 +115,9 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
             [storeId]
           )
         : pool.query<{ count: string }>(
-            `SELECT COUNT(*)::text AS count FROM employees WHERE is_active = true`
+            `SELECT COUNT(*)::text AS count FROM employees e
+             JOIN stores s ON s.id = e.store_id
+             WHERE e.is_active = true AND s.workspace = 'retail'`
           ),
       hasStore
         ? pool.query<{ count: string }>(
@@ -39,7 +127,10 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
             [storeId]
           )
         : pool.query<{ count: string }>(
-            `SELECT COUNT(*)::text AS count FROM store_exchanges WHERE status = 'pending'`
+            `SELECT COUNT(*)::text AS count FROM store_exchanges se
+             JOIN employees e ON e.id = se.employee_id
+             JOIN stores s ON s.id = e.store_id
+             WHERE se.status = 'pending' AND s.workspace = 'retail'`
           ),
       // Метрики свежайшего месяца + сохранённый mvp_score (если был «Обработать месяц»).
       // Если ничего нет — всё равно показываем сотрудников с любыми проставленными полями.
@@ -71,6 +162,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
          JOIN stores s ON s.id = e.store_id
          JOIN latest l ON l.year = mm.year AND l.month = mm.month
          WHERE e.is_active = true
+           AND s.workspace = 'retail'
            ${hasStore ? `AND e.store_id = $1` : ''}`,
         hasStore ? [storeId] : []
       ),
@@ -90,11 +182,13 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
             [year, month, storeId]
           )
         : pool.query<{ total: string }>(
-            `SELECT COALESCE(SUM(amount), 0)::text AS total
-             FROM coin_transactions
-             WHERE amount > 0
-               AND EXTRACT(YEAR  FROM created_at AT TIME ZONE 'Asia/Irkutsk') = $1
-               AND EXTRACT(MONTH FROM created_at AT TIME ZONE 'Asia/Irkutsk') = $2`,
+            `SELECT COALESCE(SUM(ct.amount), 0)::text AS total
+             FROM coin_transactions ct
+             JOIN employees e ON e.id = ct.employee_id
+             JOIN stores s ON s.id = e.store_id
+             WHERE ct.amount > 0 AND s.workspace = 'retail'
+               AND EXTRACT(YEAR  FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $1
+               AND EXTRACT(MONTH FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $2`,
             [year, month]
           ),
       // Топ-10 по активности за текущий месяц (Иркутск). Считаем сумму
@@ -117,6 +211,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
            AND EXTRACT(YEAR  FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $1
            AND EXTRACT(MONTH FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $2
            AND e.is_active = true
+           AND s.workspace = 'retail'
            ${hasStore ? `AND e.store_id = $3` : ''}
          GROUP BY e.id, e.name, s.name
          HAVING SUM(CASE WHEN ct.amount > 0 THEN ct.amount ELSE 0 END) > 0

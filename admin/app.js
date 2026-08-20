@@ -21,6 +21,10 @@ const ROLE_LABEL = {
   office_admin: 'Администратор офиса',
 };
 
+const OFFICE_MODE = location.pathname === '/office' || location.pathname.startsWith('/office/');
+const OFFICE_TABS = new Set(['dashboard', 'coins', 'employees', 'fired', 'vpn']);
+const LAST_TAB_KEY = OFFICE_MODE ? 'mc_office_last_tab' : 'mc_last_tab';
+
 // Единая точка истины: какие вкладки доступны какой роли.
 // Используется и в applyRoleVisibility(), и в switchTab() — чтобы UI и навигация не разошлись.
 const SUPERADMIN_ONLY_TABS = new Set(['adminUsers', 'settings', 'vpn']);
@@ -28,6 +32,7 @@ const COIN_ADMIN_TABS = new Set(['dashboard', 'coins', 'employees', 'prizes']);
 const EDITOR_FORBIDDEN_TABS = new Set(['coins']);
 
 function tabAllowed(tab, role) {
+  if (OFFICE_MODE) return (role === 'superadmin' || role === 'office_admin') && OFFICE_TABS.has(tab);
   if (role === 'superadmin') return true;
   if (SUPERADMIN_ONLY_TABS.has(tab)) return false;
   if (role === 'coin_admin') return COIN_ADMIN_TABS.has(tab);
@@ -108,7 +113,11 @@ async function api(method, path, body) {
   try {
     const opts = {
       method,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.token}` },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${state.token}`,
+        ...(OFFICE_MODE ? { 'X-Workspace': 'office' } : {}),
+      },
     };
     if (body) opts.body = JSON.stringify(body);
     res = await fetch(`/api${path}`, opts);
@@ -150,7 +159,7 @@ async function login() {
     state.requirePasswordChange = !!data.mustChangePassword;
     sessionStorage.setItem('mc_token', data.token);
     sessionStorage.setItem('mc_role', state.role);
-    if (state.role === 'office_admin') {
+    if (state.role === 'office_admin' && !OFFICE_MODE) {
       window.location.assign('/office');
       return;
     }
@@ -219,7 +228,10 @@ async function downloadCoinsCsv() {
   if (storeId) params.set('storeId', storeId);
   try {
     const res = await fetch(`/api/coins/export?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${state.token}` },
+      headers: {
+        Authorization: `Bearer ${state.token}`,
+        ...(OFFICE_MODE ? { 'X-Workspace': 'office' } : {}),
+      },
     });
     if (!res.ok) throw new ApiError(res.status, await res.text() || 'Ошибка экспорта');
     const csvText = await res.text();
@@ -329,8 +341,53 @@ function applyRoleVisibility() {
     }
   });
   document.querySelectorAll('.role-coins-write').forEach(el => {
-    el.style.display = (r === 'superadmin' || r === 'coin_admin') ? '' : 'none';
+    el.style.display = (r === 'superadmin' || r === 'coin_admin' || r === 'office_admin') ? '' : 'none';
   });
+  if (OFFICE_MODE) {
+    document.querySelectorAll('.sidebar-nav .nav-section').forEach(section => {
+      let node = section.nextElementSibling;
+      let hasVisibleTab = false;
+      while (node && !node.classList.contains('nav-section')) {
+        if (node.classList.contains('nav-item') && node.style.display !== 'none') hasVisibleTab = true;
+        node = node.nextElementSibling;
+      }
+      section.style.display = hasVisibleTab ? '' : 'none';
+    });
+  }
+}
+
+function applyOfficeInterface() {
+  if (!OFFICE_MODE) return;
+  document.title = 'Maria Crew · Офис';
+  const badge = document.querySelector('.sidebar-brand-badge');
+  if (badge) badge.textContent = 'Офис';
+  const storeLabel = document.querySelector('.sidebar-store-label');
+  if (storeLabel) storeLabel.textContent = 'Команда';
+  const guide = document.getElementById('office-telegram-guide');
+  if (guide) guide.classList.remove('hidden');
+  const sales = document.getElementById('office-sales-summary');
+  if (sales) sales.classList.remove('hidden');
+  const pending = document.getElementById('dash-pending-card');
+  if (pending) pending.classList.add('hidden');
+  const top3 = document.getElementById('dash-top3')?.closest('.card');
+  if (top3) top3.classList.add('hidden');
+  const officeLink = document.querySelector('.sidebar-footer a[href="/office"]');
+  if (officeLink && state.role === 'superadmin') {
+    officeLink.href = '/';
+    officeLink.title = 'Розничная админка';
+    const textEl = officeLink.querySelector('span');
+    if (textEl) textEl.textContent = 'Розница';
+  }
+  const externalVpnButton = document.querySelector('#tab-vpn button[onclick*="modal-vpn-ext-issue"]');
+  if (externalVpnButton) externalVpnButton.classList.add('hidden');
+  const vpnLinkButton = document.getElementById('vpn-link-btn');
+  if (vpnLinkButton) vpnLinkButton.classList.add('hidden');
+  const empSubtitle = document.querySelector('#tab-employees .page-subtitle');
+  if (empSubtitle) empSubtitle.textContent = 'Офисная команда: Telegram, монеты, статусы и VPN';
+  const vpnSubtitle = document.querySelector('#tab-vpn .page-subtitle');
+  if (vpnSubtitle) vpnSubtitle.textContent = 'Ключи, онлайн и трафик офисных сотрудников';
+  const newEmpStore = document.getElementById('new-emp-store');
+  if (newEmpStore?.closest('label')?.firstChild) newEmpStore.closest('label').firstChild.textContent = 'Команда ';
 }
 
 // ── App init ─────────────────────────────────────────────────────────────────
@@ -349,18 +406,21 @@ async function showApp() {
     }
     if (meta.id) state.adminUserId = meta.id;
   }
-  if (state.role === 'office_admin') {
+  if (state.role === 'office_admin' && !OFFICE_MODE) {
     window.location.replace('/office');
     return;
   }
+  applyOfficeInterface();
   applyRoleVisibility();
 
   updatePeriodLabels();
   renderIcons();
-  await Promise.all([loadStores(), loadCloudinaryConfig(), loadActiveChallengesForCoins()]);
+  await Promise.all(OFFICE_MODE
+    ? [loadStores()]
+    : [loadStores(), loadCloudinaryConfig(), loadActiveChallengesForCoins()]);
   // После обновления страницы возвращаемся на вкладку, где был админ
   // (switchTab сам откатит на dashboard, если вкладка роли недоступна)
-  switchTab(localStorage.getItem('mc_last_tab') || 'dashboard');
+  switchTab(localStorage.getItem(LAST_TAB_KEY) || 'dashboard');
 
   // Раз в 2 минуты подтягиваем счётчики ожидающих заявок + unread-запросов
   const refreshBadges = async () => {
@@ -373,8 +433,8 @@ async function showApp() {
       updateRequestsBadge(req?.count || 0);
     } catch { /* ignore */ }
   };
-  refreshBadges();
-  if (!state.pendingPoll) {
+  if (!OFFICE_MODE) refreshBadges();
+  if (!OFFICE_MODE && !state.pendingPoll) {
     state.pendingPoll = setInterval(refreshBadges, 30_000); // мессенджеру нужен живой бейдж
   }
 }
@@ -405,30 +465,31 @@ function populateStoreSelectors() {
 
   for (const id of promptIds) {
     const sel = document.getElementById(id);
-    if (sel) sel.innerHTML = buildOptions('— Выбери точку —');
+    if (sel) sel.innerHTML = buildOptions(OFFICE_MODE ? '— Все команды —' : '— Выбери точку —');
   }
   for (const id of allIds) {
     const sel = document.getElementById(id);
-    if (sel) sel.innerHTML = buildOptions('— Все точки —');
+    if (sel) sel.innerHTML = buildOptions(OFFICE_MODE ? '— Все команды —' : '— Все точки —');
   }
   // Селектор точки в форме добавления сотрудника
   const newEmpStore = document.getElementById('new-emp-store');
   if (newEmpStore) {
-    newEmpStore.innerHTML = '<option value="">— Выбери точку —</option>'
+    newEmpStore.innerHTML = `<option value="">${OFFICE_MODE ? '— Выбери команду —' : '— Выбери точку —'}</option>`
       + state.stores.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+    if (OFFICE_MODE && state.stores.length === 1) newEmpStore.value = String(state.stores[0].id);
   }
 
   // Селектор точки для массового начисления монет
   const bulkStore = document.getElementById('coin-bulk-store');
   if (bulkStore) {
-    bulkStore.innerHTML = '<option value="">— выбери точку —</option>'
+    bulkStore.innerHTML = `<option value="">${OFFICE_MODE ? '— выбери команду —' : '— выбери точку —'}</option>`
       + state.stores.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
   }
 
   // Селектор точки для экспорта монет
   const coinsExportStore = document.getElementById('coins-export-store');
   if (coinsExportStore) {
-    coinsExportStore.innerHTML = '<option value="">— все точки —</option>'
+    coinsExportStore.innerHTML = `<option value="">${OFFICE_MODE ? '— все команды —' : '— все точки —'}</option>`
       + state.stores.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
   }
 
@@ -436,7 +497,7 @@ function populateStoreSelectors() {
   const mobileStoreSel = document.getElementById('mobile-store-select');
   if (mobileStoreSel) {
     const current = state.storeId ? String(state.storeId) : '';
-    mobileStoreSel.innerHTML = '<option value="">— Все точки —</option>'
+    mobileStoreSel.innerHTML = `<option value="">${OFFICE_MODE ? '— Все команды —' : '— Все точки —'}</option>`
       + state.stores.map(s => `<option value="${s.id}"${String(s.id) === current ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
   }
 }
@@ -499,7 +560,7 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
   document.getElementById(`tab-${tab}`).classList.remove('hidden');
   state.currentTab = tab;
-  localStorage.setItem('mc_last_tab', tab); // выжить при F5: showApp() восстановит
+  localStorage.setItem(LAST_TAB_KEY, tab); // выжить при F5: showApp() восстановит
   closeSidebar();
   // Сбрасываем состояние аналитики при переходе со вкладки квиза
   if (tab !== 'quiz') {
@@ -3951,13 +4012,16 @@ async function loadDashboard() {
   const scopeEl = document.getElementById('dash-scope');
   if (scopeEl) {
     const store = state.stores.find(s => s.id === state.storeId);
-    scopeEl.textContent = store ? `Точка: ${store.name}` : 'Все точки';
+    scopeEl.textContent = store
+      ? `${OFFICE_MODE ? 'Команда' : 'Точка'}: ${store.name}`
+      : (OFFICE_MODE ? 'Все офисные команды' : 'Все точки');
   }
   const data = await api('GET', url);
   if (!data) return;
 
   document.getElementById('dash-active-emp-val').textContent = data.activeEmployees;
   document.getElementById('dash-coins-val').textContent = data.coinsIssuedThisMonth;
+  if (OFFICE_MODE) renderOfficeOneCSales(data.oneCSales);
 
   const pendingEl = document.getElementById('dash-pending-ex-val');
   const pendingCard = document.getElementById('dash-pending-card');
@@ -4027,6 +4091,26 @@ async function loadDashboard() {
 
   renderIcons();
   loadEngagement();
+}
+
+function renderOfficeOneCSales(summary) {
+  const countFmt = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 });
+  const quantityFmt = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 });
+  const moneyFmt = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 });
+  const renderMetric = (prefix, metric) => {
+    const count = document.getElementById(`office-sales-${prefix}-count`);
+    const detail = document.getElementById(`office-sales-${prefix}-detail`);
+    if (!count || !detail) return;
+    if (!metric) {
+      count.textContent = '—';
+      detail.textContent = 'Нет связи со сводкой 1С';
+      return;
+    }
+    count.textContent = countFmt.format(Number(metric.salesCount) || 0);
+    detail.textContent = `${quantityFmt.format(Number(metric.quantity) || 0)} шт. · ${moneyFmt.format(Number(metric.amount) || 0)} ₽`;
+  };
+  renderMetric('gp', summary?.gp);
+  renderMetric('site', summary?.site);
 }
 
 async function loadEngagement() {
@@ -4715,7 +4799,7 @@ async function showEmployeeModal(id) {
   const [summary, coinHistory, exchanges] = await Promise.all([
     api('GET', `/employees/${id}/summary`),
     api('GET', `/coins/history/${id}?limit=15`),
-    api('GET', `/exchanges?employeeId=${id}`),
+    OFFICE_MODE ? Promise.resolve([]) : api('GET', `/exchanges?employeeId=${id}`),
   ]);
 
   if (!summary) { body.innerHTML = '<p class="text-muted">Ошибка загрузки</p>'; return; }
@@ -4741,7 +4825,7 @@ async function showEmployeeModal(id) {
     ${nameEditor}
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px">
       <div style="flex:1;min-width:200px">
-        <div style="font-size:13px;color:var(--text-2);margin-bottom:4px">Точка</div>
+        <div style="font-size:13px;color:var(--text-2);margin-bottom:4px">${OFFICE_MODE ? 'Команда' : 'Точка'}</div>
         <div style="font-weight:600">${esc(summary.storeName ?? '—')}</div>
       </div>
       <div>
@@ -4770,10 +4854,10 @@ async function showEmployeeModal(id) {
       </div>
     </div>
 
-    ${(state.role === 'superadmin' || state.role === 'coin_admin' || state.role === 'editor') ? `
+    ${(state.role === 'superadmin' || state.role === 'coin_admin' || state.role === 'editor' || state.role === 'office_admin') ? `
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px;padding:12px;background:var(--pink-50,#fdeef3);border-radius:8px">
       <span style="font-size:13px;font-weight:700;flex:none">Быстрые действия:</span>
-      ${(state.role === 'superadmin' || state.role === 'coin_admin') ? `
+      ${(state.role === 'superadmin' || state.role === 'coin_admin' || state.role === 'office_admin') ? `
         <input type="number" id="emp-quick-amount" placeholder="±монеты" style="width:100px">
         <input type="text" id="emp-quick-note" placeholder="за что (примечание)" style="flex:1;min-width:130px">
         <button class="btn btn-primary btn-sm" onclick="quickCoinAward(${summary.id}, this)"><i data-lucide="coins"></i> Начислить</button>` : ''}
@@ -4808,7 +4892,7 @@ async function showEmployeeModal(id) {
          </table>`
       : '<p class="text-muted" style="margin-bottom:16px">Нет транзакций</p>'}
 
-    <p class="section-title">Заявки на обмен</p>
+    ${OFFICE_MODE ? '' : `<p class="section-title">Заявки на обмен</p>
     ${(exchanges && exchanges.length > 0)
       ? `<table style="width:100%;font-size:13px">
            <thead><tr><th>Дата</th><th>Приз</th><th>Карт.</th><th>Монет</th><th>Статус</th></tr></thead>
@@ -4820,10 +4904,10 @@ async function showEmployeeModal(id) {
              <td><span class="badge badge-${ex.status}">${statusLabel(ex.status)}</span></td>
            </tr>`).join('')}</tbody>
          </table>`
-      : '<p class="text-muted">Нет заявок</p>'}
+      : '<p class="text-muted">Нет заявок</p>'}`}
   `;
-  // Секция VPN подгружается отдельно (только superadmin) — модалка не ждёт движок.
-  if (state.role === 'superadmin') {
+  // Секция VPN подгружается отдельно — модалка не ждёт движок.
+  if (state.role === 'superadmin' || state.role === 'office_admin') {
     body.insertAdjacentHTML('beforeend', '<div id="emp-vpn-section"></div>');
     loadEmpVpnSection(id);
   }
@@ -4883,7 +4967,7 @@ async function loadVpn() {
 
   const btn = document.getElementById('vpn-link-btn');
   const cnt = document.getElementById('vpn-unlinked-count');
-  btn.classList.toggle('hidden', data.unlinked.length === 0);
+  btn.classList.toggle('hidden', OFFICE_MODE || data.unlinked.length === 0);
   cnt.textContent = data.unlinked.length ? `(${data.unlinked.length})` : '';
 
   if (data.linked.length === 0 && data.unlinked.length === 0) {

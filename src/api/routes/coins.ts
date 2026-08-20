@@ -5,11 +5,29 @@ import { notifyCoinAward } from '../../bot/notifications/sender';
 import { logAudit } from '../../services/audit.service';
 import { requireRole } from '../middleware/adminAuth';
 import type { CoinReason } from '../../types';
+import {
+  areEmployeesInWorkspace, isStoreInWorkspace, workspaceForRequest,
+} from '../../services/adminWorkspace.service';
 
 const router = Router();
 
+router.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const workspace = workspaceForRequest(req);
+  const pathEmployee = req.path.match(/^\/(?:balance|history)\/(\d+)(?:\/|$)/);
+  const employeeId = req.body?.employeeId ?? pathEmployee?.[1];
+  if (employeeId !== undefined && !await areEmployeesInWorkspace([Number(employeeId)], workspace)) {
+    res.status(403).json({ error: 'Этот сотрудник недоступен в текущем контуре' });
+    return;
+  }
+  if (req.query.storeId && !await isStoreInWorkspace(Number(req.query.storeId), workspace)) {
+    res.status(403).json({ error: 'Эта команда недоступна в текущем контуре' });
+    return;
+  }
+  next();
+});
+
 // POST /api/coins/award — только superadmin или coin_admin
-router.post('/award', requireRole('superadmin', 'coin_admin'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.post('/award', requireRole('superadmin', 'coin_admin', 'office_admin'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { employeeId, reason, amount, createdBy, note } = req.body as {
       employeeId: number; reason: Exclude<CoinReason, 'spend'>;
@@ -75,6 +93,7 @@ router.get('/recent', async (req: Request, res: Response, next: NextFunction): P
        FROM coin_transactions ct
        JOIN employees e ON e.id = ct.employee_id
        LEFT JOIN stores s ON s.id = e.store_id
+       WHERE s.workspace = '${workspaceForRequest(req)}'
        ORDER BY ct.id DESC LIMIT $1`, [limit]);
     res.json(rows);
   } catch (err) { next(err); }
@@ -119,7 +138,7 @@ router.get('/export', async (req: Request, res: Response, next: NextFunction): P
     }
 
     const params: (string | number)[] = [from, to];
-    let storeFilter = '';
+    let storeFilter = ` AND s.workspace = '${workspaceForRequest(req)}'`;
     if (storeIdRaw) {
       const storeId = parseInt(storeIdRaw, 10);
       if (!isNaN(storeId)) { params.push(storeId); storeFilter = ` AND e.store_id = $${params.length}`; }

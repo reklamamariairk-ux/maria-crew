@@ -7,8 +7,34 @@ import { notifyCoinAward } from '../../bot/notifications/sender';
 import { requireRole } from '../middleware/adminAuth';
 import { normalizePhone } from '../../services/employeeAuth.service';
 import { FIRED_NAME_RE, fireEmployee, restoreEmployee } from '../../services/employeeFire.service';
+import {
+  areEmployeesInWorkspace, isStoreInWorkspace, workspaceForRequest,
+} from '../../services/adminWorkspace.service';
 
 const router = Router();
+
+// Офисный администратор работает с обычными employees, поэтому Telegram,
+// монеты и VPN остаются общими. Здесь жёстко не даём выйти за офисные команды.
+router.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const workspace = workspaceForRequest(req);
+
+  const pathId = req.path.match(/^\/(\d+)(?:\/|$)/);
+  const employeeIds: number[] = [];
+  if (pathId) employeeIds.push(Number(pathId[1]));
+  if (req.body?.employeeId !== undefined) employeeIds.push(Number(req.body.employeeId));
+  if (Array.isArray(req.body?.employeeIds)) employeeIds.push(...req.body.employeeIds.map(Number));
+  if (employeeIds.length && !await areEmployeesInWorkspace(employeeIds, workspace)) {
+    res.status(403).json({ error: 'Этот сотрудник недоступен в текущем контуре' });
+    return;
+  }
+
+  const storeValue = req.body?.storeId ?? req.query.storeId;
+  if (storeValue !== undefined && storeValue !== '' && !await isStoreInWorkspace(Number(storeValue), workspace)) {
+    res.status(403).json({ error: 'Эта команда недоступна в текущем контуре' });
+    return;
+  }
+  next();
+});
 
 // coin_admin не может создавать/менять сотрудников
 function denyCoinAdminForWrites(req: Request, res: Response, next: NextFunction): void {
@@ -29,6 +55,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
 
     const params: (number | string)[] = [];
     const wheres: string[] = [];
+    wheres.push(`s.workspace = '${workspaceForRequest(req)}'`);
     if (storeId) { params.push(storeId); wheres.push(`e.store_id = $${params.length}`); }
     if (recentOnly) { wheres.push(`e.last_seen_at IS NOT NULL`); }
     // Уволенные по умолчанию скрыты отовсюду (монеты/лидерборд/выдачи); ?fired=only —
@@ -68,7 +95,8 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
       const [rows, countResult] = await Promise.all([
         pool.query(`${base} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, [...params, pageSize, offset]),
         pool.query<{ count: string }>(
-          `SELECT COUNT(*)::text AS count FROM employees e ${where}`,
+          `SELECT COUNT(*)::text AS count FROM employees e
+           LEFT JOIN stores s ON s.id = e.store_id ${where}`,
           params
         ),
       ]);
@@ -90,12 +118,12 @@ router.get('/engagement', async (req: Request, res: Response, next: NextFunction
     const days = Math.min(Math.max(parseInt(String(req.query.days ?? '30'), 10) || 30, 1), 90);
     const storeId = req.query.storeId ? parseInt(String(req.query.storeId), 10) : null;
     const params: (number | null)[] = [days];
-    let storeJoin = '';
-    let storeWhere = '';
+    const workspace = workspaceForRequest(req);
+    const storeJoin = `JOIN employees e ON e.id = dc.employee_id JOIN stores s ON s.id = e.store_id`;
+    let storeWhere = `AND s.workspace = '${workspace}'`;
     if (storeId && !isNaN(storeId)) {
       params.push(storeId);
-      storeJoin = `JOIN employees e ON e.id = dc.employee_id`;
-      storeWhere = `AND e.store_id = $${params.length}`;
+      storeWhere += ` AND e.store_id = $${params.length}`;
     }
     const { rows } = await pool.query<{ date: string; uniqueUsers: string }>(
       `SELECT dc.checkin_date::text AS date, COUNT(DISTINCT dc.employee_id)::text AS "uniqueUsers"
@@ -118,8 +146,10 @@ router.get('/summaries', async (req: Request, res: Response, next: NextFunction)
   try {
     const storeId = req.query.storeId ? parseInt(String(req.query.storeId), 10) : null;
     const params: number[] = [];
-    let where = '';
-    if (storeId) { params.push(storeId); where = `WHERE e.store_id = $${params.length}`; }
+    const wheres: string[] = [];
+    wheres.push(`EXISTS (SELECT 1 FROM stores s WHERE s.id = e.store_id AND s.workspace = '${workspaceForRequest(req)}')`);
+    if (storeId) { params.push(storeId); wheres.push(`e.store_id = $${params.length}`); }
+    const where = wheres.length ? `WHERE ${wheres.join(' AND ')}` : '';
 
     // Один запрос — все агрегации сразу через LATERAL/подзапросы.
     // Если 200 сотрудников: одна SQL вместо 600 (200 HTTP × 3 SQL).
@@ -384,7 +414,7 @@ router.put('/:id', denyCoinAdminForWrites, async (req: Request, res: Response, n
 
 // POST /api/employees/bulk-coins — начислить монеты сразу нескольким сотрудникам
 // body: { employeeIds: number[], reason: string, amount?: number, note?: string }
-router.post('/bulk-coins', requireRole('superadmin', 'coin_admin'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.post('/bulk-coins', requireRole('superadmin', 'coin_admin', 'office_admin'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { employeeIds, reason, amount, note } = req.body as {
       employeeIds: number[]; reason: string; amount?: number; note?: string;

@@ -5,11 +5,32 @@ import {
   deletePanelUser, VpnEngineError, VpnEngineUnavailable, VPN_ACTIONS, VpnAction, pickVpnName,
 } from '../../services/vpn.service';
 import { sendBroadcast } from '../../bot/notifications/sender';
+import {
+  areEmployeesInWorkspace, isOfficeWorkspace, workspaceForRequest,
+} from '../../services/adminWorkspace.service';
 
 // Управление VPN из админки crew (только superadmin — навешено в router.ts).
 // crew хранит маппинг employee_vpn, vpn-panel — сам движок ключей.
 
 const router = Router();
+
+router.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const office = isOfficeWorkspace(req);
+  if (office && (req.path.startsWith('/external') || req.path === '/issue-external' || req.path.startsWith('/link'))) {
+    res.status(403).json({ error: 'В офисном контуре VPN управляется только через карточку сотрудника' });
+    return;
+  }
+  const pathEmployee = req.path.match(/^\/(?:employee|link)\/(\d+)(?:\/|$)/);
+  const ids: number[] = [];
+  if (pathEmployee) ids.push(Number(pathEmployee[1]));
+  if (req.body?.employeeId !== undefined) ids.push(Number(req.body.employeeId));
+  if (Array.isArray(req.body?.employeeIds)) ids.push(...req.body.employeeIds.map(Number));
+  if (ids.length && !await areEmployeesInWorkspace(ids, workspaceForRequest(req))) {
+    res.status(403).json({ error: 'Этот сотрудник недоступен в текущем контуре' });
+    return;
+  }
+  next();
+});
 
 function handlePanelError(err: unknown, res: Response, next: NextFunction): void {
   if (err instanceof VpnEngineUnavailable) {
@@ -27,7 +48,7 @@ async function vpnNameByEmployee(employeeId: number): Promise<string | null> {
 }
 
 // GET /api/vpn/overview — всё для вкладки VPN и экрана связки.
-router.get('/overview', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.get('/overview', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (!vpnConfigured()) { res.status(502).json({ error: 'vpn_engine_unavailable' }); return; }
     const [panelUsers, links, employees, applyStatus] = await Promise.all([
@@ -35,7 +56,8 @@ router.get('/overview', async (_req: Request, res: Response, next: NextFunction)
       pool.query('SELECT employee_id, vpn_name FROM employee_vpn'),
       pool.query(`SELECT e.id, e.name, e.is_active, e.telegram_id IS NOT NULL AS has_telegram,
                          s.name AS store_name
-                  FROM employees e LEFT JOIN stores s ON s.id = e.store_id`),
+                  FROM employees e LEFT JOIN stores s ON s.id = e.store_id
+                  WHERE s.workspace = '${workspaceForRequest(req)}'`),
       panelApplyStatus().catch(() => ({ error: null })),
     ]);
     const byVpnName = new Map(links.rows.map((l: { employeeId: number; vpnName: string }) => [l.vpnName, l.employeeId]));
@@ -46,7 +68,7 @@ router.get('/overview', async (_req: Request, res: Response, next: NextFunction)
       const employeeId = byVpnName.get(pu.name);
       if (employeeId !== undefined && empById.has(employeeId)) {
         linked.push({ ...pu, employee: empById.get(employeeId) });
-      } else {
+      } else if (!isOfficeWorkspace(req) && employeeId === undefined) {
         unlinked.push(pu);
       }
     }

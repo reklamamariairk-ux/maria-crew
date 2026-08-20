@@ -62,12 +62,13 @@ router.get('/me/admin', (req: Request, res: Response): void => {
   res.json({ id: req.adminUserId, role: req.adminRole });
 });
 
-// Офис — отдельный контур данных и API. Офисный администратор не проходит
-// дальше этого блока и поэтому не может обратиться к розничным эндпоинтам,
-// даже если вручную подменит URL в браузере.
+// Старый офисный API оставляем для обратной совместимости. Новый интерфейс
+// использует те же сущности сотрудников/монет/VPN, но каждый роут ниже
+// дополнительно ограничивает данные офисным workspace.
 router.use('/office', requireRole('superadmin', 'office_admin'), officeRoutes);
 router.use((req: Request, res: Response, next: NextFunction): void => {
-  if (req.adminRole === 'office_admin') {
+  const officeAllowed = ['/coins', '/employees', '/stores', '/dashboard', '/vpn'];
+  if (req.adminRole === 'office_admin' && !officeAllowed.some(prefix => req.path === prefix || req.path.startsWith(prefix + '/'))) {
     res.status(403).json({ error: 'Офисной роли недоступны данные розницы' });
     return;
   }
@@ -124,7 +125,7 @@ router.use('/dashboard', dashboardRoutes);
 router.use('/admin-users', requireRole('superadmin'), adminUsersRoutes);
 
 // VPN сотрудников (проксирует в vpn-panel на этом же VPS) — только superadmin
-router.use('/vpn', requireRole('superadmin'), vpnRoutes);
+router.use('/vpn', requireRole('superadmin', 'office_admin'), vpnRoutes);
 
 // Бэкап БД — только superadmin
 router.use('/backup', denyForCoinAdmin, backupRoutes);
