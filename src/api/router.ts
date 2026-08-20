@@ -70,6 +70,9 @@ router.use((req: Request, res: Response, next: NextFunction): void => {
   const officeAllowed = [
     '/coins', '/employees', '/stores', '/dashboard', '/vpn',
     '/exchanges', '/prizes', '/categories',
+    '/metrics', '/cake-prizes', '/leaderboard', '/quiz', '/challenges',
+    '/cards', '/heroes', '/catalog', '/requests', '/audit', '/notify',
+    '/config', '/admin-users',
   ];
   if (req.adminRole === 'office_admin' && !officeAllowed.some(prefix => req.path === prefix || req.path.startsWith(prefix + '/'))) {
     res.status(403).json({ error: 'Офисной роли недоступны данные розницы' });
@@ -125,7 +128,7 @@ router.use('/config', (req: Request, res: Response, next: NextFunction): void =>
 router.use('/dashboard', dashboardRoutes);
 
 // Управление админ-пользователями — только superadmin
-router.use('/admin-users', requireRole('superadmin'), adminUsersRoutes);
+router.use('/admin-users', requireRole('superadmin', 'office_admin'), adminUsersRoutes);
 
 // VPN сотрудников (проксирует в vpn-panel на этом же VPS) — только superadmin
 router.use('/vpn', requireRole('superadmin', 'office_admin'), vpnRoutes);

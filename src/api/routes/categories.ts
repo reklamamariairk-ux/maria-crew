@@ -36,7 +36,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
       [name, emoji, sortOrder, workspaceForRequest(req)]
     );
     res.status(201).json(rows[0]);
-    logAudit('prize_category_create', { id: rows[0].id, name }).catch(() => {});
+    logAudit('prize_category_create', { id: rows[0].id, name, workspace: workspaceForRequest(req) }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -68,7 +68,7 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction): Pr
     );
     if (!rows[0]) { res.status(404).json({ error: 'Категория не найдена' }); return; }
     res.json(rows[0]);
-    logAudit('prize_category_update', { id: rows[0].id, changes: body }).catch(() => {});
+    logAudit('prize_category_update', { id: rows[0].id, changes: body, workspace: workspaceForRequest(req) }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -83,7 +83,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction): P
     );
     if (!rowCount) { res.status(404).json({ error: 'Категория не найдена' }); return; }
     res.json({ ok: true });
-    logAudit('prize_category_delete', { id }).catch(() => {});
+    logAudit('prize_category_delete', { id, workspace: workspaceForRequest(req) }).catch(() => {});
   } catch (err) { next(err); }
 });
 

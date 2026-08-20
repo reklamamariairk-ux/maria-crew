@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { getAuditLog } from '../../services/audit.service';
+import { isOfficeWorkspace } from '../../services/adminWorkspace.service';
 
 const router = Router();
 
@@ -9,7 +10,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
     const pageSize = Math.min(parseInt(String(req.query.pageSize ?? '50'), 10) || 50, 500);
     const page = Math.max(parseInt(String(req.query.page ?? '1'), 10) || 1, 1);
     const offset = (page - 1) * pageSize;
-    const result = await getAuditLog(pageSize, offset);
+    const result = await getAuditLog(pageSize, offset, isOfficeWorkspace(req) ? 'office' : undefined);
     res.json({ ...result, page, pages: Math.ceil(result.total / pageSize) });
   } catch (err) { next(err); }
 });

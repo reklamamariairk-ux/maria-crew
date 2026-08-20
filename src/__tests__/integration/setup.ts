@@ -155,16 +155,18 @@ export function newTestPool(): { pool: TestPool; db: IMemoryDb } {
       store_id INT REFERENCES stores(id),
       year INT NOT NULL,
       month INT NOT NULL,
+      workspace TEXT NOT NULL DEFAULT 'retail',
       mystery_shopper_score NUMERIC,
       reviews_count INT DEFAULT 0,
       checklist_percent NUMERIC,
       revenue_percent NUMERIC,
+      attestation_percent NUMERIC,
       mvp_score NUMERIC,
       is_mvp BOOLEAN DEFAULT false,
       cards_awarded JSONB,
       processed_at TIMESTAMPTZ,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE(employee_id, year, month)
+      UNIQUE(employee_id, year, month, workspace)
     );
 
     -- Мессенджер: диалоги (личные входящие / direct / рассылки) + сообщения
@@ -176,6 +178,7 @@ export function newTestPool(): { pool: TestPool; db: IMemoryDb } {
       initiated_by_employee_id INT REFERENCES employees(id),
       request_text TEXT,
       status TEXT NOT NULL DEFAULT 'open',
+      workspace TEXT NOT NULL DEFAULT 'retail',
       last_viewed_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

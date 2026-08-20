@@ -89,7 +89,7 @@ router.post('/attach-office', denyCoinAdminForWrites, async (req: Request, res: 
       [employeeId, storeId, req.adminUserId ?? null],
     );
     res.status(201).json({ id: employeeId, name: employee.rows[0].name, storeId });
-    logAudit('employee_update', { employeeId, officeStoreId: storeId, action: 'attach_office' }).catch(() => {});
+    logAudit('employee_update', { employeeId, officeStoreId: storeId, action: 'attach_office', workspace: 'office' }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -327,7 +327,7 @@ router.post('/', denyCoinAdminForWrites, async (req: Request, res: Response, nex
       await fireEmployee(rows[0].id, 'auto_1c', `admin#${req.adminUserId ?? '?'}`);
     }
     res.status(201).json(rows[0]);
-    logAudit('employee_create', { employeeId: rows[0].id, name, storeId, role, telegramUsername: username }).catch(() => {});
+    logAudit('employee_create', { employeeId: rows[0].id, name, storeId, role, telegramUsername: username, workspace: workspaceForRequest(req) }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -358,7 +358,7 @@ router.patch('/:id/name', async (req: Request, res: Response, next: NextFunction
       await fireEmployee(id, 'auto_1c', `admin#${req.adminUserId ?? '?'}`);
     }
     res.json(rows[0]);
-    logAudit('employee_update', { employeeId: id, name: name.trim(), via: 'patch_name' }).catch(() => {});
+    logAudit('employee_update', { employeeId: id, name: name.trim(), via: 'patch_name', workspace: workspaceForRequest(req) }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -494,13 +494,13 @@ router.put('/:id', denyCoinAdminForWrites, async (req: Request, res: Response, n
     res.json(rows[0]);
 
     if (storeId !== undefined) {
-      logAudit('employee_store_change', { employeeId: rows[0].id, newStoreId: storeId }).catch(() => {});
+      logAudit('employee_store_change', { employeeId: rows[0].id, newStoreId: storeId, workspace: workspaceForRequest(req) }).catch(() => {});
     }
     if (isActive !== undefined) {
-      logAudit(isActive ? 'employee_activate' : 'employee_deactivate', { employeeId: rows[0].id }).catch(() => {});
+      logAudit(isActive ? 'employee_activate' : 'employee_deactivate', { employeeId: rows[0].id, workspace: workspaceForRequest(req) }).catch(() => {});
     }
     if (name !== undefined || role !== undefined || username !== undefined || phone !== undefined || email !== undefined) {
-      logAudit('employee_update', { employeeId: rows[0].id, name, role, telegramUsername: username, phone: phoneNorm, email: emailNorm }).catch(() => {});
+      logAudit('employee_update', { employeeId: rows[0].id, name, role, telegramUsername: username, phone: phoneNorm, email: emailNorm, workspace: workspaceForRequest(req) }).catch(() => {});
     }
   } catch (err) {
     // Преобразуем unique-constraint violation (race condition) в понятный 409.
@@ -563,7 +563,7 @@ router.post('/bulk-coins', requireRole('superadmin', 'coin_admin', 'office_admin
 
     const succeeded = results.filter(r => r.ok).length;
     res.json({ ok: true, processed: results.length, succeeded, results });
-    logAudit('coin_award', { bulk: true, employeeIds, reason, amount, note: note ?? null, succeeded }).catch(() => {});
+    logAudit('coin_award', { bulk: true, employeeIds, reason, amount, note: note ?? null, succeeded, workspace: workspaceForRequest(req) }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -584,7 +584,7 @@ router.post('/bulk-active', denyCoinAdminForWrites, async (req: Request, res: Re
       [isActive, employeeIds]
     );
     res.json({ ok: true, count: employeeIds.length });
-    logAudit(isActive ? 'employee_activate' : 'employee_deactivate', { bulk: true, employeeIds }).catch(() => {});
+    logAudit(isActive ? 'employee_activate' : 'employee_deactivate', { bulk: true, employeeIds, workspace: workspaceForRequest(req) }).catch(() => {});
   } catch (err) { next(err); }
 });
 

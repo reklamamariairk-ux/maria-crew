@@ -5,6 +5,7 @@ import { awardMonthlyCakes } from '../../services/cakePrize.service';
 import { notifyMvp, notifyTopStore, publishMonthResults, notifyCakePrizes } from '../../bot/notifications/sender';
 import { logAudit } from '../../services/audit.service';
 import type { MonthlyMetricsInput } from '../../types';
+import { areEmployeesInWorkspace, workspaceForRequest } from '../../services/adminWorkspace.service';
 
 const router = Router();
 
@@ -16,8 +17,9 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
     if (!year || !month) {
       res.status(400).json({ error: 'year, month обязательны' }); return;
     }
-    const params: unknown[] = [year, month];
-    let where = 'mm.year = $1 AND mm.month = $2';
+    const workspace = workspaceForRequest(req);
+    const params: unknown[] = [year, month, workspace];
+    let where = 'mm.year = $1 AND mm.month = $2 AND mm.workspace = $3';
     if (storeId) {
       params.push(storeId);
       where += ` AND mm.store_id = $${params.length}`;
@@ -55,9 +57,9 @@ router.get('/store-ratings', async (req: Request, res: Response, next: NextFunct
        FROM stores s
        LEFT JOIN store_monthly_stats sms
          ON sms.store_id = s.id AND sms.year = $1 AND sms.month = $2
-       WHERE s.is_active = true
+       WHERE s.is_active = true AND s.workspace = $3
        ORDER BY s.name`,
-      [year, month]
+      [year, month, workspaceForRequest(req)]
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -77,6 +79,15 @@ router.post('/store-ratings', async (req: Request, res: Response, next: NextFunc
       res.status(400).json({ error: 'year, month, items обязательны' }); return;
     }
     if (items.length > 500) { res.status(400).json({ error: 'Слишком много точек (максимум 500)' }); return; }
+    const workspace = workspaceForRequest(req);
+    const storeIds = [...new Set(items.map(item => item.storeId))];
+    const allowedStores = await pool.query<{ count: number }>(
+      `SELECT COUNT(*)::int AS count FROM stores WHERE id = ANY($1::int[]) AND workspace = $2`,
+      [storeIds, workspace],
+    );
+    if (Number(allowedStores.rows[0]?.count ?? 0) !== storeIds.length) {
+      res.status(403).json({ error: 'Одна из команд недоступна в текущем контуре' }); return;
+    }
     for (const it of items) {
       await pool.query(
         `INSERT INTO store_monthly_stats
@@ -90,9 +101,9 @@ router.post('/store-ratings', async (req: Request, res: Response, next: NextFunc
     }
     // Полный preview-пересчёт (mvp_score сотрудников + total_score точек + rank).
     // Без начисления карточек/монет/уведомлений — это делает «Обработать месяц».
-    await recomputeMonthScores(year, month);
+    await recomputeMonthScores(year, month, undefined, workspace);
     res.json({ ok: true, saved: items.length });
-    logAudit('store_ratings_save', { year, month, count: items.length }).catch(() => {});
+    logAudit('store_ratings_save', { year, month, count: items.length, workspace }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -107,17 +118,30 @@ router.post('/batch', async (req: Request, res: Response, next: NextFunction): P
       res.status(400).json({ error: 'Ожидается массив метрик' }); return;
     }
     if (items.length > 2000) { res.status(400).json({ error: 'Слишком много записей (максимум 2000)' }); return; }
-    const saved = await Promise.all(items.map(m => upsertMetrics(m)));
+    const workspace = workspaceForRequest(req);
+    const employeeIds = [...new Set(items.map(item => item.employeeId))];
+    const storeIds = [...new Set(items.map(item => item.storeId))];
+    const [employeesAllowed, storesAllowed] = await Promise.all([
+      areEmployeesInWorkspace(employeeIds, workspace),
+      pool.query<{ count: number }>(
+        `SELECT COUNT(*)::int AS count FROM stores WHERE id = ANY($1::int[]) AND workspace = $2`,
+        [storeIds, workspace],
+      ),
+    ]);
+    if (!employeesAllowed || Number(storesAllowed.rows[0]?.count ?? 0) !== storeIds.length) {
+      res.status(403).json({ error: 'Сотрудник или команда недоступны в текущем контуре' }); return;
+    }
+    const saved = await Promise.all(items.map(m => upsertMetrics(m, workspace)));
 
     const year = items[0]?.year;
     const month = items[0]?.month;
     if (year && month) {
-      try { await recomputeMonthScores(year, month); }
+      try { await recomputeMonthScores(year, month, undefined, workspace); }
       catch (e) { console.error('[metrics/batch] preview recompute failed:', e); }
     }
 
     res.json(saved);
-    logAudit('metrics_save', { count: saved.length, year, month, storeId: items[0]?.storeId }).catch(() => {});
+    logAudit('metrics_save', { count: saved.length, year, month, storeId: items[0]?.storeId, workspace }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -128,18 +152,19 @@ router.get('/month-status', async (req: Request, res: Response, next: NextFuncti
     const year = parseInt(String(req.query.year), 10);
     const month = parseInt(String(req.query.month), 10);
     if (!year || !month) { res.status(400).json({ error: 'year, month обязательны' }); return; }
+    const workspace = workspaceForRequest(req);
     const [stores, ratings, emps, processed, cakes] = await Promise.all([
-      pool.query<{ n: string }>(`SELECT COUNT(*)::text n FROM stores WHERE is_active = true`),
+      pool.query<{ n: string }>(`SELECT COUNT(*)::text n FROM stores WHERE is_active = true AND workspace = $1`, [workspace]),
       pool.query<{ n: string }>(
-        `SELECT COUNT(*)::text n FROM store_monthly_stats
-         WHERE year = $1 AND month = $2 AND avg_rating_score IS NOT NULL`, [year, month]),
+        `SELECT COUNT(*)::text n FROM store_monthly_stats sms JOIN stores s ON s.id = sms.store_id
+         WHERE sms.year = $1 AND sms.month = $2 AND sms.avg_rating_score IS NOT NULL AND s.workspace = $3`, [year, month, workspace]),
       pool.query<{ n: string; scored: string }>(
         `SELECT COUNT(*)::text n, COUNT(mvp_score)::text scored FROM monthly_metrics
-         WHERE year = $1 AND month = $2`, [year, month]),
+         WHERE year = $1 AND month = $2 AND workspace = $3`, [year, month, workspace]),
       pool.query<{ at: string | null }>(
-        `SELECT MAX(processed_at)::text at FROM monthly_metrics WHERE year = $1 AND month = $2`, [year, month]),
+        `SELECT MAX(processed_at)::text at FROM monthly_metrics WHERE year = $1 AND month = $2 AND workspace = $3`, [year, month, workspace]),
       pool.query<{ n: string }>(
-        `SELECT COUNT(*)::text n FROM monthly_prizes WHERE year = $1 AND month = $2`, [year, month]),
+        `SELECT COUNT(*)::text n FROM monthly_prizes WHERE year = $1 AND month = $2 AND workspace = $3`, [year, month, workspace]),
     ]);
     res.json({
       storesTotal: parseInt(stores.rows[0].n, 10),
@@ -157,6 +182,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
   try {
     const { mysteryShopperScore, reviewsCount, checklistPercent, revenuePercent, attestationPercent } =
       req.body as Partial<MonthlyMetricsInput>;
+    const workspace = workspaceForRequest(req);
     const { rows } = await pool.query(
       `UPDATE monthly_metrics SET
          mystery_shopper_score = COALESCE($1, mystery_shopper_score),
@@ -165,9 +191,9 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
          revenue_percent       = COALESCE($4, revenue_percent),
          attestation_percent   = COALESCE($5, attestation_percent),
          updated_at            = NOW()
-       WHERE id = $6 RETURNING *`,
+       WHERE id = $6 AND workspace = $7 RETURNING *`,
       [mysteryShopperScore ?? null, reviewsCount ?? null,
-       checklistPercent ?? null, revenuePercent ?? null, attestationPercent ?? null, req.params.id]
+       checklistPercent ?? null, revenuePercent ?? null, attestationPercent ?? null, req.params.id, workspace]
     );
     if (!rows[0]) { res.status(404).json({ error: 'Не найден' }); return; }
     res.json(rows[0]);
@@ -201,13 +227,14 @@ router.post('/process', async (req: Request, res: Response, next: NextFunction):
     // storeRatings игнорируется здесь — он применяется только при сохранении
     // метрик точек через /metrics/store-ratings.
     void storeRatings; // для будущего back-compat
-    const results = await commitMonthRewards(year, month);
+    const workspace = workspaceForRequest(req);
+    const results = await commitMonthRewards(year, month, workspace);
 
     // Отвечаем сразу — данные уже сохранены. Уведомления улетают в фоне:
     // запросы к Telegram могут занять секунды × 16 точек × N сотрудников;
     // не должны блокировать UI админа.
     res.json({ ok: true, processed: results.length, results });
-    logAudit('metrics_process', { year, month, storeIds: results.map(r => r.storeId) }).catch(() => {});
+    logAudit('metrics_process', { year, month, storeIds: results.map(r => r.storeId), workspace }).catch(() => {});
 
     // Background fan-out уведомлений — все параллельно, ошибки изолированы.
     const storeIds = results.map(r => r.storeId);
@@ -224,10 +251,10 @@ router.post('/process', async (req: Request, res: Response, next: NextFunction):
       }
       if (result.topStore) notifications.push(notifyTopStore(result.storeId, storeName, month, year, result.storeScore));
     }
-    notifications.push(publishMonthResults(results, month, year));
+    if (workspace === 'retail') notifications.push(publishMonthResults(results, month, year));
     // «Торт месяца»: топ-точке и лучшему сотруднику сети (идемпотентно внутри)
     notifications.push(
-      awardMonthlyCakes(year, month).then(w => notifyCakePrizes(w, month, year))
+      awardMonthlyCakes(year, month, workspace).then(w => notifyCakePrizes(w, month, year))
     );
 
     Promise.allSettled(notifications).then(rs => {

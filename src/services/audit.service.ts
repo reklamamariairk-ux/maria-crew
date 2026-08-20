@@ -85,19 +85,24 @@ export interface AuditLogEntry {
 
 export async function getAuditLog(
   limit = 50,
-  offset = 0
+  offset = 0,
+  workspace?: 'office',
 ): Promise<{ data: AuditLogEntry[]; total: number }> {
+  const where = workspace === 'office'
+    ? `WHERE action LIKE 'office_%' OR details->>'workspace' = 'office'`
+    : '';
   const [logResult, countResult] = await Promise.all([
     pool.query<AuditLogEntry>(
       `SELECT id, action, details, performed_by AS "performedBy",
               to_char(created_at AT TIME ZONE 'Asia/Irkutsk', 'YYYY-MM-DD"T"HH24:MI:SS') AS "createdAt"
        FROM admin_audit_log
+       ${where}
        ORDER BY created_at DESC
        LIMIT $1 OFFSET $2`,
       [limit, offset]
     ),
     pool.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM admin_audit_log`
+      `SELECT COUNT(*)::text AS count FROM admin_audit_log ${where}`
     ),
   ]);
 

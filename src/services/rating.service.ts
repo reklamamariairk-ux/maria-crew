@@ -1,6 +1,7 @@
 import { pool } from '../db/pool';
 import { calcCardAwards, awardCards, awardTeamBonus } from './card.service';
 import { getMvpConfig, type MvpConfig } from './mvpConfig.service';
+import type { AdminWorkspace } from './adminWorkspace.service';
 import type {
   EmployeeRanking,
   MonthlyMetrics,
@@ -127,13 +128,17 @@ export function calcStoreScore(s: {
 // ─── Работа с метриками ───────────────────────────────────────────────────────
 
 /** Сохраняет или обновляет метрики сотрудника за месяц */
-export async function upsertMetrics(input: MonthlyMetricsInput): Promise<MonthlyMetrics> {
+export async function upsertMetrics(
+  input: MonthlyMetricsInput,
+  workspace: AdminWorkspace = 'retail',
+): Promise<MonthlyMetrics> {
   const { rows } = await pool.query<MonthlyMetrics>(
     `INSERT INTO monthly_metrics
-       (employee_id, store_id, year, month,
+       (employee_id, store_id, year, month, workspace,
         mystery_shopper_score, reviews_count, checklist_percent, revenue_percent, attestation_percent, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-     ON CONFLICT (employee_id, year, month) DO UPDATE SET
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+     ON CONFLICT (employee_id, year, month, workspace) DO UPDATE SET
+       store_id              = EXCLUDED.store_id,
        mystery_shopper_score = EXCLUDED.mystery_shopper_score,
        reviews_count         = EXCLUDED.reviews_count,
        checklist_percent     = EXCLUDED.checklist_percent,
@@ -146,6 +151,7 @@ export async function upsertMetrics(input: MonthlyMetricsInput): Promise<Monthly
       input.storeId,
       input.year,
       input.month,
+      workspace,
       input.mysteryShopperScore ?? null,
       input.reviewsCount ?? 0,
       input.checklistPercent ?? null,
@@ -160,15 +166,16 @@ export async function upsertMetrics(input: MonthlyMetricsInput): Promise<Monthly
 async function getStoreMetrics(
   storeId: number,
   year: number,
-  month: number
+  month: number,
+  workspace: AdminWorkspace = 'retail',
 ): Promise<(MonthlyMetrics & { employeeName: string })[]> {
   const { rows } = await pool.query<MonthlyMetrics & { employeeName: string }>(
     `SELECT mm.*, e.name AS "employeeName"
      FROM monthly_metrics mm
      JOIN employees e ON e.id = mm.employee_id
-     WHERE mm.store_id = $1 AND mm.year = $2 AND mm.month = $3
+     WHERE mm.store_id = $1 AND mm.year = $2 AND mm.month = $3 AND mm.workspace = $4
        AND e.is_active = true`,
-    [storeId, year, month]
+    [storeId, year, month, workspace]
   );
   // NUMERIC → число на границе: дальше по коду метрики сравниваются/усредняются
   // как числа (calcMvpScore, calcCardAwards, numAvg)
@@ -195,9 +202,10 @@ async function getStoreMetrics(
 export async function recomputeScoresForStore(
   storeId: number,
   year: number,
-  month: number
+  month: number,
+  workspace: AdminWorkspace = 'retail',
 ): Promise<ProcessMonthResult['employees']> {
-  const metrics = await getStoreMetrics(storeId, year, month);
+  const metrics = await getStoreMetrics(storeId, year, month, workspace);
   if (metrics.length === 0) return [];
 
   const cfg = await getMvpConfig();
@@ -235,9 +243,10 @@ export async function recomputeScoresForStore(
 export async function commitRewardsForStore(
   storeId: number,
   year: number,
-  month: number
+  month: number,
+  workspace: AdminWorkspace = 'retail',
 ): Promise<ProcessMonthResult['employees']> {
-  const metrics = await getStoreMetrics(storeId, year, month);
+  const metrics = await getStoreMetrics(storeId, year, month, workspace);
   if (metrics.length === 0) return [];
 
   const cfg = await getMvpConfig();
@@ -328,10 +337,11 @@ export async function commitRewardsForStore(
 export async function processMonthForStore(
   storeId: number,
   year: number,
-  month: number
+  month: number,
+  workspace: AdminWorkspace = 'retail',
 ): Promise<ProcessMonthResult['employees']> {
-  await recomputeScoresForStore(storeId, year, month);
-  return commitRewardsForStore(storeId, year, month);
+  await recomputeScoresForStore(storeId, year, month, workspace);
+  return commitRewardsForStore(storeId, year, month, workspace);
 }
 
 /**
@@ -351,16 +361,18 @@ export async function processMonthForStore(
 export async function recomputeMonthScores(
   year: number,
   month: number,
-  storeRatingScores?: Map<number, { avgRatingScore: number; revenuePercent: number }>
+  storeRatingScores?: Map<number, { avgRatingScore: number; revenuePercent: number }>,
+  workspace: AdminWorkspace = 'retail',
 ): Promise<void> {
   const { rows: stores } = await pool.query<{ id: number; name: string }>(
-    `SELECT id, name FROM stores WHERE is_active = true ORDER BY id`
+    `SELECT id, name FROM stores WHERE is_active = true AND workspace = $1 ORDER BY id`,
+    [workspace],
   );
   type Item = { storeId: number; storeScore: number };
   const storeScores: Item[] = [];
   for (const store of stores) {
-    await recomputeScoresForStore(store.id, year, month);
-    const metrics = await getStoreMetrics(store.id, year, month);
+    await recomputeScoresForStore(store.id, year, month, workspace);
+    const metrics = await getStoreMetrics(store.id, year, month, workspace);
     const extra = storeRatingScores?.get(store.id);
     let avgRatingScoreVal: number | null = null;
     let revenuePercentVal: number | null = null;
@@ -420,7 +432,11 @@ export async function recomputeMonthScores(
  *
  * Это то, что делает кнопка «Обработать месяц» в табе Рейтинг.
  */
-export async function commitMonthRewards(year: number, month: number): Promise<ProcessMonthResult[]> {
+export async function commitMonthRewards(
+  year: number,
+  month: number,
+  workspace: AdminWorkspace = 'retail',
+): Promise<ProcessMonthResult[]> {
   // Сериализуем обработку одного месяца: cron (1-го числа) и ручная кнопка
   // «Обработать месяц» могут стартовать одновременно → без лока бонус топ-точки
   // (check-then-insert без уникального ключа) начислился бы дважды. Advisory-lock
@@ -429,21 +445,26 @@ export async function commitMonthRewards(year: number, month: number): Promise<P
   const lockClient = await pool.connect();
   try {
     await lockClient.query(`SELECT pg_advisory_lock($1, $2)`, [year, month]);
-    return await commitMonthRewardsInner(year, month);
+    return await commitMonthRewardsInner(year, month, workspace);
   } finally {
     await lockClient.query(`SELECT pg_advisory_unlock($1, $2)`, [year, month]).catch(() => {});
     lockClient.release();
   }
 }
 
-async function commitMonthRewardsInner(year: number, month: number): Promise<ProcessMonthResult[]> {
+async function commitMonthRewardsInner(
+  year: number,
+  month: number,
+  workspace: AdminWorkspace,
+): Promise<ProcessMonthResult[]> {
   const { rows: stores } = await pool.query<{ id: number; name: string }>(
-    `SELECT id, name FROM stores WHERE is_active = true ORDER BY id`
+    `SELECT id, name FROM stores WHERE is_active = true AND workspace = $1 ORDER BY id`,
+    [workspace],
   );
   const cfg = await getMvpConfig();
   const finalResults: ProcessMonthResult[] = [];
   for (const store of stores) {
-    const employees = await commitRewardsForStore(store.id, year, month);
+    const employees = await commitRewardsForStore(store.id, year, month, workspace);
     const { rows: stat } = await pool.query<{ isTop: boolean; totalScore: string | null; rank: number | null }>(
       `SELECT is_top AS "isTop", total_score AS "totalScore", rank
        FROM store_monthly_stats WHERE store_id = $1 AND year = $2 AND month = $3`,
@@ -453,12 +474,20 @@ async function commitMonthRewardsInner(year: number, month: number): Promise<Pro
     const storeScore = stat[0]?.totalScore !== null && stat[0]?.totalScore !== undefined ? parseFloat(stat[0].totalScore) : 0;
     const storeRank = stat[0]?.rank ?? 0;
     if (isTop) {
-      await awardTeamBonus(store.id, year, month);
+      await awardTeamBonus(store.id, year, month, workspace);
       if (cfg.topStoreCoinReward > 0) {
         const note = `Бонус топ-точки: ${month}/${year}`;
         const { rows: emps } = await pool.query<{ id: number }>(
-          `SELECT id FROM employees WHERE store_id = $1 AND is_active = true`,
-          [store.id]
+          workspace === 'office'
+            ? `SELECT e.id FROM employees e
+               LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+               LEFT JOIN stores s ON s.id = e.store_id
+              WHERE COALESCE(oem.office_store_id, e.store_id) = $1
+                AND (oem.employee_id IS NOT NULL OR s.workspace = 'office')
+                AND e.is_active = true`
+            : `SELECT e.id FROM employees e JOIN stores s ON s.id = e.store_id
+               WHERE e.store_id = $1 AND s.workspace = 'retail' AND e.is_active = true`,
+          [store.id],
         );
         for (const e of emps) {
           const { rows: existing } = await pool.query<{ id: number }>(
@@ -492,10 +521,11 @@ async function commitMonthRewardsInner(year: number, month: number): Promise<Pro
 export async function processMonthAllStores(
   year: number,
   month: number,
-  storeRatingScores: Map<number, { avgRatingScore: number; revenuePercent: number }>
+  storeRatingScores: Map<number, { avgRatingScore: number; revenuePercent: number }>,
+  workspace: AdminWorkspace = 'retail',
 ): Promise<ProcessMonthResult[]> {
-  await recomputeMonthScores(year, month, storeRatingScores);
-  return commitMonthRewards(year, month);
+  await recomputeMonthScores(year, month, storeRatingScores, workspace);
+  return commitMonthRewards(year, month, workspace);
 }
 
 // ─── Запросы рейтингов ───────────────────────────────────────────────────────
@@ -506,21 +536,26 @@ export async function processMonthAllStores(
 export async function getEmployeeLeaderboard(
   storeId: number | null,
   year: number,
-  month: number
+  month: number,
+  workspace: AdminWorkspace = 'retail',
 ): Promise<EmployeeRanking[]> {
-  const params: (number | null)[] = [year, month];
-  let where = '';
+  const params: (number | string | null)[] = [year, month, workspace];
+  const conditions = [workspace === 'office'
+    ? `(s.workspace = 'office' OR oem.employee_id IS NOT NULL)`
+    : `s.workspace = 'retail'`];
   if (storeId !== null) {
     params.push(storeId);
-    where = `WHERE e.store_id = $${params.length}`;
+    conditions.push(workspace === 'office'
+      ? `COALESCE(oem.office_store_id, e.store_id) = $${params.length}`
+      : `e.store_id = $${params.length}`);
   }
 
   const { rows } = await pool.query<EmployeeRanking>(
     `SELECT
        e.id                                              AS "employeeId",
        e.name,
-       e.store_id                                        AS "storeId",
-       s.name                                            AS "storeName",
+       ${workspace === 'office' ? 'COALESCE(oem.office_store_id, e.store_id)' : 'e.store_id'} AS "storeId",
+       ${workspace === 'office' ? 'COALESCE(os.name, s.name)' : 's.name'} AS "storeName",
        e.is_active                                       AS "isActive",
        mm.mvp_score                                      AS "mvpScore",
        COALESCE(mm.is_mvp, false)                        AS "isMvp",
@@ -530,9 +565,11 @@ export async function getEmployeeLeaderboard(
           WHERE ct.employee_id = e.id), 0)              AS "coinsBalance"
      FROM employees e
      LEFT JOIN stores s ON s.id = e.store_id
+     ${workspace === 'office' ? `LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+     LEFT JOIN stores os ON os.id = oem.office_store_id` : ''}
      LEFT JOIN monthly_metrics mm
-       ON mm.employee_id = e.id AND mm.year = $1 AND mm.month = $2
-     ${where}
+       ON mm.employee_id = e.id AND mm.year = $1 AND mm.month = $2 AND mm.workspace = $3
+     WHERE ${conditions.join(' AND ')}
      ORDER BY e.is_active DESC, mm.mvp_score DESC NULLS LAST, e.name`,
     params
   );
@@ -543,7 +580,8 @@ export async function getEmployeeLeaderboard(
  *  даже без записи в store_monthly_stats — админ сможет ввести балл вручную. */
 export async function getStoreLeaderboard(
   year: number,
-  month: number
+  month: number,
+  workspace: AdminWorkspace = 'retail',
 ): Promise<StoreRanking[]> {
   const { rows } = await pool.query<StoreRanking>(
     `SELECT
@@ -555,9 +593,9 @@ export async function getStoreLeaderboard(
      FROM stores s
      LEFT JOIN store_monthly_stats sms
        ON sms.store_id = s.id AND sms.year = $1 AND sms.month = $2
-     WHERE s.is_active = true
+     WHERE s.is_active = true AND s.workspace = $3
      ORDER BY sms.rank ASC NULLS LAST, s.name`,
-    [year, month]
+    [year, month, workspace]
   );
   return rows;
 }

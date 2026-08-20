@@ -1,4 +1,5 @@
 import { pool, camelizeRow } from '../db/pool';
+import type { AdminWorkspace } from './adminWorkspace.service';
 import type { MvpConfig } from './mvpConfig.service';
 import type {
   CardAwardItem,
@@ -130,11 +131,20 @@ export async function awardCards(
 export async function awardTeamBonus(
   storeId: number,
   year: number,
-  month: number
+  month: number,
+  workspace: AdminWorkspace = 'retail',
 ): Promise<void> {
   const { rows: employees } = await pool.query<{ id: number }>(
-    `SELECT id FROM employees WHERE store_id = $1 AND is_active = true`,
-    [storeId]
+    workspace === 'office'
+      ? `SELECT e.id FROM employees e
+         LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+         LEFT JOIN stores s ON s.id = e.store_id
+         WHERE COALESCE(oem.office_store_id, e.store_id) = $1
+           AND (oem.employee_id IS NOT NULL OR s.workspace = 'office')
+           AND e.is_active = true`
+      : `SELECT e.id FROM employees e JOIN stores s ON s.id = e.store_id
+         WHERE e.store_id = $1 AND s.workspace = 'retail' AND e.is_active = true`,
+    [storeId],
   );
 
   await Promise.all(

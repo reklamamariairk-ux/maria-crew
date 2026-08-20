@@ -7,7 +7,7 @@ import { getStreak, doCheckin } from '../../services/streak.service';
 import { getActiveChallenges, checkAndCompleteChallenge } from '../../services/challenge.service';
 import { getAvailableCardCount } from '../../services/card.service';
 import { getPrizes, requestExchange, getExchangeHistory } from '../../services/exchange.service';
-import { employeeWorkspace } from '../../services/adminWorkspace.service';
+import { employeeWorkspace, employeeWorkspaceContext } from '../../services/adminWorkspace.service';
 import { notifyAdminNewExchange } from '../../bot/notifications/sender';
 import { getEmployeeLeaderboard, getStoreLeaderboard } from '../../services/rating.service';
 import { markWebappAuth } from '../../diagnostics';
@@ -463,14 +463,15 @@ router.get('/rating', async (req: Request, res: Response, next: NextFunction): P
     if (!auth) return;
 
     const now = new Date();
+    const context = await employeeWorkspaceContext(auth.employee.id);
     const [ranking, storesRanking] = await Promise.all([
-      getEmployeeLeaderboard(auth.employee.storeId, now.getFullYear(), now.getMonth() + 1),
-      getStoreLeaderboard(now.getFullYear(), now.getMonth() + 1),
+      getEmployeeLeaderboard(context.storeId, now.getFullYear(), now.getMonth() + 1, context.workspace),
+      getStoreLeaderboard(now.getFullYear(), now.getMonth() + 1, context.workspace),
     ]);
     const idx = ranking.findIndex(r => r.employeeId === auth.employee.id);
     const myRank = idx >= 0 ? idx + 1 : null;
 
-    res.json({ ranking, myRank, stores: storesRanking, myStoreId: auth.employee.storeId });
+    res.json({ ranking, myRank, stores: storesRanking, myStoreId: context.storeId });
   } catch (err) { next(err); }
 });
 

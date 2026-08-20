@@ -69,7 +69,7 @@ router.post('/award', requireRole('superadmin', 'coin_admin', 'office_admin'), a
     // Async: уведомление + аудит — не блокируем ответ, но ошибки логируем
     notifyCoinAward(employeeId, actualAmount, reason, note).catch(err =>
       console.error('[notify] coin_award failed:', err instanceof Error ? err.message : err));
-    logAudit('coin_award', { employeeId, amount: actualAmount, reason, note: note ?? null }).catch(err =>
+    logAudit('coin_award', { employeeId, amount: actualAmount, reason, note: note ?? null, workspace: workspaceForRequest(req) }).catch(err =>
       console.error('[audit] coin_award failed:', err instanceof Error ? err.message : err));
   } catch (err) { next(err); }
 });

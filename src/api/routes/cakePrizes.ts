@@ -3,6 +3,7 @@ import { listCakePrizes, addManualCakePrize } from '../../services/cakePrize.ser
 import { notifyCakePrizes } from '../../bot/notifications/sender';
 import { pool } from '../../db/pool';
 import { logAudit } from '../../services/audit.service';
+import { areEmployeesInWorkspace, workspaceForRequest } from '../../services/adminWorkspace.service';
 
 // «Торты месяца» (админка, таб Рейтинги): список, ручное добавление сотрудника,
 // удаление ошибочной записи. coin_admin отрезан на уровне router.ts.
@@ -15,7 +16,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
     const year = parseInt(String(req.query.year), 10);
     const month = parseInt(String(req.query.month), 10);
     if (!year || !month) { res.status(400).json({ error: 'year, month обязательны' }); return; }
-    res.json(await listCakePrizes(year, month));
+    res.json(await listCakePrizes(year, month, workspaceForRequest(req)));
   } catch (err) { next(err); }
 });
 
@@ -27,7 +28,13 @@ router.post('/employee', async (req: Request, res: Response, next: NextFunction)
     if (!year || !month || !Number.isInteger(employeeId)) {
       res.status(400).json({ error: 'year, month, employeeId обязательны' }); return;
     }
-    const winner = await addManualCakePrize(year, month, employeeId!, `admin#${req.adminUserId ?? '?'}`);
+    const workspace = workspaceForRequest(req);
+    if (!(await areEmployeesInWorkspace([employeeId!], workspace))) {
+      res.status(403).json({ error: 'Сотрудник недоступен в текущем контуре' }); return;
+    }
+    const winner = await addManualCakePrize(
+      year, month, employeeId!, `admin#${req.adminUserId ?? '?'}`, workspace,
+    );
     if (!winner) { res.status(400).json({ error: 'employee_not_found_or_fired' }); return; }
     if (!winner.created) { res.status(409).json({ error: 'already_awarded' }); return; }
     res.json({ ok: true, winner });
@@ -40,11 +47,13 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction): P
   try {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Неверный id' }); return; }
+    const workspace = workspaceForRequest(req);
     const { rows } = await pool.query(
-      `DELETE FROM monthly_prizes WHERE id = $1 RETURNING year, month, kind, employee_id, store_id`, [id]);
+      `DELETE FROM monthly_prizes WHERE id = $1 AND workspace = $2
+       RETURNING year, month, kind, employee_id, store_id`, [id, workspace]);
     if (!rows[0]) { res.status(404).json({ error: 'Не найден' }); return; }
     res.json({ ok: true });
-    logAudit('cake_prize', { removed: true, prizeId: id, ...rows[0] }, `admin#${req.adminUserId ?? '?'}`).catch(() => {});
+    logAudit('cake_prize', { removed: true, prizeId: id, workspace, ...rows[0] }, `admin#${req.adminUserId ?? '?'}`).catch(() => {});
   } catch (err) { next(err); }
 });
 

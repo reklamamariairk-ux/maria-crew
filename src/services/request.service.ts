@@ -17,6 +17,7 @@ import { uploadFileFromUrl, isCloudinaryConfigured } from './cloudinary.service'
 import type { CloudinaryResource } from './cloudinary.service';
 import { sanitizeAttachment } from './attachments';
 import { sendPushToEmployee } from './push.service';
+import type { AdminWorkspace } from './adminWorkspace.service';
 
 const BOT_TOKEN = (process.env.BOT_TOKEN ?? '').trim();
 
@@ -28,6 +29,7 @@ export function initRequestService(bot: Bot<BotContext>): void {
 
 export interface CreateRequestInput {
   requestedBy: number;
+  workspace?: AdminWorkspace;
   /** Канонический способ — список ID сотрудников-получателей. */
   targetEmployeeIds?: number[];
   /** Back-compat: одиночный получатель. */
@@ -86,11 +88,15 @@ export interface RequestResponseRow {
  *  Личным считается тред, у которого ровно один получатель = этот сотрудник,
  *  ИЛИ тред, инициированный самим сотрудником. Широковещательные (точка /
  *  несколько получателей) сюда НЕ попадают. Вернёт null если такого нет. */
-export async function findDirectThreadId(employeeId: number): Promise<number | null> {
+export async function findDirectThreadId(
+  employeeId: number,
+  workspace: AdminWorkspace = 'retail',
+): Promise<number | null> {
   const { rows } = await pool.query<{ id: number }>(
     `SELECT r.id
        FROM employee_requests r
       WHERE r.status <> 'closed'
+        AND r.workspace = $2
         AND (
           r.initiated_by_employee_id = $1
           OR (
@@ -104,7 +110,7 @@ export async function findDirectThreadId(employeeId: number): Promise<number | n
         )
       ORDER BY r.updated_at DESC
       LIMIT 1`,
-    [employeeId]
+    [employeeId, workspace]
   );
   return rows[0]?.id ?? null;
 }
@@ -115,9 +121,10 @@ export async function findDirectThreadId(employeeId: number): Promise<number | n
  *  показывает «исходный запрос», диалог ведётся обычными сообщениями. */
 export async function getOrCreateDirectThread(
   employeeId: number,
-  requestedBy: number
+  requestedBy: number,
+  workspace: AdminWorkspace = 'retail',
 ): Promise<number> {
-  const existing = await findDirectThreadId(employeeId);
+  const existing = await findDirectThreadId(employeeId, workspace);
   if (existing) return existing;
 
   const client = await pool.connect();
@@ -125,10 +132,10 @@ export async function getOrCreateDirectThread(
     await client.query('BEGIN');
     const { rows } = await client.query<{ id: number }>(
       `INSERT INTO employee_requests
-         (requested_by, target_employee_id, target_store_id, request_text)
-       VALUES ($1, $2, NULL, '')
+         (requested_by, target_employee_id, target_store_id, request_text, workspace)
+       VALUES ($1, $2, NULL, '', $3)
        RETURNING id`,
-      [requestedBy, employeeId]
+      [requestedBy, employeeId, workspace]
     );
     const id = rows[0].id;
     await client.query(
@@ -148,6 +155,7 @@ export async function getOrCreateDirectThread(
 
 export async function createRequest(input: CreateRequestInput): Promise<number> {
   const text = (input.requestText ?? '').trim();
+  const workspace = input.workspace ?? 'retail';
   if (!text) throw new Error('requestText обязателен');
 
   // Резолвим финальный список получателей.
@@ -158,7 +166,15 @@ export async function createRequest(input: CreateRequestInput): Promise<number> 
     employeeIds = [input.targetEmployeeId];
   } else if (input.targetStoreId) {
     const { rows } = await pool.query<{ id: number }>(
-      `SELECT id FROM employees WHERE store_id = $1 AND is_active = true`,
+      workspace === 'office'
+        ? `SELECT e.id FROM employees e
+           LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+           LEFT JOIN stores s ON s.id = e.store_id
+           WHERE COALESCE(oem.office_store_id, e.store_id) = $1
+             AND (oem.employee_id IS NOT NULL OR s.workspace = 'office')
+             AND e.is_active = true`
+        : `SELECT e.id FROM employees e JOIN stores s ON s.id = e.store_id
+           WHERE e.store_id = $1 AND s.workspace = 'retail' AND e.is_active = true`,
       [input.targetStoreId]
     );
     employeeIds = rows.map(r => r.id);
@@ -179,7 +195,7 @@ export async function createRequest(input: CreateRequestInput): Promise<number> 
   // широковещательный (точка / «все»). Из-за этого «написать одному» могло
   // подмешаться в групповой тред и улететь сразу всем его участникам.
   if (employeeIds.length === 1) {
-    const existingId = await findDirectThreadId(employeeIds[0]);
+    const existingId = await findDirectThreadId(employeeIds[0], workspace);
     if (existingId) {
       // Существующий личный чат — добавляем сообщение через sendManagerMessage
       const res = await sendManagerMessage({
@@ -227,10 +243,10 @@ export async function createRequest(input: CreateRequestInput): Promise<number> 
     await client.query('BEGIN');
     const { rows } = await client.query<{ id: number }>(
       `INSERT INTO employee_requests
-         (requested_by, target_employee_id, target_store_id, request_text)
-       VALUES ($1, $2, $3, $4)
+         (requested_by, target_employee_id, target_store_id, request_text, workspace)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING id`,
-      [input.requestedBy, displayEmployeeId, displayStoreId, text]
+      [input.requestedBy, displayEmployeeId, displayStoreId, text, workspace]
     );
     const id = rows[0].id;
     await client.query(
@@ -534,23 +550,25 @@ export async function sendManagerMessage(opts: {
 }
 
 /** Сколько запросов имеют ответ свежее last_viewed_at (или never-viewed с ответами). */
-export async function getUnreadRequestCount(): Promise<number> {
+export async function getUnreadRequestCount(workspace: AdminWorkspace = 'retail'): Promise<number> {
   const { rows } = await pool.query<{ n: number }>(
     `SELECT COUNT(DISTINCT r.id)::int AS n
      FROM employee_requests r
      JOIN request_responses rr ON rr.request_id = r.id
      WHERE r.status <> 'closed'
+       AND r.workspace = $1
        AND rr.sender_type = 'employee'
-       AND (r.last_viewed_at IS NULL OR rr.created_at > r.last_viewed_at)`
+       AND (r.last_viewed_at IS NULL OR rr.created_at > r.last_viewed_at)`,
+    [workspace],
   );
   return rows[0]?.n ?? 0;
 }
 
 /** Помечает запрос как просмотренный (для badge). */
-export async function markRequestViewed(id: number): Promise<void> {
+export async function markRequestViewed(id: number, workspace: AdminWorkspace = 'retail'): Promise<void> {
   await pool.query(
-    `UPDATE employee_requests SET last_viewed_at = now() WHERE id = $1`,
-    [id]
+    `UPDATE employee_requests SET last_viewed_at = now() WHERE id = $1 AND workspace = $2`,
+    [id, workspace]
   );
 }
 
@@ -589,8 +607,10 @@ async function notifyOwnerOfResponse(
   await _bot.api.sendMessage(ownerId, html, { parse_mode: 'HTML' }).catch(() => {});
 }
 
-export async function listRequests(filter?: { status?: string }): Promise<RequestSummary[]> {
-  const params: (string | null)[] = [filter?.status ?? null];
+export async function listRequests(
+  filter?: { status?: string; workspace?: AdminWorkspace },
+): Promise<RequestSummary[]> {
+  const params: (string | null)[] = [filter?.status ?? null, filter?.workspace ?? 'retail'];
   const { rows } = await pool.query<RequestSummary & { targetNames: string[] | null }>(
     `SELECT r.id,
             r.requested_by      AS "requestedBy",
@@ -638,7 +658,7 @@ export async function listRequests(filter?: { status?: string }): Promise<Reques
        ORDER BY rr.created_at DESC
        LIMIT 1
      ) lr ON true
-     WHERE ($1::text IS NULL OR r.status = $1)
+     WHERE ($1::text IS NULL OR r.status = $1) AND r.workspace = $2
      ORDER BY
        -- Сначала запросы с непрочитанными ответами (как в мессенджере)
        (CASE WHEN (
@@ -658,11 +678,11 @@ export async function listRequests(filter?: { status?: string }): Promise<Reques
   return rows.map(r => ({ ...r, targetNames: r.targetNames ?? [] }));
 }
 
-export async function getRequest(id: number): Promise<{
+export async function getRequest(id: number, workspace: AdminWorkspace = 'retail'): Promise<{
   request: RequestSummary;
   responses: RequestResponseRow[];
 } | null> {
-  const list = await listRequests();
+  const list = await listRequests({ workspace });
   const request = list.find(r => r.id === id);
   if (!request) return null;
   const { rows: responses } = await pool.query<RequestResponseRow>(
@@ -754,21 +774,21 @@ export async function remindUnansweredRequests(): Promise<{ sent: number; skippe
   return { sent, skipped };
 }
 
-export async function closeRequest(id: number): Promise<boolean> {
+export async function closeRequest(id: number, workspace: AdminWorkspace = 'retail'): Promise<boolean> {
   const { rowCount } = await pool.query(
     `UPDATE employee_requests
         SET status = 'closed', updated_at = now()
-      WHERE id = $1 AND status <> 'closed'`,
-    [id]
+      WHERE id = $1 AND status <> 'closed' AND workspace = $2`,
+    [id, workspace]
   );
   return (rowCount ?? 0) > 0;
 }
 
 /** Полное удаление запроса с каскадом (responses, notifications, targets). */
-export async function deleteRequest(id: number): Promise<boolean> {
+export async function deleteRequest(id: number, workspace: AdminWorkspace = 'retail'): Promise<boolean> {
   const { rowCount } = await pool.query(
-    `DELETE FROM employee_requests WHERE id = $1`,
-    [id]
+    `DELETE FROM employee_requests WHERE id = $1 AND workspace = $2`,
+    [id, workspace]
   );
   return (rowCount ?? 0) > 0;
 }

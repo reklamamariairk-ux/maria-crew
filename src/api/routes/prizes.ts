@@ -149,7 +149,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
       ]
     );
     res.status(201).json(rows[0]);
-    logAudit('prize_create', { prizeId: rows[0].id, name: rows[0].name, itemCount: items.length }).catch(() => {});
+    logAudit('prize_create', { prizeId: rows[0].id, name: rows[0].name, itemCount: items.length, workspace }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -215,7 +215,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     );
     if (!rows[0]) { res.status(404).json({ error: 'Приз не найден' }); return; }
     res.json(rows[0]);
-    logAudit('prize_update', { prizeId: rows[0].id, changes: body }).catch(() => {});
+    logAudit('prize_update', { prizeId: rows[0].id, changes: body, workspace }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -232,7 +232,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction): P
     );
     if (!rowCount) { res.status(404).json({ error: 'Приз не найден' }); return; }
     res.json({ ok: true });
-    logAudit('prize_delete', { prizeId: id }).catch(() => {});
+    logAudit('prize_delete', { prizeId: id, workspace: workspaceForRequest(req) }).catch(() => {});
   } catch (err) { next(err); }
 });
 

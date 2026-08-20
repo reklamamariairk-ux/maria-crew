@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { logAudit } from '../../services/audit.service';
+import { workspaceForRequest } from '../../services/adminWorkspace.service';
 
 const router = Router();
 
@@ -45,7 +46,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
        isLimited ?? false, season ?? null, sortOrder ?? 0]
     );
     res.status(201).json(rows[0]);
-    logAudit('hero_create', { heroId: rows[0].id, name }, req.ip).catch(() => {});
+    logAudit('hero_create', { heroId: rows[0].id, name, workspace: workspaceForRequest(req) }, req.ip).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -66,7 +67,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction): P
     const { rowCount } = await pool.query(`DELETE FROM heroes WHERE id = $1`, [id]);
     if (!rowCount) { res.status(404).json({ error: 'Герой не найден' }); return; }
     res.json({ ok: true });
-    logAudit('hero_delete', { heroId: id }, req.ip).catch(() => {});
+    logAudit('hero_delete', { heroId: id, workspace: workspaceForRequest(req) }, req.ip).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -103,7 +104,7 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction): Pr
     );
     if (!rows[0]) { res.status(404).json({ error: 'Герой не найден' }); return; }
     res.json(rows[0]);
-    logAudit('hero_update', { heroId: id, name, imageUrl, description }, req.ip).catch(() => {});
+    logAudit('hero_update', { heroId: id, name, imageUrl, description, workspace: workspaceForRequest(req) }, req.ip).catch(() => {});
   } catch (err) { next(err); }
 });
 

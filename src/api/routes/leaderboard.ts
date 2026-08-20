@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { getEmployeeLeaderboard, getStoreLeaderboard } from '../../services/rating.service';
 import { logAudit } from '../../services/audit.service';
+import { areEmployeesInWorkspace, isStoreInWorkspace, workspaceForRequest } from '../../services/adminWorkspace.service';
 
 const router = Router();
 
@@ -16,7 +17,8 @@ router.get('/employees', async (req: Request, res: Response, next: NextFunction)
     const data = await getEmployeeLeaderboard(
       storeId ? parseInt(storeId, 10) : null,
       parseInt(year, 10),
-      parseInt(month, 10)
+      parseInt(month, 10),
+      workspaceForRequest(req),
     );
     res.json(data);
   } catch (err) { next(err); }
@@ -27,7 +29,7 @@ router.get('/stores', async (req: Request, res: Response, next: NextFunction): P
   try {
     const { year, month } = req.query as Record<string, string>;
     if (!year || !month) { res.status(400).json({ error: 'year и month обязательны' }); return; }
-    const data = await getStoreLeaderboard(parseInt(year, 10), parseInt(month, 10));
+    const data = await getStoreLeaderboard(parseInt(year, 10), parseInt(month, 10), workspaceForRequest(req));
     res.json(data);
   } catch (err) { next(err); }
 });
@@ -43,6 +45,10 @@ router.put('/employees/:employeeId', async (req: Request, res: Response, next: N
       mvpScore?: number | null; isMvp?: boolean;
     };
     if (!year || !month || !storeId) { res.status(400).json({ error: 'year, month, storeId обязательны' }); return; }
+    const workspace = workspaceForRequest(req);
+    if (!(await areEmployeesInWorkspace([employeeId], workspace)) || !(await isStoreInWorkspace(storeId, workspace))) {
+      res.status(403).json({ error: 'Сотрудник или команда недоступны в текущем контуре' }); return;
+    }
 
     // «Лучших» на точке может быть НЕСКОЛЬКО (решение руководителя):
     // isMvp=true ставит флаг только этому сотруднику, остальных не трогает.
@@ -50,23 +56,24 @@ router.put('/employees/:employeeId', async (req: Request, res: Response, next: N
     await client.query('BEGIN');
 
     await client.query(
-      `INSERT INTO monthly_metrics (employee_id, store_id, year, month, updated_at)
-       VALUES ($1, $2, $3, $4, NOW())
-       ON CONFLICT (employee_id, year, month) DO NOTHING`,
-      [employeeId, storeId, year, month]
+      `INSERT INTO monthly_metrics (employee_id, store_id, year, month, workspace, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (employee_id, year, month, workspace) DO NOTHING`,
+      [employeeId, storeId, year, month, workspace]
     );
 
     const sets: string[] = [];
-    const vals: (number | boolean | null)[] = [];
+    const vals: (number | boolean | string | null)[] = [];
     if (mvpScore !== undefined) { vals.push(mvpScore); sets.push(`mvp_score = $${vals.length}`); }
     if (isMvp    !== undefined) { vals.push(isMvp);    sets.push(`is_mvp = $${vals.length}`); }
 
     if (sets.length > 0) {
       sets.push(`updated_at = NOW()`);
-      vals.push(employeeId, year, month);
+      vals.push(employeeId, year, month, workspace);
       await client.query(
         `UPDATE monthly_metrics SET ${sets.join(', ')}
-         WHERE employee_id = $${vals.length - 2} AND year = $${vals.length - 1} AND month = $${vals.length}`,
+         WHERE employee_id = $${vals.length - 3} AND year = $${vals.length - 2}
+           AND month = $${vals.length - 1} AND workspace = $${vals.length}`,
         vals
       );
     }
@@ -75,11 +82,11 @@ router.put('/employees/:employeeId', async (req: Request, res: Response, next: N
     res.json({ ok: true });
 
     if (mvpScore !== undefined) {
-      logAudit('rating_score_set', { employeeId, year, month, mvpScore }).catch(err =>
+      logAudit('rating_score_set', { employeeId, year, month, mvpScore, workspace }).catch(err =>
         console.error('[audit] rating_score_set failed:', err instanceof Error ? err.message : err));
     }
     if (isMvp !== undefined) {
-      logAudit('rating_mvp_set', { employeeId, year, month, isMvp }).catch(err =>
+      logAudit('rating_mvp_set', { employeeId, year, month, isMvp, workspace }).catch(err =>
         console.error('[audit] rating_mvp_set failed:', err instanceof Error ? err.message : err));
     }
   } catch (err) {
@@ -100,6 +107,10 @@ router.put('/stores/:storeId', async (req: Request, res: Response, next: NextFun
       year: number; month: number; totalScore?: number | null; isTop?: boolean;
     };
     if (!year || !month) { res.status(400).json({ error: 'year, month обязательны' }); return; }
+    const workspace = workspaceForRequest(req);
+    if (!(await isStoreInWorkspace(storeId, workspace))) {
+      res.status(403).json({ error: 'Команда недоступна в текущем контуре' }); return;
+    }
 
     await client.query('BEGIN');
 
@@ -112,9 +123,11 @@ router.put('/stores/:storeId', async (req: Request, res: Response, next: NextFun
 
     if (isTop === true) {
       await client.query(
-        `UPDATE store_monthly_stats SET is_top = false
-         WHERE year = $1 AND month = $2 AND store_id <> $3`,
-        [year, month, storeId]
+        `UPDATE store_monthly_stats sms SET is_top = false
+         FROM stores s
+         WHERE s.id = sms.store_id AND s.workspace = $4
+           AND sms.year = $1 AND sms.month = $2 AND sms.store_id <> $3`,
+        [year, month, storeId, workspace]
       );
     }
 
@@ -133,23 +146,24 @@ router.put('/stores/:storeId', async (req: Request, res: Response, next: NextFun
 
     await client.query(
       `WITH ranked AS (
-         SELECT id, ROW_NUMBER() OVER (ORDER BY total_score DESC NULLS LAST) AS rn
-         FROM store_monthly_stats WHERE year = $1 AND month = $2
+         SELECT sms.id, ROW_NUMBER() OVER (ORDER BY sms.total_score DESC NULLS LAST) AS rn
+         FROM store_monthly_stats sms JOIN stores s ON s.id = sms.store_id
+         WHERE sms.year = $1 AND sms.month = $2 AND s.workspace = $3
        )
        UPDATE store_monthly_stats sms SET rank = ranked.rn
        FROM ranked WHERE sms.id = ranked.id`,
-      [year, month]
+      [year, month, workspace]
     );
 
     await client.query('COMMIT');
     res.json({ ok: true });
 
     if (totalScore !== undefined) {
-      logAudit('rating_score_set', { storeId, year, month, totalScore }).catch(err =>
+      logAudit('rating_score_set', { storeId, year, month, totalScore, workspace }).catch(err =>
         console.error('[audit] rating_score_set failed:', err instanceof Error ? err.message : err));
     }
     if (isTop !== undefined) {
-      logAudit('rating_top_set', { storeId, year, month, isTop }).catch(err =>
+      logAudit('rating_top_set', { storeId, year, month, isTop, workspace }).catch(err =>
         console.error('[audit] rating_top_set failed:', err instanceof Error ? err.message : err));
     }
   } catch (err) {

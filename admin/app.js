@@ -23,7 +23,11 @@ const ROLE_LABEL = {
 };
 
 const OFFICE_MODE = location.pathname === '/office' || location.pathname.startsWith('/office/');
-const OFFICE_TABS = new Set(['dashboard', 'exchanges', 'coins', 'employees', 'fired', 'prizes', 'vpn']);
+const OFFICE_TABS = new Set([
+  'dashboard', 'exchanges', 'coins', 'requests', 'employees', 'fired', 'vpn',
+  'metrics', 'leaderboard', 'cards', 'prizes', 'challenges', 'heroes', 'quiz',
+  'storesAdmin', 'audit', 'settings', 'adminUsers',
+]);
 const LAST_TAB_KEY = OFFICE_MODE ? 'mc_office_last_tab' : 'mc_last_tab';
 
 // Единая точка истины: какие вкладки доступны какой роли.
@@ -393,6 +397,23 @@ function applyOfficeInterface() {
   if (exchangesSubtitle) exchangesSubtitle.textContent = 'Одобрение заявок только из офисного магазина';
   const prizesTitle = document.querySelector('#tab-prizes .page-title');
   if (prizesTitle) prizesTitle.textContent = 'Магазин офиса';
+  const requestsTitle = document.querySelector('#tab-requests .page-title');
+  if (requestsTitle) requestsTitle.textContent = 'Мессенджер офиса';
+  const storesTitle = document.querySelector('#tab-storesAdmin .page-title');
+  if (storesTitle) storesTitle.textContent = 'Команды офиса';
+  const auditSubtitle = document.querySelector('#tab-audit .page-subtitle');
+  if (auditSubtitle) auditSubtitle.textContent = 'Изменения только в офисном контуре';
+  const accessSubtitle = document.querySelector('#tab-adminUsers .page-subtitle');
+  if (accessSubtitle) accessSubtitle.textContent = 'Учётные записи офисных администраторов';
+  const roleSelect = document.getElementById('new-admin-role');
+  if (roleSelect) roleSelect.innerHTML = '<option value="office_admin" selected>Администратор офиса</option>';
+  const settingsSubtitle = document.querySelector('#tab-settings .page-subtitle');
+  if (settingsSubtitle) settingsSubtitle.textContent = 'Общая формула системы — в офисе доступна для просмотра';
+  document.querySelectorAll('#tab-settings input, #tab-settings select').forEach(el => { el.disabled = true; });
+  const settingsSave = document.querySelector('#tab-settings button[onclick="saveMvpConfig()"]');
+  if (settingsSave) settingsSave.classList.add('hidden');
+  const backupButton = document.querySelector('#tab-settings button[onclick^="downloadBackup"]');
+  if (backupButton?.closest('.card')) backupButton.closest('.card').classList.add('hidden');
   const newEmpStore = document.getElementById('new-emp-store');
   if (newEmpStore?.closest('label')?.firstChild) newEmpStore.closest('label').firstChild.textContent = 'Команда ';
 }
@@ -422,9 +443,7 @@ async function showApp() {
 
   updatePeriodLabels();
   renderIcons();
-  await Promise.all(OFFICE_MODE
-    ? [loadStores()]
-    : [loadStores(), loadCloudinaryConfig(), loadActiveChallengesForCoins()]);
+  await Promise.all([loadStores(), loadCloudinaryConfig(), loadActiveChallengesForCoins()]);
   if (OFFICE_MODE) await loadOfficeAppCandidates();
   // После обновления страницы возвращаемся на вкладку, где был админ
   // (switchTab сам откатит на dashboard, если вкладка роли недоступна)
@@ -434,8 +453,12 @@ async function showApp() {
   const refreshBadges = async () => {
     try {
       if (OFFICE_MODE) {
-        const ex = await api('GET', '/exchanges?status=pending').catch(() => []);
+        const [ex, req] = await Promise.all([
+          api('GET', '/exchanges?status=pending').catch(() => []),
+          api('GET', '/requests/unread-count').catch(() => ({ count: 0 })),
+        ]);
         updatePendingBadge(Array.isArray(ex) ? ex.length : 0);
+        updateRequestsBadge(req?.count || 0);
         return;
       }
       const [ex, req] = await Promise.all([
@@ -5431,11 +5454,13 @@ async function loadAdminUsers() {
     <td style="color:var(--muted);font-size:12px">${u.id}</td>
     <td><strong>${esc(u.username)}</strong>${meTag}</td>
     <td>
-      <select onchange="updateAdminUserRole(${u.id}, this.value)" ${isMe ? 'disabled title="Нельзя менять свою роль"' : ''}>
+      <select onchange="updateAdminUserRole(${u.id}, this.value)" ${(isMe || OFFICE_MODE) ? 'disabled title="Роль офисного доступа фиксирована"' : ''}>
+        ${OFFICE_MODE ? `<option value="office_admin" selected>Администратор офиса</option>` : `
         <option value="superadmin"${u.role === 'superadmin' ? ' selected' : ''}>Суперадмин</option>
         <option value="editor"${u.role === 'editor' ? ' selected' : ''}>Админище — всё кроме монет</option>
         <option value="coin_admin"${u.role === 'coin_admin' ? ' selected' : ''}>Администратор — только монеты</option>
         <option value="office_admin"${u.role === 'office_admin' ? ' selected' : ''}>Офис — операторы</option>
+        `}
       </select>
     </td>
     <td style="font-size:12px;color:var(--muted)">${u.lastLoginAt ? formatDate(u.lastLoginAt) : '—'}</td>
@@ -5457,7 +5482,7 @@ async function loadAdminUsers() {
 async function addAdminUser() {
   const username = document.getElementById('new-admin-username').value.trim();
   const password = document.getElementById('new-admin-password').value;
-  const role     = document.getElementById('new-admin-role').value;
+  const role     = OFFICE_MODE ? 'office_admin' : document.getElementById('new-admin-role').value;
   if (!username) { toast('Введи логин'); return; }
   if (!password || password.length < 8) { toast('Пароль минимум 8 символов'); return; }
   try {

@@ -2,12 +2,23 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { listChallenges, createChallenge, updateChallenge, awardChallengeCard, deleteChallenge } from '../../services/challenge.service';
 import { logAudit } from '../../services/audit.service';
+import { areEmployeesInWorkspace, workspaceForRequest } from '../../services/adminWorkspace.service';
 
 const router = Router();
 
-router.get('/', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+async function storesAllowed(req: Request, storeIds: number[] | null): Promise<boolean> {
+  if (!storeIds?.length) return true;
+  const ids = [...new Set(storeIds)];
+  const { rows } = await pool.query<{ count: number }>(
+    `SELECT COUNT(*)::int AS count FROM stores WHERE id = ANY($1::int[]) AND workspace = $2`,
+    [ids, workspaceForRequest(req)],
+  );
+  return Number(rows[0]?.count ?? 0) === ids.length;
+}
+
+router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    res.json(await listChallenges());
+    res.json(await listChallenges(workspaceForRequest(req)));
   } catch (err) { next(err); }
 });
 
@@ -61,6 +72,9 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
       // Пустой массив = «никому» — допустимо, но предупредим логом
       if (storeIdsArr.length === 0) storeIdsArr = null; // трактуем как «все»
     }
+    if (!(await storesAllowed(req, storeIdsArr))) {
+      res.status(403).json({ error: 'Одна из команд недоступна в текущем контуре' }); return;
+    }
 
     try {
       const ch = await createChallenge({
@@ -68,9 +82,9 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
         startDate, endDate, conditionDescription,
         coinReward: coinRewardNum,
         storeIds: storeIdsArr,
-      });
+      }, workspaceForRequest(req));
       res.status(201).json(ch);
-      logAudit('challenge_create', { challengeId: ch.id, name, season, year: yearNum, coinReward: coinRewardNum, storeIds: storeIdsArr }, req.ip).catch(() => {});
+      logAudit('challenge_create', { challengeId: ch.id, name, season, year: yearNum, coinReward: coinRewardNum, storeIds: storeIdsArr, workspace: workspaceForRequest(req) }, req.ip).catch(() => {});
     } catch (err) {
       // Постгрес 23505 — нарушение уникального индекса
       if (err instanceof Error && /duplicate key|unique constraint/i.test(err.message)) {
@@ -153,7 +167,10 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
           return;
         }
         const arr = storeIds.map((id: unknown) => Number(id)).filter(id => Number.isInteger(id) && id > 0);
-        fields.storeIds = arr.length === 0 ? null : arr;
+      fields.storeIds = arr.length === 0 ? null : arr;
+      if (!(await storesAllowed(req, fields.storeIds))) {
+        res.status(403).json({ error: 'Одна из команд недоступна в текущем контуре' }); return;
+      }
       }
     }
 
@@ -161,10 +178,10 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
       fields.isActive = !!isActive;
     }
 
-    const updated = await updateChallenge(id, fields);
+    const updated = await updateChallenge(id, fields, workspaceForRequest(req));
     if (!updated) { res.status(404).json({ error: 'Челлендж не найден' }); return; }
     res.json(updated);
-    logAudit('challenge_update', { challengeId: id, fields }, req.ip).catch(() => {});
+    logAudit('challenge_update', { challengeId: id, fields, workspace: workspaceForRequest(req) }, req.ip).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -172,10 +189,10 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction): P
   try {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Неверный id' }); return; }
-    const ok = await deleteChallenge(id);
+    const ok = await deleteChallenge(id, workspaceForRequest(req));
     if (!ok) { res.status(404).json({ error: 'Челлендж не найден' }); return; }
     res.json({ ok: true });
-    logAudit('challenge_delete', { challengeId: id }, req.ip).catch(() => {});
+    logAudit('challenge_delete', { challengeId: id, workspace: workspaceForRequest(req) }, req.ip).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -186,6 +203,8 @@ router.get('/:id/transactions', async (req: Request, res: Response, next: NextFu
   try {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Неверный id' }); return; }
+    const workspace = workspaceForRequest(req);
+    const office = workspace === 'office';
     const { rows } = await pool.query<{
       id: number; createdAt: Date; amount: number; note: string | null;
       employeeId: number; employeeName: string; storeName: string | null;
@@ -197,13 +216,16 @@ router.get('/:id/transactions', async (req: Request, res: Response, next: NextFu
               ct.note,
               ct.employee_id AS "employeeId",
               e.name AS "employeeName",
-              s.name AS "storeName",
+              ${office ? 'COALESCE(os.name, s.name)' : 's.name'} AS "storeName",
               au.username AS "adminUsername"
        FROM coin_transactions ct
        JOIN employees e   ON e.id = ct.employee_id
        LEFT JOIN stores s ON s.id = e.store_id
+       ${office ? `LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+       LEFT JOIN stores os ON os.id = oem.office_store_id` : ''}
        LEFT JOIN admin_users au ON au.id = ct.created_by
-       WHERE ct.note LIKE $1 OR ct.note LIKE $2
+       WHERE (ct.note LIKE $1 OR ct.note LIKE $2)
+         AND ${office ? `(oem.employee_id IS NOT NULL OR s.workspace = 'office')` : `s.workspace = 'retail'`}
        ORDER BY ct.created_at DESC
        LIMIT 500`,
       // 1) Новый формат: `Челлендж #{id}: ...`
@@ -217,8 +239,8 @@ router.get('/:id/transactions', async (req: Request, res: Response, next: NextFu
     const { rows: chRow } = await pool.query<{ name: string; sameNameCount: string }>(
       `SELECT sc.name,
               (SELECT COUNT(*)::text FROM seasonal_challenges WHERE name = sc.name) AS "sameNameCount"
-       FROM seasonal_challenges sc WHERE sc.id = $1`,
-      [id]
+       FROM seasonal_challenges sc WHERE sc.id = $1 AND sc.workspace = $2`,
+      [id, workspace]
     );
     const challenge = chRow[0];
     if (!challenge) { res.status(404).json({ error: 'Челлендж не найден' }); return; }
@@ -249,10 +271,14 @@ router.post('/:id/award/:employeeId', async (req: Request, res: Response, next: 
       res.status(400).json({ error: 'Неверный id' });
       return;
     }
+    const workspace = workspaceForRequest(req);
+    if (!(await areEmployeesInWorkspace([employeeId], workspace))) {
+      res.status(403).json({ error: 'Сотрудник недоступен в текущем контуре' }); return;
+    }
     const ok = await awardChallengeCard(employeeId, challengeId);
     res.json({ ok });
     if (ok) {
-      logAudit('challenge_award', { challengeId, employeeId }, req.ip).catch(() => {});
+      logAudit('challenge_award', { challengeId, employeeId, workspace }, req.ip).catch(() => {});
     }
   } catch (err) { next(err); }
 });

@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { logAudit } from '../../services/audit.service';
 import { sendBroadcast } from '../../bot/notifications/sender';
+import { workspaceForRequest } from '../../services/adminWorkspace.service';
 
 const router = Router();
 
@@ -33,24 +34,36 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
       res.status(400).json({ error: 'employeeId обязателен при target=employee' }); return;
     }
 
+    const workspace = workspaceForRequest(req);
+    const office = workspace === 'office';
     let rows: { telegramId: string }[];
     if (target === 'all') {
       const r = await pool.query<{ telegramId: string }>(
-        `SELECT telegram_id::text AS "telegramId" FROM employees
-         WHERE is_active = true AND telegram_id IS NOT NULL`
+        `SELECT e.telegram_id::text AS "telegramId" FROM employees e
+         LEFT JOIN stores s ON s.id = e.store_id
+         ${office ? 'LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id' : ''}
+         WHERE e.is_active = true AND e.telegram_id IS NOT NULL
+           AND ${office ? `(oem.employee_id IS NOT NULL OR s.workspace = 'office')` : `s.workspace = 'retail'`}`
       );
       rows = r.rows;
     } else if (target === 'store') {
       const r = await pool.query<{ telegramId: string }>(
-        `SELECT telegram_id::text AS "telegramId" FROM employees
-         WHERE is_active = true AND telegram_id IS NOT NULL AND store_id = $1`,
+        `SELECT e.telegram_id::text AS "telegramId" FROM employees e
+         LEFT JOIN stores s ON s.id = e.store_id
+         ${office ? 'LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id' : ''}
+         WHERE e.is_active = true AND e.telegram_id IS NOT NULL
+           AND ${office ? `COALESCE(oem.office_store_id, e.store_id) = $1
+             AND (oem.employee_id IS NOT NULL OR s.workspace = 'office')` : `e.store_id = $1 AND s.workspace = 'retail'`}`,
         [storeId]
       );
       rows = r.rows;
     } else {
       const r = await pool.query<{ telegramId: string }>(
-        `SELECT telegram_id::text AS "telegramId" FROM employees
-         WHERE id = $1 AND telegram_id IS NOT NULL`,
+        `SELECT e.telegram_id::text AS "telegramId" FROM employees e
+         LEFT JOIN stores s ON s.id = e.store_id
+         ${office ? 'LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id' : ''}
+         WHERE e.id = $1 AND e.telegram_id IS NOT NULL
+           AND ${office ? `(oem.employee_id IS NOT NULL OR s.workspace = 'office')` : `s.workspace = 'retail'`}`,
         [employeeId]
       );
       rows = r.rows;
@@ -69,6 +82,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
       target, storeId: storeId ?? null, employeeId: employeeId ?? null,
       preview: message.trim().slice(0, 100),
       sent, failed,
+      workspace,
     }, req.ip).catch(() => {});
   } catch (err) { next(err); }
 });

@@ -1,5 +1,6 @@
 import { pool } from '../db/pool';
 import { irkutskDate } from './streak.service';
+import { employeeWorkspaceContext } from './adminWorkspace.service';
 
 export interface ActiveChallenge {
   id: number;
@@ -33,10 +34,8 @@ function currentSeason(): string {
 export async function getActiveChallenges(employeeId: number): Promise<ActiveChallenge[]> {
   const today = irkutskDate();
 
-  const { rows: empRows } = await pool.query<{ storeId: number | null }>(
-    `SELECT store_id AS "storeId" FROM employees WHERE id = $1`, [employeeId]
-  );
-  const employeeStoreId = empRows[0]?.storeId ?? null;
+  const context = await employeeWorkspaceContext(employeeId);
+  const employeeStoreId = context.storeId;
 
   const { rows } = await pool.query<{
     id: number; name: string; description: string; season: string;
@@ -56,8 +55,9 @@ export async function getActiveChallenges(employeeId: number): Promise<ActiveCha
        AND sc.start_date <= $1::date
        AND sc.end_date >= $1::date
        AND (sc.store_ids IS NULL OR $2::int = ANY(sc.store_ids))
+       AND sc.workspace = $3
      ORDER BY sc.start_date DESC, sc.id DESC`,
-    [today, employeeStoreId]
+    [today, employeeStoreId, context.workspace]
   );
 
   if (rows.length === 0) return [];
@@ -127,9 +127,11 @@ export async function getActiveChallenge(employeeId: number): Promise<ActiveChal
 }
 
 export async function checkAndCompleteChallenge(employeeId: number, challengeId: number): Promise<boolean> {
+  const context = await employeeWorkspaceContext(employeeId);
   const { rows: ch } = await pool.query<{ season: string; year: number; hero_id: number }>(
-    `SELECT season, year, hero_id FROM seasonal_challenges WHERE id = $1 AND is_active = true`,
-    [challengeId]
+    `SELECT season, year, hero_id FROM seasonal_challenges
+     WHERE id = $1 AND is_active = true AND workspace = $2`,
+    [challengeId, context.workspace]
   );
   if (!ch[0]) return false;
 
@@ -169,9 +171,11 @@ export async function checkAndCompleteChallenge(employeeId: number, challengeId:
  * Возвращает true если что-то было выдано (хоть часть награды).
  */
 export async function awardChallengeReward(employeeId: number, challengeId: number): Promise<boolean> {
+  const context = await employeeWorkspaceContext(employeeId);
   const { rows: ch } = await pool.query<{ heroId: number | null; coinReward: number; name: string }>(
-    `SELECT hero_id AS "heroId", coin_reward AS "coinReward", name FROM seasonal_challenges WHERE id = $1`,
-    [challengeId]
+    `SELECT hero_id AS "heroId", coin_reward AS "coinReward", name
+     FROM seasonal_challenges WHERE id = $1 AND workspace = $2`,
+    [challengeId, context.workspace]
   );
   if (!ch[0]) return false;
 
@@ -234,7 +238,7 @@ export async function awardChallengeReward(employeeId: number, challengeId: numb
 export const awardChallengeCard = awardChallengeReward;
 
 // Admin: list all challenges
-export async function listChallenges() {
+export async function listChallenges(workspace: 'office' | 'retail' = 'retail') {
   // Подтягиваем имена точек одним запросом — не делаем N+1.
   const { rows } = await pool.query(
     `SELECT sc.*, h.name AS "heroName",
@@ -248,13 +252,17 @@ export async function listChallenges() {
             (SELECT COUNT(*) FROM seasonal_challenge_entries sce WHERE sce.challenge_id = sc.id) AS entries
      FROM seasonal_challenges sc
      LEFT JOIN heroes h ON h.id = sc.hero_id
+     WHERE sc.workspace = $1
      ORDER BY sc.year DESC, sc.start_date DESC`
+    , [workspace]
   );
   return rows;
 }
 
-export async function deleteChallenge(id: number): Promise<boolean> {
-  const { rowCount } = await pool.query(`DELETE FROM seasonal_challenges WHERE id = $1`, [id]);
+export async function deleteChallenge(id: number, workspace: 'office' | 'retail' = 'retail'): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `DELETE FROM seasonal_challenges WHERE id = $1 AND workspace = $2`, [id, workspace],
+  );
   return (rowCount ?? 0) > 0;
 }
 
@@ -270,7 +278,7 @@ export async function updateChallenge(id: number, fields: {
   coinReward?: number;
   storeIds?: number[] | null;
   isActive?: boolean;
-}): Promise<unknown> {
+}, workspace: 'office' | 'retail' = 'retail'): Promise<unknown> {
   const sets: string[] = [];
   const vals: unknown[] = [];
   const push = (col: string, val: unknown): void => {
@@ -291,13 +299,16 @@ export async function updateChallenge(id: number, fields: {
 
   if (sets.length === 0) {
     // Нечего обновлять — вернём текущее значение, чтобы не падать
-    const { rows } = await pool.query(`SELECT * FROM seasonal_challenges WHERE id = $1`, [id]);
+    const { rows } = await pool.query(
+      `SELECT * FROM seasonal_challenges WHERE id = $1 AND workspace = $2`, [id, workspace],
+    );
     return rows[0] ?? null;
   }
 
-  vals.push(id);
+  vals.push(id, workspace);
   const { rows } = await pool.query(
-    `UPDATE seasonal_challenges SET ${sets.join(', ')} WHERE id = $${vals.length}
+    `UPDATE seasonal_challenges SET ${sets.join(', ')}
+     WHERE id = $${vals.length - 1} AND workspace = $${vals.length}
      RETURNING *, coin_reward AS "coinReward", store_ids AS "storeIds"`,
     vals
   );
@@ -309,16 +320,16 @@ export async function createChallenge(data: {
   heroId?: number; startDate: string; endDate: string; conditionDescription: string;
   coinReward?: number;
   storeIds?: number[] | null;
-}) {
+}, workspace: 'office' | 'retail' = 'retail') {
   const { rows } = await pool.query(
     `INSERT INTO seasonal_challenges
-       (name, description, season, year, hero_id, start_date, end_date, condition_description, coin_reward, store_ids)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       (name, description, season, year, hero_id, start_date, end_date, condition_description, coin_reward, store_ids, workspace)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING *, coin_reward AS "coinReward", store_ids AS "storeIds"`,
     [data.name, data.description, data.season, data.year,
      data.heroId ?? null, data.startDate, data.endDate, data.conditionDescription,
      data.coinReward ?? 0,
-     data.storeIds ?? null]
+     data.storeIds ?? null, workspace]
   );
   return rows[0];
 }

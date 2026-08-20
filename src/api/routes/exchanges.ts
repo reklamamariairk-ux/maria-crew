@@ -94,9 +94,9 @@ router.post('/:id/retry-1c', async (req: Request, res: Response, next: NextFunct
           notifyExchangeStatus(rows[0].employeeId, rows[0].prizeName, 'fulfilled').catch(() => {});
         }
       }).catch(() => {});
-      logAudit('exchange_fulfill', { exchangeId, processedBy: req.adminUserId, via: 'retry-1c' }).catch(() => {});
+      logAudit('exchange_fulfill', { exchangeId, processedBy: req.adminUserId, via: 'retry-1c', workspace: workspaceForRequest(req) }).catch(() => {});
     } else {
-      logAudit('exchange_1c_retry_failed', { exchangeId, error: result.externalDocError ?? null }).catch(() => {});
+      logAudit('exchange_1c_retry_failed', { exchangeId, error: result.externalDocError ?? null, workspace: workspaceForRequest(req) }).catch(() => {});
     }
   } catch (err) { next(err); }
 });
@@ -136,7 +136,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
         }
       }).catch(() => {});
       const action = finalStatus === 'fulfilled' ? 'exchange_fulfill' : 'exchange_reject';
-      logAudit(action, { exchangeId: parseInt(req.params.id, 10), processedBy: req.adminUserId }).catch(() => {});
+      logAudit(action, { exchangeId: parseInt(req.params.id, 10), processedBy: req.adminUserId, workspace: workspaceForRequest(req) }).catch(() => {});
     }
   } catch (err) {
     // «Уже обработана» — клиентская ошибка, отдаём 409 (а не 500)

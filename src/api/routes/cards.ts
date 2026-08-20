@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { notifyCardAward } from '../../bot/notifications/sender';
 import { logAudit } from '../../services/audit.service';
+import { areEmployeesInWorkspace, workspaceForRequest } from '../../services/adminWorkspace.service';
 
 const router = Router();
 
@@ -9,6 +10,10 @@ const router = Router();
 router.get('/:employeeId', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const employeeId = parseInt(req.params.employeeId, 10);
+    const workspace = workspaceForRequest(req);
+    if (!(await areEmployeesInWorkspace([employeeId], workspace))) {
+      res.status(403).json({ error: 'Сотрудник недоступен в текущем контуре' }); return;
+    }
     const { rows } = await pool.query(
       `SELECT ec.id, ec.hero_id AS "heroId", ec.is_mvp AS "isMvp", ec.source,
               ec.year, ec.month, ec.is_spent AS "isSpent", ec.earned_at AS "earnedAt",
@@ -32,6 +37,10 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
       year?: number; month?: number;
     };
     if (!employeeId || !heroId) { res.status(400).json({ error: 'employeeId и heroId обязательны' }); return; }
+    const workspace = workspaceForRequest(req);
+    if (!(await areEmployeesInWorkspace([employeeId], workspace))) {
+      res.status(403).json({ error: 'Сотрудник недоступен в текущем контуре' }); return;
+    }
 
     const now = new Date();
     const finalYear  = (year  && year  >= 2024 && year  <= 2100) ? year  : now.getFullYear();
@@ -48,7 +57,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
     res.status(201).json({ id: rows[0].id });
 
     notifyCardAward(employeeId, rows[0].heroName, source, isMvp).catch(() => {});
-    logAudit('card_grant', { employeeId, heroId, source, isMvp }).catch(() => {});
+    logAudit('card_grant', { employeeId, heroId, source, isMvp, workspace }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -58,11 +67,15 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = parseInt(req.params.id, 10);
-    const { rows: existing } = await pool.query<{ isSpent: boolean }>(
-      `SELECT is_spent AS "isSpent" FROM employee_cards WHERE id = $1`,
+    const { rows: existing } = await pool.query<{ isSpent: boolean; employeeId: number }>(
+      `SELECT is_spent AS "isSpent", employee_id AS "employeeId" FROM employee_cards WHERE id = $1`,
       [id]
     );
     if (!existing[0]) { res.status(404).json({ error: 'Карточка не найдена' }); return; }
+    const workspace = workspaceForRequest(req);
+    if (!(await areEmployeesInWorkspace([existing[0].employeeId], workspace))) {
+      res.status(403).json({ error: 'Карточка недоступна в текущем контуре' }); return;
+    }
     if (existing[0].isSpent) {
       res.status(409).json({
         error: 'Нельзя удалить потраченную карточку — она связана с заявкой на приз. Если нужно «отменить» обмен, отклони соответствующую заявку.',
@@ -78,7 +91,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction): P
     res.json({ ok: true });
     // rows[0] может быть пустым при гонке (карту удалили между SELECT и DELETE) — не роняем обработчик
     if (rows[0]) {
-      logAudit('card_revoke', { cardId: id, employeeId: rows[0].employeeId, heroId: rows[0].heroId }).catch(() => {});
+      logAudit('card_revoke', { cardId: id, employeeId: rows[0].employeeId, heroId: rows[0].heroId, workspace }).catch(() => {});
     }
   } catch (err) { next(err); }
 });
@@ -88,13 +101,21 @@ router.patch('/:id/spent', async (req: Request, res: Response, next: NextFunctio
   try {
     const id = parseInt(req.params.id, 10);
     const { isSpent } = req.body as { isSpent: boolean };
+    const owner = await pool.query<{ employeeId: number }>(
+      `SELECT employee_id AS "employeeId" FROM employee_cards WHERE id = $1`, [id],
+    );
+    if (!owner.rows[0]) { res.status(404).json({ error: 'Карточка не найдена' }); return; }
+    const workspace = workspaceForRequest(req);
+    if (!(await areEmployeesInWorkspace([owner.rows[0].employeeId], workspace))) {
+      res.status(403).json({ error: 'Карточка недоступна в текущем контуре' }); return;
+    }
     const { rowCount } = await pool.query(
       `UPDATE employee_cards SET is_spent = $1 WHERE id = $2`,
       [isSpent, id]
     );
     if (!rowCount) { res.status(404).json({ error: 'Карточка не найдена' }); return; }
     res.json({ ok: true });
-    logAudit('card_spent_toggle', { cardId: id, isSpent }).catch(() => {});
+    logAudit('card_spent_toggle', { cardId: id, isSpent, workspace }).catch(() => {});
   } catch (err) { next(err); }
 });
 

@@ -93,6 +93,27 @@ describe('createEmployeeInitiatedRequest: входящее НЕ падает в 
     const { rows } = await testPool.query(`SELECT status FROM employee_requests WHERE id = $1`, [requestId]);
     expect((rows[0] as { status: string }).status).toBe('open');
   });
+
+  it('после добавления в офис сотрудник не продолжает розничный диалог', async () => {
+    const { employeeId } = await seedEmployee(testPool, { name: 'Оператор' });
+    const retail = await createEmployeeInitiatedRequest({ employeeId, text: 'Розничный диалог' });
+    const { rows: officeStores } = await testPool.query(
+      `INSERT INTO stores (name, workspace) VALUES ('Офис', 'office') RETURNING id`,
+    );
+    const officeStoreId = (officeStores[0] as { id: number }).id;
+    await testPool.query(
+      `INSERT INTO office_employee_memberships (employee_id, office_store_id) VALUES ($1, $2)`,
+      [employeeId, officeStoreId],
+    );
+
+    const office = await createEmployeeInitiatedRequest({ employeeId, text: 'Офисный диалог' });
+
+    expect(office.requestId).not.toBe(retail.requestId);
+    const { rows } = await testPool.query(
+      `SELECT workspace FROM employee_requests WHERE id = $1`, [office.requestId],
+    );
+    expect((rows[0] as { workspace: string }).workspace).toBe('office');
+  });
 });
 
 describe('sendEmployeeMessage: доступ только к своим тредам', () => {

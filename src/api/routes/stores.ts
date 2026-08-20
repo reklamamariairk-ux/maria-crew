@@ -72,7 +72,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
       [name.trim(), address?.trim() || null, isOfficeWorkspace(req) ? 'office' : 'retail']
     );
     res.status(201).json(rows[0]);
-    logAudit('store_create', { storeId: rows[0].id, name: rows[0].name }).catch(() => {});
+    logAudit('store_create', { storeId: rows[0].id, name: rows[0].name, workspace: workspaceForRequest(req) }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -128,7 +128,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     );
     if (!rows[0]) { res.status(404).json({ error: 'Точка не найдена' }); return; }
     res.json(rows[0]);
-    logAudit('store_update', { storeId: rows[0].id, changes: body }).catch(() => {});
+    logAudit('store_update', { storeId: rows[0].id, changes: body, workspace: workspaceForRequest(req) }).catch(() => {});
   } catch (err) { next(err); }
 });
 

@@ -12,6 +12,7 @@
 
 import { pool } from '../db/pool';
 import { sanitizeAttachment } from './attachments';
+import { employeeWorkspace } from './adminWorkspace.service';
 
 export interface EmployeeRequestSummary {
   id: number;
@@ -51,6 +52,7 @@ export async function createEmployeeInitiatedRequest(opts: {
   const att = sanitizeAttachment(opts.fileUrl, opts.fileThumbnailUrl);
   opts = { ...opts, fileUrl: att.fileUrl, fileThumbnailUrl: att.fileThumbnailUrl };
   if (!text && !opts.fileUrl) throw new Error('Нужен текст или файл');
+  const workspace = await employeeWorkspace(opts.employeeId);
 
   // Мессенджер-логика: продолжаем существующий ЛИЧНЫЙ тред сотрудника, если он
   // открыт. ЛИЧНЫЙ = он инициатор (initiated_by_employee_id) ИЛИ это direct-чат
@@ -60,9 +62,10 @@ export async function createEmployeeInitiatedRequest(opts: {
   const { rows: existing } = await pool.query<{ id: number }>(
     `SELECT r.id FROM employee_requests r
      WHERE r.status <> 'closed'
+       AND r.workspace = $2
        AND (r.initiated_by_employee_id = $1 OR r.target_employee_id = $1)
      ORDER BY r.updated_at DESC LIMIT 1`,
-    [opts.employeeId]
+    [opts.employeeId, workspace]
   );
   if (existing[0]) {
     const res = await sendEmployeeMessage({
@@ -85,10 +88,10 @@ export async function createEmployeeInitiatedRequest(opts: {
     // как первый bubble в чате). Targets пустые, initiated_by_employee_id заполнен.
     const { rows: reqRows } = await client.query<{ id: number }>(
       `INSERT INTO employee_requests
-         (requested_by, request_text, initiated_by_employee_id, status)
-       VALUES (NULL, $1, $2, 'open')
+         (requested_by, request_text, initiated_by_employee_id, status, workspace)
+       VALUES (NULL, $1, $2, 'open', $3)
        RETURNING id`,
-      [text || (opts.fileType ? `(вложение: ${opts.fileType})` : '—'), opts.employeeId]
+      [text || (opts.fileType ? `(вложение: ${opts.fileType})` : '—'), opts.employeeId, workspace]
     );
     const requestId = reqRows[0].id;
 
@@ -129,6 +132,7 @@ export async function createEmployeeInitiatedRequest(opts: {
 
 /** Список запросов где сотрудник — получатель ИЛИ инициатор. Закрытые не показываем. */
 export async function listEmployeeRequests(employeeId: number): Promise<EmployeeRequestSummary[]> {
+  const workspace = await employeeWorkspace(employeeId);
   const { rows } = await pool.query<EmployeeRequestSummary & { lastMsgText: string | null; lastMsgFileType: string | null }>(
     `SELECT r.id,
             r.request_text AS "requestText",
@@ -161,6 +165,7 @@ export async function listEmployeeRequests(employeeId: number): Promise<Employee
      FROM employee_requests r
      LEFT JOIN request_targets rt ON rt.request_id = r.id AND rt.employee_id = $1
      WHERE (rt.employee_id = $1 OR r.initiated_by_employee_id = $1)
+       AND r.workspace = $2
        AND r.status <> 'closed'
      ORDER BY
        (CASE WHEN (
@@ -176,7 +181,7 @@ export async function listEmployeeRequests(employeeId: number): Promise<Employee
          r.updated_at
        )) DESC
      LIMIT 100`,
-    [employeeId]
+    [employeeId, workspace]
   );
   // Преобразуем preview: если последнее сообщение — файл без текста,
   // ставим эмодзи; если текст — обрезаем до 80 симв.
@@ -207,13 +212,15 @@ export async function getEmployeeRequestThread(opts: {
   requestId: number;
   employeeId: number;
 }): Promise<{ requestText: string; status: string; createdAt: string; messages: EmployeeChatMessage[] } | null> {
+  const workspace = await employeeWorkspace(opts.employeeId);
   // Проверяем что сотрудник имеет доступ — он target ИЛИ инициатор запроса
   const { rows: access } = await pool.query<{ id: number; requestText: string; status: string; createdAt: string }>(
     `SELECT r.id, r.request_text AS "requestText", r.status, r.created_at AS "createdAt"
      FROM employee_requests r
      LEFT JOIN request_targets rt ON rt.request_id = r.id AND rt.employee_id = $2
-     WHERE r.id = $1 AND (rt.employee_id = $2 OR r.initiated_by_employee_id = $2)`,
-    [opts.requestId, opts.employeeId]
+     WHERE r.id = $1 AND r.workspace = $3
+       AND (rt.employee_id = $2 OR r.initiated_by_employee_id = $2)`,
+    [opts.requestId, opts.employeeId, workspace]
   );
   if (!access[0]) return null;
 
@@ -261,12 +268,14 @@ export async function sendEmployeeMessage(opts: {
   fileType?: 'photo' | 'video' | 'document' | null;
   fileName?: string | null;
 }): Promise<{ messageId: number } | null> {
+  const workspace = await employeeWorkspace(opts.employeeId);
   // Доступ-чек — сотрудник target ИЛИ инициатор
   const { rows: access } = await pool.query<{ id: number; status: string }>(
     `SELECT r.id, r.status FROM employee_requests r
      LEFT JOIN request_targets rt ON rt.request_id = r.id AND rt.employee_id = $2
-     WHERE r.id = $1 AND (rt.employee_id = $2 OR r.initiated_by_employee_id = $2)`,
-    [opts.requestId, opts.employeeId]
+     WHERE r.id = $1 AND r.workspace = $3
+       AND (rt.employee_id = $2 OR r.initiated_by_employee_id = $2)`,
+    [opts.requestId, opts.employeeId, workspace]
   );
   if (!access[0]) return null;
 
@@ -306,19 +315,21 @@ export async function sendEmployeeMessage(opts: {
 
 /** Общее число непрочитанных запросов для бейджа на иконке «Сообщения». */
 export async function getEmployeeUnreadCount(employeeId: number): Promise<number> {
+  const workspace = await employeeWorkspace(employeeId);
   const { rows } = await pool.query<{ n: number }>(
     `SELECT COUNT(DISTINCT r.id)::int AS n
      FROM employee_requests r
      LEFT JOIN request_targets rt ON rt.request_id = r.id AND rt.employee_id = $1
      JOIN request_responses rr ON rr.request_id = r.id
      WHERE (rt.employee_id = $1 OR r.initiated_by_employee_id = $1)
+       AND r.workspace = $2
        AND r.status <> 'closed'
        AND rr.sender_type = 'manager'
        AND rr.created_at > COALESCE(
          (SELECT last_viewed_at FROM request_employee_views WHERE request_id = r.id AND employee_id = $1),
          '1970-01-01'::timestamptz
        )`,
-    [employeeId]
+    [employeeId, workspace]
   );
   return rows[0]?.n ?? 0;
 }

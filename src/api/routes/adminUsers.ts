@@ -2,17 +2,20 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { hashPassword, validatePassword, invalidateLiveAdmin, type AdminRole } from '../../services/adminAuth.service';
 import { logAudit } from '../../services/audit.service';
+import { isOfficeWorkspace } from '../../services/adminWorkspace.service';
 
 const router = Router();
 const VALID_ROLES: AdminRole[] = ['superadmin', 'editor', 'coin_admin', 'office_admin'];
 
 // GET /api/admin-users
-router.get('/', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const officeOnly = isOfficeWorkspace(req);
     const { rows } = await pool.query(
       `SELECT id, username, role, is_active AS "isActive",
               created_at AS "createdAt", last_login_at AS "lastLoginAt"
        FROM admin_users
+       ${officeOnly ? `WHERE role = 'office_admin'` : ''}
        ORDER BY id ASC`
     );
     res.json(rows);
@@ -31,6 +34,9 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
       res.status(400).json({ error: `role должен быть одним из: ${VALID_ROLES.join(', ')}` });
       return;
     }
+    if (isOfficeWorkspace(req) && role !== 'office_admin') {
+      res.status(403).json({ error: 'Офисный администратор может создавать только офисные доступы' }); return;
+    }
     const pwCheck = validatePassword(password);
     if (!pwCheck.ok) { res.status(400).json({ error: pwCheck.error }); return; }
     const uname = username.trim().toLowerCase();
@@ -42,7 +48,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
       [uname, hash, role]
     );
     res.status(201).json(rows[0]);
-    logAudit('admin_user_create', { username: uname, role }, req.ip).catch(() => {});
+    logAudit('admin_user_create', { username: uname, role, workspace: isOfficeWorkspace(req) ? 'office' : 'retail' }, req.ip).catch(() => {});
   } catch (err) {
     if (err instanceof Error && /duplicate key|unique constraint/i.test(err.message)) {
       res.status(409).json({ error: 'Пользователь с таким именем уже существует' });
@@ -59,6 +65,15 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     if (isNaN(id)) { res.status(400).json({ error: 'Неверный id' }); return; }
 
     const { role, isActive, password } = req.body as { role?: AdminRole; isActive?: boolean; password?: string };
+    if (isOfficeWorkspace(req)) {
+      const target = await pool.query<{ role: AdminRole }>(`SELECT role FROM admin_users WHERE id = $1`, [id]);
+      if (!target.rows[0] || target.rows[0].role !== 'office_admin') {
+        res.status(403).json({ error: 'Можно управлять только офисными доступами' }); return;
+      }
+      if (role !== undefined && role !== 'office_admin') {
+        res.status(403).json({ error: 'Роль офисного доступа менять нельзя' }); return;
+      }
+    }
 
     // Защита от self-lock-out и потери последнего суперадмина.
     // Если меняется role на не-superadmin или isActive на false — проверяем,
@@ -123,7 +138,10 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     if (!rows[0]) { res.status(404).json({ error: 'Не найден' }); return; }
     invalidateLiveAdmin(id); // смена роли/деактивация применяется СРАЗУ (не через кэш 15с)
     res.json(rows[0]);
-    logAudit('admin_user_update', { adminUserId: id, role, isActive, passwordChanged: password !== undefined }, req.ip).catch(() => {});
+    logAudit('admin_user_update', {
+      adminUserId: id, role, isActive, passwordChanged: password !== undefined,
+      workspace: isOfficeWorkspace(req) ? 'office' : 'retail',
+    }, req.ip).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -142,6 +160,9 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction): P
       `SELECT role FROM admin_users WHERE id = $1`, [id]
     );
     if (!target[0]) { res.status(404).json({ error: 'Не найден' }); return; }
+    if (isOfficeWorkspace(req) && target[0].role !== 'office_admin') {
+      res.status(403).json({ error: 'Можно удалять только офисные доступы' }); return;
+    }
 
     if (target[0].role === 'superadmin') {
       const { rows: count } = await pool.query<{ n: string }>(
@@ -157,7 +178,9 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction): P
     await pool.query(`DELETE FROM admin_users WHERE id = $1`, [id]);
     invalidateLiveAdmin(id); // удалённый админ теряет доступ СРАЗУ
     res.json({ ok: true });
-    logAudit('admin_user_delete', { adminUserId: id }, req.ip).catch(() => {});
+    logAudit('admin_user_delete', {
+      adminUserId: id, workspace: isOfficeWorkspace(req) ? 'office' : 'retail',
+    }, req.ip).catch(() => {});
   } catch (err) { next(err); }
 });
 

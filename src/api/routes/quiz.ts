@@ -3,6 +3,7 @@ import express from 'express';
 import { listQuestions, createQuestion, updateQuestion, deleteQuestion, importQuestionsFromCsv } from '../../services/quiz.service';
 import { logAudit } from '../../services/audit.service';
 import { pool } from '../../db/pool';
+import { workspaceForRequest } from '../../services/adminWorkspace.service';
 
 const router = Router();
 
@@ -24,7 +25,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
     }
     const q = await createQuestion(question, options, correctIndex, category ?? 'product');
     res.status(201).json(q);
-    logAudit('quiz_question_create', { questionId: q.id }).catch(() => {});
+    logAudit('quiz_question_create', { questionId: q.id, workspace: workspaceForRequest(req) }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -34,7 +35,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     if (isNaN(id)) { res.status(400).json({ error: 'Неверный id' }); return; }
     await updateQuestion(id, req.body);
     res.json({ ok: true });
-    logAudit('quiz_question_update', { questionId: id, changes: req.body }).catch(() => {});
+    logAudit('quiz_question_update', { questionId: id, changes: req.body, workspace: workspaceForRequest(req) }).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -44,7 +45,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction): P
     if (isNaN(id)) { res.status(400).json({ error: 'Неверный id' }); return; }
     await deleteQuestion(id);
     res.json({ ok: true });
-    logAudit('quiz_question_delete', { questionId: id }, req.ip).catch(() => {});
+    logAudit('quiz_question_delete', { questionId: id, workspace: workspaceForRequest(req) }, req.ip).catch(() => {});
   } catch (err) { next(err); }
 });
 
@@ -66,14 +67,21 @@ router.post(
       }
       const result = await importQuestionsFromCsv(csv);
       res.json(result);
-      logAudit('quiz_question_import', { added: result.added, total: result.total, errorCount: result.errors.length }, req.ip).catch(() => {});
+      logAudit('quiz_question_import', { added: result.added, total: result.total, errorCount: result.errors.length, workspace: workspaceForRequest(req) }, req.ip).catch(() => {});
     } catch (err) { next(err); }
   }
 );
 
 // GET /api/quiz/analytics — статистика: самые сложные вопросы, результаты по категориям
-router.get('/analytics', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.get('/analytics', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const workspace = workspaceForRequest(req);
+    const employeeScope = workspace === 'office'
+      ? `LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+         LEFT JOIN stores es ON es.id = e.store_id
+         WHERE (oem.employee_id IS NOT NULL OR es.workspace = 'office')`
+      : `JOIN stores es ON es.id = e.store_id
+         WHERE es.workspace = 'retail'`;
     const [hardest, categories, summary] = await Promise.all([
       // Топ-10 вопросов по % неправильных ответов (мин. 5 попыток)
       pool.query<{
@@ -91,6 +99,8 @@ router.get('/analytics', async (_req: Request, res: Response, next: NextFunction
                 ) AS "errorRate"
          FROM quiz_attempts qa
          JOIN quiz_questions qq ON qq.id = qa.question_id
+         JOIN employees e ON e.id = qa.employee_id
+         ${employeeScope}
          GROUP BY qa.question_id, qq.question, qq.category
          HAVING COUNT(*) >= 5
          ORDER BY "errorRate" DESC
@@ -109,6 +119,8 @@ router.get('/analytics', async (_req: Request, res: Response, next: NextFunction
                 ) AS "successRate"
          FROM quiz_attempts qa
          JOIN quiz_questions qq ON qq.id = qa.question_id
+         JOIN employees e ON e.id = qa.employee_id
+         ${employeeScope}
          GROUP BY qq.category
          ORDER BY "successRate" ASC`
       ),
@@ -126,7 +138,9 @@ router.get('/analytics', async (_req: Request, res: Response, next: NextFunction
              / NULLIF(COUNT(DISTINCT (answered_at AT TIME ZONE 'Asia/Irkutsk')::date), 0),
              1
            ) AS "avgDailyAttempts"
-         FROM quiz_attempts`
+         FROM quiz_attempts qa
+         JOIN employees e ON e.id = qa.employee_id
+         ${employeeScope}`
       ),
     ]);
 
