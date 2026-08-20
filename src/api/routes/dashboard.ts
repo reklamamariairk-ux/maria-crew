@@ -14,23 +14,27 @@ async function loadOfficeDashboard(req: Request, res: Response, year: number, mo
     return;
   }
 
-  const storeClause = storeId ? 'AND e.store_id = $3' : '';
+  const storeClause = storeId ? 'AND COALESCE(oem.office_store_id, e.store_id) = $3' : '';
   const storeParams = storeId ? [year, month, storeId] : [year, month];
   const period = `${year}-${String(month).padStart(2, '0')}`;
   const [employees, coins, performers, oneCSales] = await Promise.all([
     pool.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count
-         FROM employees e JOIN stores s ON s.id = e.store_id
-        WHERE e.is_active = true AND e.fired_at IS NULL AND s.workspace = 'office'
-          ${storeId ? 'AND e.store_id = $1' : ''}`,
+         FROM employees e
+         LEFT JOIN stores s ON s.id = e.store_id
+         LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+        WHERE e.is_active = true AND e.fired_at IS NULL
+          AND (s.workspace = 'office' OR oem.employee_id IS NOT NULL)
+          ${storeId ? 'AND COALESCE(oem.office_store_id, e.store_id) = $1' : ''}`,
       storeId ? [storeId] : [],
     ),
     pool.query<{ total: string }>(
       `SELECT COALESCE(SUM(ct.amount), 0)::text AS total
          FROM coin_transactions ct
          JOIN employees e ON e.id = ct.employee_id
-         JOIN stores s ON s.id = e.store_id
-        WHERE ct.amount > 0 AND s.workspace = 'office'
+         LEFT JOIN stores s ON s.id = e.store_id
+         LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+        WHERE ct.amount > 0 AND (s.workspace = 'office' OR oem.employee_id IS NOT NULL)
           AND EXTRACT(YEAR FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $1
           AND EXTRACT(MONTH FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $2
           ${storeClause}`,
@@ -40,19 +44,22 @@ async function loadOfficeDashboard(req: Request, res: Response, year: number, mo
       id: number; name: string; storeName: string | null; totalCoins: string;
       quizCoins: string; checklistCoins: string; challengeCoins: string;
     }>(
-      `SELECT e.id, e.name, s.name AS "storeName",
+      `SELECT e.id, e.name, COALESCE(os.name, s.name) AS "storeName",
               SUM(ct.amount)::text AS "totalCoins",
               SUM(CASE WHEN ct.reason = 'quiz' THEN ct.amount ELSE 0 END)::text AS "quizCoins",
               SUM(CASE WHEN ct.reason = 'checklist_day' THEN ct.amount ELSE 0 END)::text AS "checklistCoins",
               SUM(CASE WHEN ct.reason = 'manual' AND ct.note LIKE 'Челлендж #%' THEN ct.amount ELSE 0 END)::text AS "challengeCoins"
          FROM employees e
-         JOIN stores s ON s.id = e.store_id
+         LEFT JOIN stores s ON s.id = e.store_id
+         LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+         LEFT JOIN stores os ON os.id = oem.office_store_id
          JOIN coin_transactions ct ON ct.employee_id = e.id AND ct.amount > 0
-        WHERE s.workspace = 'office' AND e.is_active = true AND e.fired_at IS NULL
+        WHERE (s.workspace = 'office' OR oem.employee_id IS NOT NULL)
+          AND e.is_active = true AND e.fired_at IS NULL
           AND EXTRACT(YEAR FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $1
           AND EXTRACT(MONTH FROM ct.created_at AT TIME ZONE 'Asia/Irkutsk') = $2
           ${storeClause}
-        GROUP BY e.id, e.name, s.name
+        GROUP BY e.id, e.name, s.name, os.name
         ORDER BY SUM(ct.amount) DESC LIMIT 10`,
       storeParams,
     ),

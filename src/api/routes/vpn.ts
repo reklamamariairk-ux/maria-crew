@@ -51,13 +51,16 @@ async function vpnNameByEmployee(employeeId: number): Promise<string | null> {
 router.get('/overview', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (!vpnConfigured()) { res.status(502).json({ error: 'vpn_engine_unavailable' }); return; }
+    const office = isOfficeWorkspace(req);
     const [panelUsers, links, employees, applyStatus] = await Promise.all([
       listPanelUsers(),
       pool.query('SELECT employee_id, vpn_name FROM employee_vpn'),
       pool.query(`SELECT e.id, e.name, e.is_active, e.telegram_id IS NOT NULL AS has_telegram,
-                         s.name AS store_name
+                         ${office ? 'COALESCE(os.name, s.name)' : 's.name'} AS store_name
                   FROM employees e LEFT JOIN stores s ON s.id = e.store_id
-                  WHERE s.workspace = '${workspaceForRequest(req)}'`),
+                  ${office ? `LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+                  LEFT JOIN stores os ON os.id = oem.office_store_id` : ''}
+                  WHERE ${office ? `(s.workspace = 'office' OR oem.employee_id IS NOT NULL)` : `s.workspace = 'retail'`}`),
       panelApplyStatus().catch(() => ({ error: null })),
     ]);
     const byVpnName = new Map(links.rows.map((l: { employeeId: number; vpnName: string }) => [l.vpnName, l.employeeId]));

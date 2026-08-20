@@ -210,14 +210,26 @@
         <div class="stat-card">
           <div class="stat-card-icon"><i data-lucide="warehouse"></i></div>
           <div class="value" id="office-sales-gp-count">—</div>
-          <div class="label">Продаж из 1С · Склад ГП</div>
+          <div class="label">Количество продаж · Склад ГП</div>
           <div id="office-sales-gp-detail" class="text-muted" style="font-size:12px;margin-top:6px">Загрузка…</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-icon"><i data-lucide="banknote"></i></div>
+          <div class="value" id="office-sales-gp-amount">—</div>
+          <div class="label">Сумма продаж · Склад ГП</div>
+          <div class="text-muted" style="font-size:12px;margin-top:6px">По данным 1С за текущий месяц</div>
         </div>
         <div class="stat-card">
           <div class="stat-card-icon"><i data-lucide="shopping-cart"></i></div>
           <div class="value" id="office-sales-site-count">—</div>
-          <div class="label">Продаж из 1С · Склад Сайт</div>
+          <div class="label">Количество продаж · Склад Сайт</div>
           <div id="office-sales-site-detail" class="text-muted" style="font-size:12px;margin-top:6px">Загрузка…</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-icon"><i data-lucide="banknote"></i></div>
+          <div class="value" id="office-sales-site-amount">—</div>
+          <div class="label">Сумма продаж · Склад Сайт</div>
+          <div class="text-muted" style="font-size:12px;margin-top:6px">По данным 1С за текущий месяц</div>
         </div>
       </div>
 
@@ -593,6 +605,23 @@
       <div id="office-telegram-guide" class="card card-pad hidden" style="margin-bottom:16px;border-left:4px solid var(--pink)">
         <p class="section-title"><i data-lucide="send" style="width:15px;height:15px"></i> Как подключить сотрудника к Telegram</p>
         <p class="text-muted" style="margin:0;line-height:1.6">Нажми «Добавить», укажи имя, команду и Telegram <strong>@username</strong>. Затем сотрудник открывает тот же бот Maria Crew и нажимает «Старт» — профиль, монеты и VPN привяжутся к нему автоматически.</p>
+      </div>
+
+      <div id="office-existing-employee" class="card card-pad hidden" style="margin-bottom:16px">
+        <p class="section-title"><i data-lucide="user-check" style="width:15px;height:15px"></i> Выбрать из сотрудников приложения</p>
+        <p class="text-muted" style="margin:0 0 12px;line-height:1.5">Здесь видны все сотрудники, которые уже вошли в Maria Crew. Профиль не дублируется: сохраняются Telegram, монеты и VPN.</p>
+        <div class="form-row" style="margin-bottom:0;align-items:end">
+          <label style="flex:1;min-width:240px">Найти сотрудника
+            <input type="text" id="office-candidate-search" class="input" placeholder="Имя, @username или точка" oninput="filterOfficeCandidates(this.value)" style="width:100%;margin-bottom:6px">
+            <select id="office-candidate-select" style="width:100%;max-width:520px">
+              <option value="">— Загрузка сотрудников —</option>
+            </select>
+          </label>
+          <label>Офисная команда
+            <select id="office-candidate-store" style="min-width:180px"></select>
+          </label>
+          <button id="office-candidate-add-btn" class="btn btn-primary" onclick="attachOfficeCandidate()"><i data-lucide="user-plus"></i> Добавить в офис</button>
+        </div>
       </div>
 
       <div class="toolbar">

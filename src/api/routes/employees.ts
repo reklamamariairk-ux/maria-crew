@@ -8,7 +8,7 @@ import { requireRole } from '../middleware/adminAuth';
 import { normalizePhone } from '../../services/employeeAuth.service';
 import { FIRED_NAME_RE, fireEmployee, restoreEmployee } from '../../services/employeeFire.service';
 import {
-  areEmployeesInWorkspace, isStoreInWorkspace, workspaceForRequest,
+  areEmployeesInWorkspace, isOfficeWorkspace, isStoreInWorkspace, workspaceForRequest,
 } from '../../services/adminWorkspace.service';
 
 const router = Router();
@@ -23,7 +23,8 @@ router.use(async (req: Request, res: Response, next: NextFunction): Promise<void
   if (pathId) employeeIds.push(Number(pathId[1]));
   if (req.body?.employeeId !== undefined) employeeIds.push(Number(req.body.employeeId));
   if (Array.isArray(req.body?.employeeIds)) employeeIds.push(...req.body.employeeIds.map(Number));
-  if (employeeIds.length && !await areEmployeesInWorkspace(employeeIds, workspace)) {
+  const attachingExisting = req.path === '/attach-office' && req.method === 'POST';
+  if (!attachingExisting && employeeIds.length && !await areEmployeesInWorkspace(employeeIds, workspace)) {
     res.status(403).json({ error: 'Этот сотрудник недоступен в текущем контуре' });
     return;
   }
@@ -34,6 +35,62 @@ router.use(async (req: Request, res: Response, next: NextFunction): Promise<void
     return;
   }
   next();
+});
+
+// GET /api/employees/app-candidates — существующие сотрудники, уже вошедшие
+// в Telegram/Mini App, которых можно добавить в офис без нового профиля.
+router.get('/app-candidates', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  if (!isOfficeWorkspace(req)) { res.status(403).json({ error: 'Доступно только в офисном контуре' }); return; }
+  try {
+    const { rows } = await pool.query(
+      `SELECT e.id, e.name, e.telegram_username AS "telegramUsername",
+              e.telegram_id IS NOT NULL AS "telegramConnected",
+              e.last_seen_at AS "lastSeenAt", s.name AS "storeName"
+         FROM employees e
+         LEFT JOIN stores s ON s.id = e.store_id
+        WHERE e.is_active = true AND e.fired_at IS NULL
+          AND (e.telegram_id IS NOT NULL OR e.last_seen_at IS NOT NULL)
+          AND COALESCE(s.workspace, 'retail') <> 'office'
+          AND NOT EXISTS (
+            SELECT 1 FROM office_employee_memberships oem WHERE oem.employee_id = e.id
+          )
+        ORDER BY (e.last_seen_at IS NULL), e.last_seen_at DESC, e.name`,
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// POST /api/employees/attach-office {employeeId, storeId}
+router.post('/attach-office', denyCoinAdminForWrites, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  if (!isOfficeWorkspace(req)) { res.status(403).json({ error: 'Доступно только в офисном контуре' }); return; }
+  try {
+    const employeeId = Number(req.body?.employeeId);
+    const storeId = Number(req.body?.storeId);
+    if (!Number.isInteger(employeeId) || !Number.isInteger(storeId)) {
+      res.status(400).json({ error: 'employeeId и storeId обязательны' }); return;
+    }
+    if (!await isStoreInWorkspace(storeId, 'office')) {
+      res.status(400).json({ error: 'Выбрана неверная офисная команда' }); return;
+    }
+    const employee = await pool.query(
+      `SELECT id, name FROM employees
+        WHERE id = $1 AND is_active = true AND fired_at IS NULL
+          AND (telegram_id IS NOT NULL OR last_seen_at IS NOT NULL)`,
+      [employeeId],
+    );
+    if (!employee.rows[0]) { res.status(404).json({ error: 'Сотрудник приложения не найден' }); return; }
+    await pool.query(
+      `INSERT INTO office_employee_memberships(employee_id, office_store_id, added_by)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (employee_id) DO UPDATE
+         SET office_store_id = EXCLUDED.office_store_id,
+             added_by = EXCLUDED.added_by,
+             updated_at = NOW()`,
+      [employeeId, storeId, req.adminUserId ?? null],
+    );
+    res.status(201).json({ id: employeeId, name: employee.rows[0].name, storeId });
+    logAudit('employee_update', { employeeId, officeStoreId: storeId, action: 'attach_office' }).catch(() => {});
+  } catch (err) { next(err); }
 });
 
 // coin_admin не может создавать/менять сотрудников
@@ -55,8 +112,14 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
 
     const params: (number | string)[] = [];
     const wheres: string[] = [];
-    wheres.push(`s.workspace = '${workspaceForRequest(req)}'`);
-    if (storeId) { params.push(storeId); wheres.push(`e.store_id = $${params.length}`); }
+    const office = isOfficeWorkspace(req);
+    wheres.push(office ? `(s.workspace = 'office' OR oem.employee_id IS NOT NULL)` : `s.workspace = 'retail'`);
+    if (storeId) {
+      params.push(storeId);
+      wheres.push(office
+        ? `COALESCE(oem.office_store_id, e.store_id) = $${params.length}`
+        : `e.store_id = $${params.length}`);
+    }
     if (recentOnly) { wheres.push(`e.last_seen_at IS NOT NULL`); }
     // Уволенные по умолчанию скрыты отовсюду (монеты/лидерборд/выдачи); ?fired=only —
     // вкладка «Уволенные», ?fired=all — всё вместе (экспорт/аудит).
@@ -80,10 +143,12 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
               e.last_seen_tg_at   AS "lastSeenTgAt",
               e.last_seen_app_at  AS "lastSeenAppAt",
               e.phone             AS "phone",
-              e.store_id          AS "storeId",
-              s.name              AS "storeName"
+              ${office ? 'COALESCE(oem.office_store_id, e.store_id)' : 'e.store_id'} AS "storeId",
+              ${office ? 'COALESCE(os.name, s.name)' : 's.name'} AS "storeName"
        FROM employees e
        LEFT JOIN stores s ON s.id = e.store_id
+       ${office ? `LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+       LEFT JOIN stores os ON os.id = oem.office_store_id` : ''}
        ${where}
        ${order}`;
 
@@ -96,7 +161,9 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
         pool.query(`${base} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, [...params, pageSize, offset]),
         pool.query<{ count: string }>(
           `SELECT COUNT(*)::text AS count FROM employees e
-           LEFT JOIN stores s ON s.id = e.store_id ${where}`,
+           LEFT JOIN stores s ON s.id = e.store_id
+           ${office ? 'LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id' : ''}
+           ${where}`,
           params
         ),
       ]);
@@ -118,12 +185,18 @@ router.get('/engagement', async (req: Request, res: Response, next: NextFunction
     const days = Math.min(Math.max(parseInt(String(req.query.days ?? '30'), 10) || 30, 1), 90);
     const storeId = req.query.storeId ? parseInt(String(req.query.storeId), 10) : null;
     const params: (number | null)[] = [days];
-    const workspace = workspaceForRequest(req);
-    const storeJoin = `JOIN employees e ON e.id = dc.employee_id JOIN stores s ON s.id = e.store_id`;
-    let storeWhere = `AND s.workspace = '${workspace}'`;
+    const office = isOfficeWorkspace(req);
+    const storeJoin = `JOIN employees e ON e.id = dc.employee_id
+      LEFT JOIN stores s ON s.id = e.store_id
+      ${office ? 'LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id' : ''}`;
+    let storeWhere = office
+      ? `AND (s.workspace = 'office' OR oem.employee_id IS NOT NULL)`
+      : `AND s.workspace = 'retail'`;
     if (storeId && !isNaN(storeId)) {
       params.push(storeId);
-      storeWhere += ` AND e.store_id = $${params.length}`;
+      storeWhere += office
+        ? ` AND COALESCE(oem.office_store_id, e.store_id) = $${params.length}`
+        : ` AND e.store_id = $${params.length}`;
     }
     const { rows } = await pool.query<{ date: string; uniqueUsers: string }>(
       `SELECT dc.checkin_date::text AS date, COUNT(DISTINCT dc.employee_id)::text AS "uniqueUsers"
@@ -147,8 +220,17 @@ router.get('/summaries', async (req: Request, res: Response, next: NextFunction)
     const storeId = req.query.storeId ? parseInt(String(req.query.storeId), 10) : null;
     const params: number[] = [];
     const wheres: string[] = [];
-    wheres.push(`EXISTS (SELECT 1 FROM stores s WHERE s.id = e.store_id AND s.workspace = '${workspaceForRequest(req)}')`);
-    if (storeId) { params.push(storeId); wheres.push(`e.store_id = $${params.length}`); }
+    const office = isOfficeWorkspace(req);
+    wheres.push(office
+      ? `(EXISTS (SELECT 1 FROM stores s WHERE s.id = e.store_id AND s.workspace = 'office')
+          OR EXISTS (SELECT 1 FROM office_employee_memberships oem WHERE oem.employee_id = e.id))`
+      : `EXISTS (SELECT 1 FROM stores s WHERE s.id = e.store_id AND s.workspace = 'retail')`);
+    if (storeId) {
+      params.push(storeId);
+      wheres.push(office
+        ? `COALESCE((SELECT office_store_id FROM office_employee_memberships WHERE employee_id = e.id), e.store_id) = $${params.length}`
+        : `e.store_id = $${params.length}`);
+    }
     const where = wheres.length ? `WHERE ${wheres.join(' AND ')}` : '';
 
     // Один запрос — все агрегации сразу через LATERAL/подзапросы.
@@ -186,14 +268,18 @@ router.get('/summaries', async (req: Request, res: Response, next: NextFunction)
 router.get('/:id/summary', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = parseInt(req.params.id, 10);
+    const office = isOfficeWorkspace(req);
     const { rows } = await pool.query(
       `SELECT e.id, e.name, e.role, e.is_active AS "isActive", e.joined_at AS "joinedAt",
               e.telegram_id AS "telegramId", e.telegram_username AS "telegramUsername",
               e.telegram_photo_url AS "telegramPhotoUrl", e.last_seen_at AS "lastSeenAt",
               e.last_seen_tg_at AS "lastSeenTgAt", e.last_seen_app_at AS "lastSeenAppAt",
               e.phone AS "phone", e.email AS "email", e.fired_at AS "firedAt",
-              e.store_id AS "storeId", s.name AS "storeName"
-       FROM employees e JOIN stores s ON s.id = e.store_id
+              ${office ? 'COALESCE(oem.office_store_id, e.store_id)' : 'e.store_id'} AS "storeId",
+              ${office ? 'COALESCE(os.name, s.name)' : 's.name'} AS "storeName"
+       FROM employees e LEFT JOIN stores s ON s.id = e.store_id
+       ${office ? `LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+       LEFT JOIN stores os ON os.id = oem.office_store_id` : ''}
        WHERE e.id = $1`,
       [id]
     );
@@ -359,6 +445,28 @@ router.put('/:id', denyCoinAdminForWrites, async (req: Request, res: Response, n
       }
     }
 
+    // Для сотрудника, выбранного из приложения, смена «команды» меняет только
+    // офисное членство. Его исходная торговая точка остаётся прежней.
+    let baseStoreId = storeId;
+    if (isOfficeWorkspace(req) && storeId !== undefined) {
+      const current = await pool.query<{ workspace: string | null; hasMembership: boolean }>(
+        `SELECT s.workspace, oem.employee_id IS NOT NULL AS "hasMembership"
+           FROM employees e
+           LEFT JOIN stores s ON s.id = e.store_id
+           LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+          WHERE e.id = $1`,
+        [empId],
+      );
+      if (current.rows[0]?.hasMembership && current.rows[0].workspace !== 'office') {
+        await pool.query(
+          `UPDATE office_employee_memberships SET office_store_id = $1, updated_at = NOW()
+            WHERE employee_id = $2`,
+          [storeId, empId],
+        );
+        baseStoreId = undefined;
+      }
+    }
+
     const { rows } = await pool.query(
       `UPDATE employees SET
          name              = COALESCE($1, name),
@@ -371,7 +479,7 @@ router.put('/:id', denyCoinAdminForWrites, async (req: Request, res: Response, n
          email             = CASE WHEN $10::boolean THEN $9 ELSE email END
        WHERE id = $11 RETURNING *`,
       [
-        name ?? null, storeId ?? null, role ?? null, isActive ?? null,
+        name ?? null, baseStoreId ?? null, role ?? null, isActive ?? null,
         username ?? null,
         phoneFmt ?? null, phone !== undefined, phoneNorm ?? null,
         emailNorm ?? null, email !== undefined,

@@ -33,8 +33,14 @@ export async function areEmployeesInWorkspace(
   const { rows } = await pool.query<{ count: number }>(
     `SELECT COUNT(*)::int AS count
        FROM employees e
-       JOIN stores s ON s.id = e.store_id
-      WHERE e.id = ANY($1::int[]) AND s.workspace = $2`,
+       LEFT JOIN stores s ON s.id = e.store_id
+      WHERE e.id = ANY($1::int[])
+        AND (
+          s.workspace = $2
+          OR ($2 = 'office' AND EXISTS (
+            SELECT 1 FROM office_employee_memberships oem WHERE oem.employee_id = e.id
+          ))
+        )`,
     [ids, workspace],
   );
   return Number(rows[0]?.count ?? 0) === ids.length;

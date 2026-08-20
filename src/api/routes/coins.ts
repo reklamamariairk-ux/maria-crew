@@ -87,13 +87,17 @@ router.get('/balance/:employeeId', async (req: Request, res: Response, next: Nex
 router.get('/recent', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const limit = Math.min(parseInt(String(req.query.limit ?? '20'), 10) || 20, 100);
+    const office = workspaceForRequest(req) === 'office';
     const { rows } = await pool.query(
       `SELECT ct.id, ct.amount, ct.reason, ct.note, ct.created_at AS "createdAt",
-              e.id AS "employeeId", e.name AS "employeeName", s.name AS "storeName"
+              e.id AS "employeeId", e.name AS "employeeName",
+              ${office ? 'COALESCE(os.name, s.name)' : 's.name'} AS "storeName"
        FROM coin_transactions ct
        JOIN employees e ON e.id = ct.employee_id
        LEFT JOIN stores s ON s.id = e.store_id
-       WHERE s.workspace = '${workspaceForRequest(req)}'
+       ${office ? `LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+       LEFT JOIN stores os ON os.id = oem.office_store_id` : ''}
+       WHERE ${office ? `(s.workspace = 'office' OR oem.employee_id IS NOT NULL)` : `s.workspace = 'retail'`}
        ORDER BY ct.id DESC LIMIT $1`, [limit]);
     res.json(rows);
   } catch (err) { next(err); }
@@ -138,10 +142,18 @@ router.get('/export', async (req: Request, res: Response, next: NextFunction): P
     }
 
     const params: (string | number)[] = [from, to];
-    let storeFilter = ` AND s.workspace = '${workspaceForRequest(req)}'`;
+    const office = workspaceForRequest(req) === 'office';
+    let storeFilter = office
+      ? ` AND (s.workspace = 'office' OR oem.employee_id IS NOT NULL)`
+      : ` AND s.workspace = 'retail'`;
     if (storeIdRaw) {
       const storeId = parseInt(storeIdRaw, 10);
-      if (!isNaN(storeId)) { params.push(storeId); storeFilter = ` AND e.store_id = $${params.length}`; }
+      if (!isNaN(storeId)) {
+        params.push(storeId);
+        storeFilter += office
+          ? ` AND COALESCE(oem.office_store_id, e.store_id) = $${params.length}`
+          : ` AND e.store_id = $${params.length}`;
+      }
     }
 
     const { rows } = await pool.query<{
@@ -150,11 +162,13 @@ router.get('/export', async (req: Request, res: Response, next: NextFunction): P
     }>(
       `SELECT ct.created_at AS "createdAt",
               e.name        AS "employeeName",
-              s.name        AS "storeName",
+              ${office ? 'COALESCE(os.name, s.name)' : 's.name'} AS "storeName",
               ct.amount, ct.reason, ct.note
        FROM coin_transactions ct
        JOIN employees e ON e.id = ct.employee_id
        LEFT JOIN stores s ON s.id = e.store_id
+       ${office ? `LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+       LEFT JOIN stores os ON os.id = oem.office_store_id` : ''}
        WHERE ct.created_at >= $1::date
          AND ct.created_at <  ($2::date + INTERVAL '1 day')
          ${storeFilter}

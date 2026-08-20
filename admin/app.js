@@ -7,6 +7,7 @@ const state = {
   month: new Date().getMonth() + 1,
   stores: [],
   employees: [],
+  officeCandidates: [],
   // Челленджи, идущие сейчас, с coinReward > 0 — подмешиваем в селекты причин
   // на вкладке «Монеты», чтобы можно было одним кликом наградить за участие.
   activeChallenges: [],
@@ -365,6 +366,8 @@ function applyOfficeInterface() {
   if (storeLabel) storeLabel.textContent = 'Команда';
   const guide = document.getElementById('office-telegram-guide');
   if (guide) guide.classList.remove('hidden');
+  const existingEmployee = document.getElementById('office-existing-employee');
+  if (existingEmployee) existingEmployee.classList.remove('hidden');
   const sales = document.getElementById('office-sales-summary');
   if (sales) sales.classList.remove('hidden');
   const pending = document.getElementById('dash-pending-card');
@@ -418,6 +421,7 @@ async function showApp() {
   await Promise.all(OFFICE_MODE
     ? [loadStores()]
     : [loadStores(), loadCloudinaryConfig(), loadActiveChallengesForCoins()]);
+  if (OFFICE_MODE) await loadOfficeAppCandidates();
   // После обновления страницы возвращаемся на вкладку, где был админ
   // (switchTab сам откатит на dashboard, если вкладка роли недоступна)
   switchTab(localStorage.getItem(LAST_TAB_KEY) || 'dashboard');
@@ -449,6 +453,56 @@ async function loadStores() {
   populateStoreSelectors();
 }
 
+async function loadOfficeAppCandidates() {
+  if (!OFFICE_MODE) return;
+  const select = document.getElementById('office-candidate-select');
+  if (select) select.innerHTML = '<option value="">— Загрузка сотрудников —</option>';
+  state.officeCandidates = await api('GET', '/employees/app-candidates') || [];
+  renderOfficeCandidateOptions('');
+}
+
+function renderOfficeCandidateOptions(search) {
+  const select = document.getElementById('office-candidate-select');
+  if (!select) return;
+  const query = String(search || '').trim().toLowerCase().replace(/^@/, '');
+  const candidates = state.officeCandidates.filter(employee => {
+    if (!query) return true;
+    return [employee.name, employee.telegramUsername, employee.storeName]
+      .some(value => String(value || '').toLowerCase().includes(query));
+  });
+  if (!candidates.length) {
+    select.innerHTML = `<option value="">${state.officeCandidates.length ? '— Ничего не найдено —' : '— Все сотрудники уже выбраны —'}</option>`;
+    return;
+  }
+  select.innerHTML = '<option value="">— Выбери сотрудника —</option>' + candidates.map(employee => {
+    const telegram = employee.telegramUsername ? ` · @${employee.telegramUsername}` : '';
+    const store = employee.storeName ? ` · ${employee.storeName}` : '';
+    return `<option value="${employee.id}">${esc(employee.name)}${esc(telegram)}${esc(store)}</option>`;
+  }).join('');
+}
+
+function filterOfficeCandidates(search) {
+  renderOfficeCandidateOptions(search);
+}
+
+async function attachOfficeCandidate() {
+  const employeeId = Number(document.getElementById('office-candidate-select')?.value);
+  const storeId = Number(document.getElementById('office-candidate-store')?.value);
+  if (!employeeId) { toast('Выбери сотрудника из приложения'); return; }
+  if (!storeId) { toast('Выбери офисную команду'); return; }
+  const button = document.getElementById('office-candidate-add-btn');
+  if (button) button.disabled = true;
+  try {
+    await api('POST', '/employees/attach-office', { employeeId, storeId });
+    toast('✅ Сотрудник добавлен в офис. Telegram, монеты и VPN сохранены.');
+    const search = document.getElementById('office-candidate-search');
+    if (search) search.value = '';
+    await loadOfficeAppCandidates();
+    loadEmployees();
+  } catch (error) { toastError(error); }
+  finally { if (button) button.disabled = false; }
+}
+
 // Заполняет все селекторы точек: основной в сайдбаре + inline-пикеры
 // в Метриках и Рейтингах. Все они синхронизируются с state.storeId.
 function populateStoreSelectors() {
@@ -477,6 +531,13 @@ function populateStoreSelectors() {
     newEmpStore.innerHTML = `<option value="">${OFFICE_MODE ? '— Выбери команду —' : '— Выбери точку —'}</option>`
       + state.stores.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
     if (OFFICE_MODE && state.stores.length === 1) newEmpStore.value = String(state.stores[0].id);
+  }
+
+  const officeCandidateStore = document.getElementById('office-candidate-store');
+  if (officeCandidateStore) {
+    officeCandidateStore.innerHTML = '<option value="">— Выбери команду —</option>'
+      + state.stores.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+    if (state.stores.length === 1) officeCandidateStore.value = String(state.stores[0].id);
   }
 
   // Селектор точки для массового начисления монет
@@ -4099,15 +4160,18 @@ function renderOfficeOneCSales(summary) {
   const moneyFmt = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 });
   const renderMetric = (prefix, metric) => {
     const count = document.getElementById(`office-sales-${prefix}-count`);
+    const amount = document.getElementById(`office-sales-${prefix}-amount`);
     const detail = document.getElementById(`office-sales-${prefix}-detail`);
-    if (!count || !detail) return;
+    if (!count || !amount || !detail) return;
     if (!metric) {
       count.textContent = '—';
+      amount.textContent = '—';
       detail.textContent = 'Нет связи со сводкой 1С';
       return;
     }
     count.textContent = countFmt.format(Number(metric.salesCount) || 0);
-    detail.textContent = `${quantityFmt.format(Number(metric.quantity) || 0)} шт. · ${moneyFmt.format(Number(metric.amount) || 0)} ₽`;
+    amount.textContent = `${moneyFmt.format(Number(metric.amount) || 0)} ₽`;
+    detail.textContent = `${quantityFmt.format(Number(metric.quantity) || 0)} шт. продано`;
   };
   renderMetric('gp', summary?.gp);
   renderMetric('site', summary?.site);
