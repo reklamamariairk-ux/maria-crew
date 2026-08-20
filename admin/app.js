@@ -18,6 +18,7 @@ const ROLE_LABEL = {
   superadmin: 'Суперадмин',
   editor:     'Админище',
   coin_admin: 'Администратор (монеты)',
+  office_admin: 'Администратор офиса',
 };
 
 // Единая точка истины: какие вкладки доступны какой роли.
@@ -149,6 +150,10 @@ async function login() {
     state.requirePasswordChange = !!data.mustChangePassword;
     sessionStorage.setItem('mc_token', data.token);
     sessionStorage.setItem('mc_role', state.role);
+    if (state.role === 'office_admin') {
+      window.location.assign('/office');
+      return;
+    }
     showApp();
     if (state.requirePasswordChange) {
       // Сразу принуждаем сменить временный пароль
@@ -343,6 +348,10 @@ async function showApp() {
       sessionStorage.setItem('mc_role', state.role);
     }
     if (meta.id) state.adminUserId = meta.id;
+  }
+  if (state.role === 'office_admin') {
+    window.location.replace('/office');
+    return;
   }
   applyRoleVisibility();
 
@@ -3180,6 +3189,13 @@ const AUDIT_ACTION_LABELS = {
   admin_user_create:        '🛡 Админ создан',
   admin_user_update:        '🛡 Админ изменён',
   admin_user_delete:        '🛡 Админ удалён',
+  office_team_create:       '🎧 Офисная команда создана',
+  office_team_update:       '🎧 Офисная команда изменена',
+  office_operator_create:   '👤 Оператор добавлен',
+  office_operator_update:   '👤 Оператор изменён',
+  office_metric_create:     '📊 Офисный показатель создан',
+  office_metric_update:     '📊 Офисный показатель изменён',
+  office_metrics_save:      '📈 Метрики операторов сохранены',
 };
 
 function formatAuditDateTime(iso) {
@@ -5262,6 +5278,7 @@ async function loadAdminUsers() {
         <option value="superadmin"${u.role === 'superadmin' ? ' selected' : ''}>Суперадмин</option>
         <option value="editor"${u.role === 'editor' ? ' selected' : ''}>Админище — всё кроме монет</option>
         <option value="coin_admin"${u.role === 'coin_admin' ? ' selected' : ''}>Администратор — только монеты</option>
+        <option value="office_admin"${u.role === 'office_admin' ? ' selected' : ''}>Офис — операторы</option>
       </select>
     </td>
     <td style="font-size:12px;color:var(--muted)">${u.lastLoginAt ? formatDate(u.lastLoginAt) : '—'}</td>

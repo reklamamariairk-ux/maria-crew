@@ -30,6 +30,7 @@ import v1NotificationsRoutes from './routes/v1Notifications';
 import backupRoutes from './routes/backup';
 import vpnRoutes from './routes/vpn';
 import v1FeedbackRoutes from './routes/v1Feedback';
+import officeRoutes from './routes/office';
 
 const router = Router();
 
@@ -59,6 +60,18 @@ router.use(adminAuth);
 // Метаданные текущего админа — нужны фронту, чтобы спрятать недоступные разделы
 router.get('/me/admin', (req: Request, res: Response): void => {
   res.json({ id: req.adminUserId, role: req.adminRole });
+});
+
+// Офис — отдельный контур данных и API. Офисный администратор не проходит
+// дальше этого блока и поэтому не может обратиться к розничным эндпоинтам,
+// даже если вручную подменит URL в браузере.
+router.use('/office', requireRole('superadmin', 'office_admin'), officeRoutes);
+router.use((req: Request, res: Response, next: NextFunction): void => {
+  if (req.adminRole === 'office_admin') {
+    res.status(403).json({ error: 'Офисной роли недоступны данные розницы' });
+    return;
+  }
+  next();
 });
 
 // ── Защита монетных операций (только superadmin + coin_admin) ──────────────

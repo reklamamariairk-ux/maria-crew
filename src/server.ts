@@ -170,6 +170,7 @@ export function createServer(bot: Bot<BotContext>, webhookSecret: string): expre
   // в App Store / Google Play (постоянный URL). Не закрыта авторизацией,
   // короткий URL без .html для использования в маркетах.
   app.get('/privacy', (_req, res) => res.sendFile(path.join(adminDir, 'privacy.html')));
+  app.get('/office', (_req, res) => res.sendFile(path.join(adminDir, 'office.html')));
   app.get('*', (_req, res) => res.sendFile(path.join(adminDir, 'index.html')));
 
   app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {

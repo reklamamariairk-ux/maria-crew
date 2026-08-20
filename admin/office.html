@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Maria Crew · Офис</title>
+  <meta name="description" content="Офисное пространство Maria Crew">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" type="image/png" href="/webapp/assets/favicon.png">
+  <meta name="theme-color" content="#b3123c">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/webapp/assets/lucide.min.js" defer></script>
+  <style>
+    .office-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+    .office-form-actions{display:flex;gap:8px;align-items:end;flex-wrap:wrap}
+    .office-score{font-weight:800;color:var(--pink);white-space:nowrap}
+    .office-top-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border-soft)}
+    .office-top-row:last-child{border-bottom:0}.office-rank{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--pink-50);color:var(--pink);font-weight:800}
+    .office-top-main{flex:1;min-width:0}.office-top-name{font-weight:700}.office-top-team{color:var(--muted);font-size:12px}
+    .office-empty{padding:28px;text-align:center;color:var(--muted)}
+    .office-metric-input{width:96px;min-width:82px;text-align:right}
+    .workspace-link{display:none;align-items:center;gap:5px;color:var(--pink);font-size:12px;font-weight:700;text-decoration:none}
+    .metric-help{font-size:12px;line-height:1.5;color:var(--muted);margin-top:8px}
+    .office-section-head{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}
+    .office-inline-form{display:flex;gap:8px;max-width:560px}
+    @media(max-width:760px){
+      .office-grid{grid-template-columns:1fr}.office-form-actions .btn{width:100%;justify-content:center}.workspace-link span{display:none}
+      .office-section-head{align-items:stretch}.office-section-head .btn{width:100%;justify-content:center}
+      .office-inline-form{max-width:none;flex-direction:column}.office-inline-form .btn{width:100%;justify-content:center}
+      .page-subtitle{overflow-wrap:anywhere}
+    }
+  </style>
+</head>
+<body>
+
+<main id="login-screen" aria-labelledby="login-title">
+  <h1 id="login-title">Maria Crew</h1>
+  <p>Офис · панель управления</p>
+  <input type="text" id="login-username" aria-label="Логин" placeholder="Логин" autocomplete="username">
+  <input type="password" id="login-password" aria-label="Пароль" placeholder="Пароль" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
+  <button onclick="login()">Войти</button>
+  <p id="login-error" style="color:var(--red);font-size:13px"></p>
+</main>
+
+<div id="app">
+  <header class="mobile-header">
+    <button class="mobile-menu-btn" onclick="openSidebar()" aria-label="Меню"><i data-lucide="menu"></i></button>
+    <img src="/webapp/assets/logo-light.png" alt="Мария" class="mobile-logo">
+    <select id="mobile-team-select" onchange="onMobileTeamChange()" class="mobile-store-sel">
+      <option value="">— Все команды —</option>
+    </select>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <img src="/webapp/assets/logo-light.png" alt="Кондитерская Мария" class="sidebar-logo">
+      <span class="sidebar-brand-badge">Office</span>
+      <button class="sidebar-close-btn" onclick="closeSidebar()" aria-label="Закрыть"><i data-lucide="x"></i></button>
+    </div>
+
+    <div class="sidebar-store">
+      <span class="sidebar-store-label">Команда</span>
+      <select id="team-select" onchange="onTeamChange()"><option value="">— Все команды —</option></select>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section">Каждый день</div>
+      <button class="nav-item active" data-tab="dashboard" onclick="switchTab('dashboard')"><i data-lucide="layout-dashboard"></i> Дашборд</button>
+
+      <div class="nav-section">Команда</div>
+      <button class="nav-item" data-tab="operators" onclick="switchTab('operators')"><i data-lucide="headphones"></i> Операторы</button>
+
+      <div class="nav-section">Мотивация</div>
+      <button class="nav-item" data-tab="metrics" onclick="switchTab('metrics')"><i data-lucide="bar-chart-3"></i> Метрики</button>
+
+      <div class="nav-section">Система</div>
+      <button class="nav-item" data-tab="teams" onclick="switchTab('teams')"><i data-lucide="users-round"></i> Команды</button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <a id="retail-workspace-link" class="workspace-link" href="/" title="Перейти в розничную админку"><i data-lucide="store"></i><span>Розница</span></a>
+      <button class="btn btn-ghost btn-sm" onclick="openChangePasswordModal()" title="Сменить пароль"><i data-lucide="key"></i></button>
+      <button class="logout-btn" onclick="logout()"><i data-lucide="log-out"></i> Выйти</button>
+    </div>
+  </aside>
+
+  <main class="app-main">
+    <div id="tab-dashboard" class="tab-content">
+      <div class="page-head">
+        <div><h1 class="page-title">Дашборд</h1><p class="page-subtitle"><span id="dash-scope">Все команды</span> · Сводная статистика офиса</p></div>
+        <button class="btn btn-ghost" onclick="loadDashboard()"><i data-lucide="refresh-cw"></i> Обновить</button>
+      </div>
+      <div class="dash-stats">
+        <button type="button" class="stat-card stat-card-link" onclick="switchTab('operators')">
+          <div class="stat-card-icon"><i data-lucide="headphones"></i></div><div class="value" id="dash-operators">—</div><div class="label">Активных операторов</div><i class="stat-card-arrow" data-lucide="chevron-right"></i>
+        </button>
+        <button type="button" class="stat-card stat-card-link" onclick="switchTab('teams')">
+          <div class="stat-card-icon"><i data-lucide="users-round"></i></div><div class="value" id="dash-teams">—</div><div class="label">Команд в выборке</div><i class="stat-card-arrow" data-lucide="chevron-right"></i>
+        </button>
+        <button type="button" class="stat-card stat-card-link" onclick="switchTab('metrics')">
+          <div class="stat-card-icon"><i data-lucide="clipboard-check"></i></div><div class="value" id="dash-metrics">—</div><div class="label">Заполнены метрики</div><i class="stat-card-arrow" data-lucide="chevron-right"></i>
+        </button>
+      </div>
+      <div class="dashboard-grid">
+        <div class="card card-pad">
+          <p class="section-title"><i data-lucide="trophy" style="width:14px;height:14px"></i> Лучшие операторы · <span id="dash-period" class="text-muted" style="font-weight:400"></span></p>
+          <div id="dash-top"><div class="office-empty">Добавьте показатели и заполните метрики</div></div>
+        </div>
+        <div class="card card-pad">
+          <p class="section-title"><i data-lucide="info" style="width:14px;height:14px"></i> Офисное пространство</p>
+          <p class="text-muted" style="font-size:13px;line-height:1.65">Интерфейс повторяет розничную админку. Команды заменяют торговые точки, а набор показателей можно настроить под работу операторов без изменения программы.</p>
+          <button class="btn btn-primary btn-sm" style="margin-top:14px" onclick="switchTab('metrics')"><i data-lucide="settings-2"></i> Настроить показатели</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-operators" class="tab-content hidden">
+      <div class="page-head">
+        <div><h1 class="page-title">Операторы</h1><p class="page-subtitle">Сотрудники офиса и распределение по командам</p></div>
+        <button class="btn btn-primary" onclick="openOperatorForm()"><i data-lucide="user-plus"></i> Добавить оператора</button>
+      </div>
+      <div id="operator-form" class="card card-pad hidden" style="margin-bottom:16px">
+        <p class="section-title" id="operator-form-title">Новый оператор</p>
+        <input type="hidden" id="operator-id">
+        <div class="office-grid">
+          <label>Имя <input id="operator-name" class="input" maxlength="100" placeholder="Имя и фамилия"></label>
+          <label>Команда <select id="operator-team" class="input"><option value="">Без команды</option></select></label>
+          <label>Телефон <input id="operator-phone" class="input" maxlength="32" placeholder="+7 999 000-00-00"></label>
+          <label>Email <input id="operator-email" class="input" maxlength="254" type="email" placeholder="name@maria.ru"></label>
+          <label>Дата выхода <input id="operator-joined" class="input" type="date"></label>
+          <label>Комментарий <input id="operator-notes" class="input" maxlength="2000" placeholder="Необязательно"></label>
+        </div>
+        <div class="office-form-actions" style="margin-top:12px">
+          <button class="btn btn-primary" onclick="saveOperator()"><i data-lucide="check"></i> Сохранить</button>
+          <button class="btn btn-ghost" onclick="closeOperatorForm()">Отмена</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-wrap"><table><thead><tr><th>Оператор</th><th>Команда</th><th>Контакты</th><th>Дата выхода</th><th>Статус</th><th></th></tr></thead><tbody id="operators-body"></tbody></table></div>
+      </div>
+    </div>
+
+    <div id="tab-metrics" class="tab-content hidden">
+      <div class="page-head">
+        <div><h1 class="page-title">Метрики операторов</h1><p class="page-subtitle">Тот же помесячный принцип, но показатели офиса настраиваются</p></div>
+        <div style="display:flex;gap:8px"><select id="metrics-month" class="input" onchange="loadMetrics()"></select><select id="metrics-year" class="input" onchange="loadMetrics()"></select></div>
+      </div>
+
+      <div class="card card-pad" style="margin-bottom:16px">
+        <div class="office-section-head">
+          <p class="section-title" style="margin:0">Показатели и формула</p>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('metric-definition-form').classList.toggle('hidden')"><i data-lucide="plus"></i> Добавить показатель</button>
+        </div>
+        <div id="metric-definition-form" class="office-grid hidden" style="margin-top:14px">
+          <label>Название <input id="metric-name" class="input" maxlength="100" placeholder="Например, качество"></label>
+          <label>Единица <input id="metric-unit" class="input" maxlength="24" placeholder="%, шт., мин."></label>
+          <label>Норма <input id="metric-target" class="input" type="number" min="0" step="0.01" value="100"></label>
+          <label>Вес <input id="metric-weight" class="input" type="number" min="0" max="100" step="0.1" value="1"></label>
+          <label>Лучше, когда <select id="metric-direction" class="input"><option value="higher">значение выше</option><option value="lower">значение ниже</option></select></label>
+          <div class="office-form-actions"><button class="btn btn-primary" onclick="addMetricDefinition()"><i data-lucide="check"></i> Добавить</button></div>
+        </div>
+        <p class="metric-help">Норма даёт 100 баллов. Вес определяет вклад показателя в итоговый рейтинг. Например: качество — вес 40, конверсия — 30, количество обращений — 30.</p>
+        <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Показатель</th><th>Единица</th><th>Норма</th><th>Вес</th><th>Направление</th><th>Статус</th><th></th></tr></thead><tbody id="metric-definitions-body"></tbody></table></div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap"><table id="office-metrics-table"><thead id="metrics-head"></thead><tbody id="metrics-body"></tbody></table></div>
+        <div style="display:flex;justify-content:flex-end;padding:14px"><button class="btn btn-primary" onclick="saveMetrics()"><i data-lucide="save"></i> Сохранить метрики</button></div>
+      </div>
+    </div>
+
+    <div id="tab-teams" class="tab-content hidden">
+      <div class="page-head"><div><h1 class="page-title">Команды</h1><p class="page-subtitle">Отделы или смены офисных операторов</p></div></div>
+      <div class="card card-pad" style="margin-bottom:16px">
+        <p class="section-title">Новая команда</p>
+        <div class="office-inline-form"><input id="new-team-name" class="input" maxlength="100" placeholder="Например, Входящие обращения" style="flex:1"><button class="btn btn-primary" onclick="addTeam()"><i data-lucide="plus"></i> Добавить</button></div>
+      </div>
+      <div class="card"><div class="table-wrap"><table><thead><tr><th>Команда</th><th>Активных операторов</th><th>Статус</th><th></th></tr></thead><tbody id="teams-body"></tbody></table></div></div>
+    </div>
+  </main>
+</div>
+
+<div id="modal-change-password" class="modal-overlay hidden">
+  <div class="modal-box" style="max-width:440px">
+    <div class="modal-header"><h2 class="modal-title">Сменить пароль</h2><button id="cpw-close-btn" class="modal-close" onclick="closeChangePasswordModal()"><i data-lucide="x"></i></button></div>
+    <div style="padding:18px;display:grid;gap:12px">
+      <label>Текущий пароль <input id="cpw-old" class="input" type="password" autocomplete="current-password"></label>
+      <label>Новый пароль <input id="cpw-new" class="input" type="password" autocomplete="new-password"></label>
+      <p id="cpw-hint" class="text-muted" style="font-size:12px"></p>
+      <div style="display:flex;justify-content:flex-end;gap:8px"><button id="cpw-cancel" class="btn btn-ghost" onclick="closeChangePasswordModal()">Отмена</button><button class="btn btn-primary" onclick="submitChangePassword()">Сохранить</button></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+<script src="/office.js"></script>
+</body>
+</html>

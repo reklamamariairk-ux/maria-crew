@@ -2,8 +2,8 @@ import { scryptSync, randomBytes, createHmac, timingSafeEqual } from 'crypto';
 import { pool } from '../db/pool';
 import { effectiveAdminSecret } from '../api/middleware/secret';
 
-export type AdminRole = 'superadmin' | 'editor' | 'coin_admin';
-const VALID_ROLES: AdminRole[] = ['superadmin', 'editor', 'coin_admin'];
+export type AdminRole = 'superadmin' | 'editor' | 'coin_admin' | 'office_admin';
+const VALID_ROLES: AdminRole[] = ['superadmin', 'editor', 'coin_admin', 'office_admin'];
 
 const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 дней
 

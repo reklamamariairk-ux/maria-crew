@@ -158,6 +158,10 @@
 
     <div class="sidebar-footer">
       <span class="text-muted">v1.0</span>
+      <a class="btn btn-ghost btn-sm role-superadmin-only" href="/office" title="Офисная админка" style="display:none;align-items:center;gap:4px;text-decoration:none">
+        <i data-lucide="headphones"></i>
+        <span style="font-size:12px">Офис</span>
+      </a>
       <button class="btn btn-ghost btn-sm" onclick="openChangePasswordModal()" title="Сменить свой пароль" style="display:inline-flex;align-items:center;gap:4px">
         <i data-lucide="key"></i>
         <span style="font-size:12px">Пароль</span>
@@ -1317,6 +1321,7 @@
               <option value="superadmin">Суперадмин — полный доступ</option>
               <option value="editor" selected>Админище — всё кроме монет</option>
               <option value="coin_admin">Администратор — только монеты</option>
+              <option value="office_admin">Офис — операторы и их показатели</option>
             </select>
           </label>
         </div>

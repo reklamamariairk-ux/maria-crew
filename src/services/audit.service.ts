@@ -50,6 +50,13 @@ export type AuditAction =
   | 'admin_user_create'
   | 'admin_user_update'
   | 'admin_user_delete'
+  | 'office_team_create'
+  | 'office_team_update'
+  | 'office_operator_create'
+  | 'office_operator_update'
+  | 'office_metric_create'
+  | 'office_metric_update'
+  | 'office_metrics_save'
   | 'backup_download';
 
 /** Записывает событие в audit_log. Не бросает исключений — фоновый журнал */

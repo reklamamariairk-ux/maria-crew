@@ -4,7 +4,7 @@ import { hashPassword, validatePassword, invalidateLiveAdmin, type AdminRole } f
 import { logAudit } from '../../services/audit.service';
 
 const router = Router();
-const VALID_ROLES: AdminRole[] = ['superadmin', 'editor', 'coin_admin'];
+const VALID_ROLES: AdminRole[] = ['superadmin', 'editor', 'coin_admin', 'office_admin'];
 
 // GET /api/admin-users
 router.get('/', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
