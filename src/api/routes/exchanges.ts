@@ -31,7 +31,13 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
     params.push(workspaceForRequest(req));
     conditions.push(`se.workspace = $${params.length}`);
 
-    if (status) { params.push(status); conditions.push(`se.status = $${params.length}`); }
+    if (status === 'action_required') {
+      // Единая рабочая очередь: новые заявки и уже одобренные, но ещё не
+      // доведённые до фактической выдачи (в том числе после ошибки 1С).
+      conditions.push(`se.status IN ('pending', 'approved')`);
+    } else if (status) {
+      params.push(status); conditions.push(`se.status = $${params.length}`);
+    }
     if (storeId) {
       const sid = parseInt(storeId, 10);
       if (!Number.isInteger(sid)) { res.status(400).json({ error: 'storeId должен быть числом' }); return; }

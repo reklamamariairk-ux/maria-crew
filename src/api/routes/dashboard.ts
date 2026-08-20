@@ -33,7 +33,7 @@ async function loadOfficeDashboard(req: Request, res: Response, year: number, mo
          FROM store_exchanges se
          JOIN employees e ON e.id = se.employee_id
          LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
-        WHERE se.workspace = 'office' AND se.status = 'pending'
+        WHERE se.workspace = 'office' AND se.status IN ('pending', 'approved')
           ${storeId ? 'AND COALESCE(oem.office_store_id, e.store_id) = $1' : ''}`,
       storeId ? [storeId] : [],
     ),
@@ -89,6 +89,7 @@ async function loadOfficeDashboard(req: Request, res: Response, year: number, mo
   res.json({
     activeEmployees: Number(employees.rows[0]?.count ?? 0),
     pendingExchanges: Number(pending.rows[0]?.count ?? 0),
+    actionRequiredExchanges: Number(pending.rows[0]?.count ?? 0),
     top3Mvp: [],
     mvpPeriod: null,
     coinsIssuedThisMonth: Number(coins.rows[0]?.total ?? 0),
@@ -139,14 +140,14 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
         ? pool.query<{ count: string }>(
             `SELECT COUNT(*)::text AS count FROM store_exchanges se
              JOIN employees e ON e.id = se.employee_id
-             WHERE se.status = 'pending' AND e.store_id = $1`,
+             WHERE se.status IN ('pending', 'approved') AND e.store_id = $1`,
             [storeId]
           )
         : pool.query<{ count: string }>(
             `SELECT COUNT(*)::text AS count FROM store_exchanges se
              JOIN employees e ON e.id = se.employee_id
              JOIN stores s ON s.id = e.store_id
-             WHERE se.status = 'pending' AND s.workspace = 'retail'`
+             WHERE se.status IN ('pending', 'approved') AND s.workspace = 'retail'`
           ),
       // Метрики свежайшего месяца + сохранённый mvp_score (если был «Обработать месяц»).
       // Если ничего нет — всё равно показываем сотрудников с любыми проставленными полями.
@@ -277,6 +278,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
     res.json({
       activeEmployees: totalActiveEmps,
       pendingExchanges: parseInt(pendingResult.rows[0].count, 10),
+      actionRequiredExchanges: parseInt(pendingResult.rows[0].count, 10),
       top3Mvp: top3Mvp.map(({ year: _y, month: _m, ...rest }) => rest),
       mvpPeriod,
       coinsIssuedThisMonth: parseInt(coinsResult.rows[0].total, 10),

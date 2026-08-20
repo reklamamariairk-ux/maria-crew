@@ -192,10 +192,10 @@
           <div class="label">Активных сотрудников</div>
           <i class="stat-card-arrow" data-lucide="chevron-right"></i>
         </button>
-        <button type="button" class="stat-card stat-card-link" id="dash-pending-card" onclick="dashGoToPendingExchanges()" title="Открыть заявки, ожидающие выдачи">
+        <button type="button" class="stat-card stat-card-link" id="dash-pending-card" onclick="dashGoToPendingExchanges()" title="Открыть заявки, требующие действия">
           <div class="stat-card-icon"><i data-lucide="shopping-bag"></i></div>
           <div class="value" id="dash-pending-ex-val">—</div>
-          <div class="label">Ожидают выдачи</div>
+          <div class="label">Требуют внимания</div>
           <i class="stat-card-arrow" data-lucide="chevron-right"></i>
         </button>
         <button type="button" class="stat-card stat-card-link" onclick="dashGoToCoinsExport()" title="Экспортировать монеты за этот месяц">
@@ -390,7 +390,7 @@
         <div id="coin-quick-challenges-chips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
       </div>
 
-      <div class="card card-pad" style="margin-bottom:16px;background:linear-gradient(180deg,var(--blue-50,#eef4ff),var(--surface));border-color:var(--blue-200,#cfdcfa)">
+      <div id="coin-bulk-card" class="card card-pad" style="margin-bottom:16px;background:linear-gradient(180deg,var(--blue-50,#eef4ff),var(--surface));border-color:var(--blue-200,#cfdcfa)">
         <p class="section-title"><i data-lucide="users" style="width:14px;height:14px"></i> Массовое начисление</p>
         <div class="form-row">
           <label>Кому
@@ -436,7 +436,7 @@
         </p>
       </div>
 
-      <div class="card card-pad" style="margin-bottom:16px">
+      <div id="coin-single-card" class="card card-pad" style="margin-bottom:16px">
         <p class="section-title">Начислить или списать</p>
         <div class="form-row">
           <label>Сотрудник
@@ -473,13 +473,14 @@
             </select>
           </label>
           <label>Количество
-            <input type="number" id="coin-amount" min="-1000" max="1000" step="1" value="1" style="width:100px">
+            <input type="number" id="coin-amount" min="-1000" max="1000" step="1" value="1" oninput="updateCoinOperationPreview()" style="width:100px">
           </label>
           <label>Примечание
             <input type="text" id="coin-note" placeholder="необязательно" style="width:240px">
           </label>
           <button class="btn btn-primary" onclick="awardCoins()"><i data-lucide="check"></i> Применить</button>
         </div>
+        <div id="coin-operation-preview" class="coin-operation-preview">Выберите сотрудника — здесь появятся текущий баланс и итог операции.</div>
         <p class="text-muted" style="margin-top:6px">
           <i data-lucide="info" style="width:12px;height:12px"></i>
           Выбери причину — сумма подставится автоматически. Для произвольной суммы оставь «Вручную». Примечание можно дополнить деталями.
@@ -561,6 +562,7 @@
         </div>
         <div class="flex gap-2 items-center">
           <select id="exchanges-status" class="input" onchange="loadExchanges()" style="font-size:13px;padding:8px 10px">
+            <option value="action_required" selected>Требуют действий</option>
             <option value="">— Все статусы —</option>
             <option value="pending">Ожидают</option>
             <option value="approved">Одобрены</option>
@@ -608,8 +610,13 @@
       </div>
 
       <div id="office-existing-employee" class="card card-pad hidden" style="margin-bottom:16px">
-        <p class="section-title"><i data-lucide="user-check" style="width:15px;height:15px"></i> Выбрать из сотрудников приложения</p>
-        <p class="text-muted" style="margin:0 0 12px;line-height:1.5">Здесь видны все сотрудники, которые уже вошли в Maria Crew. Профиль не дублируется: сохраняются Telegram, монеты и VPN.</p>
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:8px">
+          <div>
+            <p class="section-title" style="margin:0 0 6px"><i data-lucide="user-check" style="width:15px;height:15px"></i> Добавить сотрудника</p>
+            <p class="text-muted" style="margin:0;line-height:1.5">Сначала найдите человека среди пользователей Maria Crew — Telegram, монеты и VPN сохранятся.</p>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="closeEmployeeOnboarding()" title="Закрыть"><i data-lucide="x"></i></button>
+        </div>
         <div class="form-row" style="margin-bottom:0;align-items:end">
           <label style="flex:1;min-width:240px">Найти сотрудника
             <input type="text" id="office-candidate-search" class="input" placeholder="Имя, @username или точка" oninput="filterOfficeCandidates(this.value)" style="width:100%;margin-bottom:6px">
@@ -621,6 +628,10 @@
             <select id="office-candidate-store" style="min-width:180px"></select>
           </label>
           <button id="office-candidate-add-btn" class="btn btn-primary" onclick="attachOfficeCandidate()"><i data-lucide="user-plus"></i> Добавить в офис</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);flex-wrap:wrap">
+          <span class="text-muted" style="font-size:13px">Не нашли сотрудника?</span>
+          <button class="btn btn-ghost btn-sm" onclick="showNewOfficeEmployeeForm()"><i data-lucide="user-plus"></i> Создать нового</button>
         </div>
       </div>
 
@@ -648,7 +659,7 @@
             </select>
           </label>
           <button class="btn btn-primary" onclick="addEmployee()"><i data-lucide="check"></i> Добавить</button>
-          <button class="btn btn-ghost" onclick="document.getElementById('add-employee-form').classList.add('hidden')">Отмена</button>
+          <button class="btn btn-ghost" onclick="cancelAddEmployee()">Отмена</button>
         </div>
       </div>
 

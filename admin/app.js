@@ -13,6 +13,8 @@ const state = {
   activeChallenges: [],
   currentTab: 'dashboard',
   cloudinary: { cloudName: '', uploadPreset: '', enabled: false },
+  coinBalance: null,
+  coinBalanceEmployeeId: null,
 };
 
 const ROLE_LABEL = {
@@ -369,9 +371,9 @@ function applyOfficeInterface() {
   const storeLabel = document.querySelector('.sidebar-store-label');
   if (storeLabel) storeLabel.textContent = 'Команда';
   const guide = document.getElementById('office-telegram-guide');
-  if (guide) guide.classList.remove('hidden');
+  if (guide) guide.classList.add('hidden');
   const existingEmployee = document.getElementById('office-existing-employee');
-  if (existingEmployee) existingEmployee.classList.remove('hidden');
+  if (existingEmployee) existingEmployee.classList.add('hidden');
   const sales = document.getElementById('office-sales-summary');
   if (sales) sales.classList.remove('hidden');
   const top3 = document.getElementById('dash-top3')?.closest('.card');
@@ -416,6 +418,49 @@ function applyOfficeInterface() {
   if (backupButton?.closest('.card')) backupButton.closest('.card').classList.add('hidden');
   const newEmpStore = document.getElementById('new-emp-store');
   if (newEmpStore?.closest('label')?.firstChild) newEmpStore.closest('label').firstChild.textContent = 'Команда ';
+
+  // Офисная терминология: здесь сотрудники распределены по командам, а не
+  // по розничным точкам. Меняем самые заметные подписи общего интерфейса.
+  const exchangesStoreHead = document.querySelector('#tab-exchanges thead th:nth-child(2)');
+  if (exchangesStoreHead) exchangesStoreHead.textContent = 'Команда';
+  const employeesStoreHead = document.querySelector('#tab-employees thead th:nth-child(5)');
+  if (employeesStoreHead) employeesStoreHead.textContent = 'Команда';
+  const firedStoreHead = document.querySelector('#tab-fired thead th:nth-child(2)');
+  if (firedStoreHead) firedStoreHead.textContent = 'Команда';
+  const vpnStoreHead = document.querySelector('#tab-vpn thead th:nth-child(2)');
+  if (vpnStoreHead) vpnStoreHead.textContent = 'Команда';
+  const bulkScopeStore = document.querySelector('#coin-bulk-scope option[value="store"]');
+  if (bulkScopeStore) bulkScopeStore.textContent = 'Только по команде';
+  const bulkStoreLabel = document.getElementById('coin-bulk-store-wrap');
+  if (bulkStoreLabel?.firstChild) bulkStoreLabel.firstChild.textContent = 'Команда ';
+  const coinCombo = document.getElementById('coin-employee-combo');
+  if (coinCombo) coinCombo.placeholder = 'Начни вводить имя или команду…';
+  const employeeSearch = document.getElementById('emp-search');
+  if (employeeSearch) employeeSearch.placeholder = 'Поиск по имени, @username, команде';
+  const requestStoreFilter = document.getElementById('new-req-store-filter');
+  if (requestStoreFilter?.closest('label')?.firstChild) requestStoreFilter.closest('label').firstChild.textContent = 'Фильтр по команде ';
+  const teamBonusOption = document.querySelector('#card-source option[value="team_bonus"]');
+  if (teamBonusOption) teamBonusOption.textContent = 'Бонус лучшей команды';
+
+  // В офисе ежедневное начисление одному сотруднику — основной сценарий.
+  // Массовую операцию оставляем рядом, но прячем за явной кнопкой.
+  const singleCoinCard = document.getElementById('coin-single-card');
+  const bulkCoinCard = document.getElementById('coin-bulk-card');
+  if (singleCoinCard && bulkCoinCard) {
+    bulkCoinCard.parentNode.insertBefore(singleCoinCard, bulkCoinCard);
+    bulkCoinCard.classList.add('hidden');
+    if (!document.getElementById('office-coin-bulk-toggle')) {
+      const toggle = document.createElement('button');
+      toggle.id = 'office-coin-bulk-toggle';
+      toggle.type = 'button';
+      toggle.className = 'btn btn-ghost office-coin-bulk-toggle';
+      toggle.innerHTML = '<i data-lucide="users"></i><span>Массовое начисление</span><i data-lucide="chevron-down"></i>';
+      toggle.onclick = toggleOfficeBulkCoins;
+      singleCoinCard.insertAdjacentElement('afterend', toggle);
+    }
+  }
+
+  prepareMobileNavSections();
 }
 
 // ── App init ─────────────────────────────────────────────────────────────────
@@ -454,7 +499,7 @@ async function showApp() {
     try {
       if (OFFICE_MODE) {
         const [ex, req] = await Promise.all([
-          api('GET', '/exchanges?status=pending').catch(() => []),
+          api('GET', '/exchanges?status=action_required').catch(() => []),
           api('GET', '/requests/unread-count').catch(() => ({ count: 0 })),
         ]);
         updatePendingBadge(Array.isArray(ex) ? ex.length : 0);
@@ -462,7 +507,7 @@ async function showApp() {
         return;
       }
       const [ex, req] = await Promise.all([
-        api('GET', '/exchanges?status=pending').catch(() => []),
+        api('GET', '/exchanges?status=action_required').catch(() => []),
         api('GET', '/requests/unread-count').catch(() => ({ count: 0 })),
       ]);
       updatePendingBadge(Array.isArray(ex) ? ex.length : 0);
@@ -531,6 +576,7 @@ async function attachOfficeCandidate() {
     if (search) search.value = '';
     await loadOfficeAppCandidates();
     loadEmployees();
+    closeEmployeeOnboarding();
   } catch (error) { toastError(error); }
   finally { if (button) button.disabled = false; }
 }
@@ -617,7 +663,44 @@ function onMobileStoreChange() {
 
 // ── Mobile sidebar drawer ──────────────────────────────────────────────────
 
+function setMobileNavSectionCollapsed(section, collapsed) {
+  if (!section) return;
+  section.classList.toggle('is-collapsed', collapsed);
+  section.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  let node = section.nextElementSibling;
+  while (node && !node.classList.contains('nav-section')) {
+    if (node.classList.contains('nav-item')) node.classList.toggle('mobile-section-hidden', collapsed);
+    node = node.nextElementSibling;
+  }
+}
+
+function prepareMobileNavSections() {
+  if (!OFFICE_MODE) return;
+  const sections = [...document.querySelectorAll('.sidebar-nav .nav-section')];
+  sections.forEach((section, index) => {
+    if (section.dataset.mobilePrepared === 'true') return;
+    section.dataset.mobilePrepared = 'true';
+    section.classList.add('mobile-nav-section-toggle');
+    section.setAttribute('role', 'button');
+    section.setAttribute('tabindex', '0');
+    section.onclick = () => {
+      if (!window.matchMedia('(max-width: 768px)').matches) return;
+      setMobileNavSectionCollapsed(section, !section.classList.contains('is-collapsed'));
+    };
+    section.onkeydown = event => {
+      if ((event.key === 'Enter' || event.key === ' ') && window.matchMedia('(max-width: 768px)').matches) {
+        event.preventDefault();
+        section.click();
+      }
+    };
+    // Ежедневные разделы и команда открыты, редкие «Мотивация»/«Система»
+    // на телефоне свёрнуты. На десктопе класс не скрывает пункты.
+    setMobileNavSectionCollapsed(section, index >= 2);
+  });
+}
+
 function openSidebar() {
+  prepareMobileNavSections();
   document.getElementById('sidebar').classList.add('open');
   document.getElementById('sidebar-overlay').classList.add('visible');
   document.body.style.overflow = 'hidden';
@@ -1191,9 +1274,14 @@ async function loadCoinEmployees() {
   });
 
   document.getElementById('coins-balance-display').textContent = '';
+  state.coinBalance = null;
+  state.coinBalanceEmployeeId = null;
+  updateCoinOperationPreview();
 
   const sel = document.getElementById('coin-employee');
   sel.innerHTML = '<option value="">— выбери —</option>';
+  const combo = document.getElementById('coin-employee-combo');
+  if (combo) combo.value = '';
   state.employees.forEach(e => {
     const opt = document.createElement('option');
     opt.value = e.id;
@@ -1248,6 +1336,9 @@ function coinComboPick(id) {
   sel.value = String(id);
   if (input) input.value = e.name;
   if (list) list.classList.add('hidden');
+  state.coinBalance = null;
+  state.coinBalanceEmployeeId = null;
+  updateCoinOperationPreview();
   loadCoinHistory();
 }
 
@@ -1261,7 +1352,14 @@ document.addEventListener('click', (ev) => {
 async function loadCoinHistory() {
   const id = document.getElementById('coin-employee').value;
   const balanceEl = document.getElementById('coins-balance-display');
-  if (!id) { balanceEl.textContent = ''; loadCoinRecent(); return; }
+  if (!id) {
+    balanceEl.textContent = '';
+    state.coinBalance = null;
+    state.coinBalanceEmployeeId = null;
+    updateCoinOperationPreview();
+    loadCoinRecent();
+    return;
+  }
 
   const tbody = document.getElementById('coins-history-tbody');
   tbody.innerHTML = skeletonRows(4, 5);
@@ -1272,6 +1370,9 @@ async function loadCoinHistory() {
   ]);
 
   balanceEl.innerHTML = `Баланс: <strong style="color:var(--pink);font-size:15px">${balance?.balance ?? '?'}</strong> монет`;
+  state.coinBalance = Number(balance?.balance);
+  state.coinBalanceEmployeeId = Number(id);
+  updateCoinOperationPreview();
 
   if (!history || history.length === 0) {
     tbody.innerHTML = emptyRow(4, 'coins', 'Нет операций');
@@ -1307,6 +1408,42 @@ const COIN_REASON_AMOUNTS = {
   training_resistance: -3,
 };
 
+function plannedCoinAmount() {
+  const reason = document.getElementById('coin-reason')?.value || 'manual';
+  const challenge = parseChallengeReason(reason);
+  if (challenge) return challenge.ch.coinReward;
+  if (reason === 'manual' || reason === 'drinks') {
+    return parseInt(document.getElementById('coin-amount')?.value, 10);
+  }
+  return COIN_REASON_AMOUNTS[reason];
+}
+
+function updateCoinOperationPreview() {
+  const preview = document.getElementById('coin-operation-preview');
+  if (!preview) return;
+  const employeeId = Number(document.getElementById('coin-employee')?.value);
+  const employee = (state.employees || []).find(item => item.id === employeeId);
+  if (!employee) {
+    preview.className = 'coin-operation-preview';
+    preview.textContent = 'Выберите сотрудника — здесь появятся текущий баланс и итог операции.';
+    return;
+  }
+  if (state.coinBalanceEmployeeId !== employeeId || !Number.isFinite(state.coinBalance)) {
+    preview.className = 'coin-operation-preview';
+    preview.textContent = `${employee.name}: загружаю текущий баланс…`;
+    return;
+  }
+  const amount = plannedCoinAmount();
+  if (!Number.isFinite(amount) || amount === 0) {
+    preview.className = 'coin-operation-preview is-warning';
+    preview.textContent = `${employee.name}: укажите ненулевое количество монет.`;
+    return;
+  }
+  const result = state.coinBalance + amount;
+  preview.className = `coin-operation-preview ${amount < 0 ? 'is-debit' : 'is-credit'}`;
+  preview.innerHTML = `<strong>${esc(employee.name)}</strong>: баланс ${state.coinBalance} → <strong>${result}</strong> монет <span>(${amount > 0 ? '+' : ''}${amount})</span>`;
+}
+
 function onCoinReasonChange() {
   const reason = document.getElementById('coin-reason').value;
   const amountInput = document.getElementById('coin-amount');
@@ -1317,6 +1454,7 @@ function onCoinReasonChange() {
     amountInput.value = String(ch.ch.coinReward);
     amountInput.disabled = true;
     amountInput.title = `Награда за челлендж «${ch.ch.name}» — ${ch.ch.coinReward}`;
+    updateCoinOperationPreview();
     return;
   }
 
@@ -1333,6 +1471,7 @@ function onCoinReasonChange() {
     amountInput.disabled = true;
     amountInput.title = `Сумма для «${COIN_LABELS[reason] ?? reason}» — фиксированная (${fixed > 0 ? '+' : ''}${fixed})`;
   }
+  updateCoinOperationPreview();
 }
 
 function onCoinBulkScopeChange() {
@@ -1362,7 +1501,7 @@ async function awardCoinsBulk() {
   const amount = parseInt(document.getElementById('coin-bulk-amount').value, 10);
   const note = document.getElementById('coin-bulk-note').value.trim();
 
-  if (scope === 'store' && !storeIdRaw) { toast('Выберите точку'); return; }
+  if (scope === 'store' && !storeIdRaw) { toast(OFFICE_MODE ? 'Выберите команду' : 'Выберите точку'); return; }
 
   const isManualAmount = reason === 'manual' || reason === 'drinks';
   if (isManualAmount && (!Number.isFinite(amount) || amount <= 0)) {
@@ -1388,7 +1527,7 @@ async function awardCoinsBulk() {
   let scopeLabel;
   if (scope === 'store') {
     const store = state.stores.find(s => String(s.id) === String(storeIdRaw));
-    scopeLabel = `точке «${store?.name ?? storeIdRaw}»`;
+    scopeLabel = `${OFFICE_MODE ? 'команде' : 'точке'} «${store?.name ?? storeIdRaw}»`;
   } else {
     scopeLabel = 'всем активным сотрудникам';
   }
@@ -1454,9 +1593,9 @@ async function awardCoins() {
       toast(finalAmount < 0 ? '✅ Монеты списаны' : '✅ Монеты начислены');
     }
     document.getElementById('coin-note').value = '';
+    document.getElementById('coin-amount').value = '1';
     document.getElementById('coin-reason').value = 'manual';
     onCoinReasonChange();
-    document.getElementById('coin-amount').value = '1';
     loadCoinHistory();
   } catch (e) { toastError(e); }
 }
@@ -1494,6 +1633,19 @@ function describeOneCExchangeError(error) {
   };
 }
 
+function toggleOfficeBulkCoins() {
+  const card = document.getElementById('coin-bulk-card');
+  const toggle = document.getElementById('office-coin-bulk-toggle');
+  if (!card || !toggle) return;
+  const willOpen = card.classList.contains('hidden');
+  card.classList.toggle('hidden', !willOpen);
+  const label = toggle.querySelector('span');
+  if (label) label.textContent = willOpen ? 'Скрыть массовое начисление' : 'Массовое начисление';
+  toggle.classList.toggle('is-open', willOpen);
+  if (willOpen) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  renderIcons();
+}
+
 async function loadExchanges() {
   const status = document.getElementById('exchanges-status').value;
   const parts = [];
@@ -1505,8 +1657,8 @@ async function loadExchanges() {
   tbody.innerHTML = skeletonRows(8, 5);
   const data = await api('GET', `/exchanges${params}`) || [];
 
-  // Если фильтр = pending, бейдж обновляем по длине списка (без лишнего запроса)
-  if (status === 'pending' && !state.storeId) {
+  // Рабочая очередь одновременно является счётчиком в меню.
+  if (status === 'action_required' && !state.storeId) {
     updatePendingBadge(data.length);
   }
 
@@ -1528,6 +1680,7 @@ async function loadExchanges() {
       oneCBadge = `<div style="margin-top:6px;color:var(--danger,#ef4444);font-size:11px;line-height:1.35;max-width:260px" title="${tip}">
         <strong>⚠ ${esc(error.title)}</strong>
         <div style="margin-top:2px">${esc(error.help)}</div>
+        <button type="button" class="btn btn-ghost btn-sm one-c-employee-btn" onclick="showEmployeeModal(${ex.employeeId})"><i data-lucide="user-round"></i> Открыть сотрудника</button>
       </div>`;
     } else if (ex.status === 'approved' && hasLink) {
       oneCBadge = `<div style="margin-top:4px;color:var(--muted);font-size:11px">⏳ ожидает 1С</div>`;
@@ -1542,7 +1695,7 @@ async function loadExchanges() {
     } else if (ex.status === 'approved' && ex.externalDocStatus === 'failed') {
       actions = `<div class="row-actions">
         <button class="btn btn-primary btn-sm" onclick="retryExchange1c(${ex.id}, this)"><i data-lucide="refresh-cw"></i> Повторить 1С</button>
-        <button class="btn btn-ghost btn-sm" onclick="updateExchange(${ex.id},'fulfilled')" title="Отметить выданным вручную (без записи в 1С)"><i data-lucide="check"></i> Выдано вручную</button>
+        <button class="btn btn-ghost btn-sm" onclick="confirmManualFulfill(${ex.id})" title="Отметить выданным вручную (без записи в 1С)"><i data-lucide="check"></i> Выдано вручную</button>
       </div>`;
     } else if (ex.status === 'approved' && !ex.externalDocStatus) {
       // Approved но без 1С привязки (старая логика) — кнопка для finalize
@@ -1553,20 +1706,20 @@ async function loadExchanges() {
       actions = '<span class="text-muted">—</span>';
     }
     return `<tr>
-      <td><strong>${esc(ex.employeeName)}</strong></td>
-      <td class="col-hide-sm" style="color:var(--text-2);font-size:13px">${esc(ex.storeName)}</td>
-      <td>
+      <td data-label="Сотрудник"><strong>${esc(ex.employeeName)}</strong></td>
+      <td data-label="${OFFICE_MODE ? 'Команда' : 'Точка'}" class="col-hide-sm" style="color:var(--text-2);font-size:13px">${esc(ex.storeName)}</td>
+      <td data-label="Приз"><div class="exchange-prize-content">
         ${esc(ex.prizeName)}
         ${hasLink ? `<div style="color:var(--muted);font-size:11px;margin-top:2px" title="Привязан товар 1С">🛒 ${esc(ex.prizeExternalProductName || ex.prizeExternalProductId)}</div>` : ''}
-      </td>
-      <td class="col-hide-sm">${ex.cardsSpent}</td>
-      <td class="col-hide-xs">${ex.coinsSpent}</td>
-      <td class="col-hide-xs" style="color:var(--muted);font-size:12px">${formatDate(ex.createdAt)}</td>
-      <td>
+      </div></td>
+      <td data-label="Карточек" class="col-hide-sm">${ex.cardsSpent}</td>
+      <td data-label="Монет" class="col-hide-xs">${ex.coinsSpent}</td>
+      <td data-label="Дата" class="col-hide-xs" style="color:var(--muted);font-size:12px">${formatDate(ex.createdAt)}</td>
+      <td data-label="Статус" class="exchange-status-cell"><div class="exchange-status-content">
         <span class="badge badge-${ex.status}">${statusLabel(ex.status)}</span>
         ${oneCBadge}
-      </td>
-      <td>${actions}</td>
+      </div></td>
+      <td data-label="Действие" class="exchange-actions-cell">${actions}</td>
     </tr>`;
   }).join('');
   renderIcons();
@@ -1611,6 +1764,18 @@ function updateExchange(id, status) {
     return;
   }
   _doUpdateExchange(id, status, null);
+}
+
+async function confirmManualFulfill(id) {
+  const ok = await confirmDialog({
+    title: 'Отметить приз выданным вручную?',
+    message: 'Заявка будет завершена без документа в 1С.',
+    warning: 'Используйте это только если сотрудник уже получил приз другим способом. Автоматически вернуть заявку в очередь после подтверждения нельзя.',
+    confirmText: 'Да, приз уже выдан',
+    danger: true,
+  });
+  if (!ok) return;
+  await _doUpdateExchange(id, 'fulfilled', 'Выдано вручную без документа 1С');
 }
 
 function closeRejectModal() {
@@ -2111,7 +2276,43 @@ async function changeEmployeeStore(id, selectEl) {
 }
 
 function showAddEmployee() {
-  document.getElementById('add-employee-form').classList.toggle('hidden');
+  if (!OFFICE_MODE) {
+    document.getElementById('add-employee-form').classList.toggle('hidden');
+    return;
+  }
+  document.getElementById('office-telegram-guide')?.classList.add('hidden');
+  document.getElementById('add-employee-form')?.classList.add('hidden');
+  const existing = document.getElementById('office-existing-employee');
+  existing?.classList.remove('hidden');
+  existing?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('office-candidate-search')?.focus();
+  renderIcons();
+}
+
+function showNewOfficeEmployeeForm() {
+  document.getElementById('office-existing-employee')?.classList.add('hidden');
+  document.getElementById('office-telegram-guide')?.classList.remove('hidden');
+  const form = document.getElementById('add-employee-form');
+  form?.classList.remove('hidden');
+  form?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('new-emp-name')?.focus();
+  renderIcons();
+}
+
+function closeEmployeeOnboarding() {
+  document.getElementById('office-existing-employee')?.classList.add('hidden');
+  document.getElementById('office-telegram-guide')?.classList.add('hidden');
+  document.getElementById('add-employee-form')?.classList.add('hidden');
+}
+
+function cancelAddEmployee() {
+  if (OFFICE_MODE) {
+    // Возвращаемся к первому шагу, чтобы можно было выбрать уже существующий
+    // профиль, не закрывая весь сценарий.
+    showAddEmployee();
+  } else {
+    document.getElementById('add-employee-form')?.classList.add('hidden');
+  }
 }
 
 async function addEmployee() {
@@ -2120,7 +2321,7 @@ async function addEmployee() {
   const telegramUsername = document.getElementById('new-emp-username').value.trim();
   const storeId = parseInt(document.getElementById('new-emp-store').value) || null;
   if (!name) { toast('Введите имя сотрудника'); return; }
-  if (!storeId) { toast('Выберите точку'); return; }
+  if (!storeId) { toast(OFFICE_MODE ? 'Выберите команду' : 'Выберите точку'); return; }
   try {
     await api('POST', '/employees', { name, storeId, role, telegramUsername: telegramUsername || undefined });
     toast('✅ Сотрудник добавлен');
@@ -2129,6 +2330,7 @@ async function addEmployee() {
     document.getElementById('new-emp-username').value = '';
     document.getElementById('new-emp-store').value = '';
     loadEmployees();
+    if (OFFICE_MODE) closeEmployeeOnboarding();
   } catch (e) { toastError(e); }
 }
 
@@ -2171,7 +2373,7 @@ async function loadLeaderboard() {
   const empThead = document.querySelector('#tab-leaderboard table thead tr');
   if (empThead) {
     empThead.innerHTML = showStoreCol
-      ? `<th>#</th><th>Имя</th><th class="col-hide-sm">Точка</th><th style="width:90px">Баллы</th><th class="col-hide-sm" style="width:60px">Карт.</th><th style="width:130px">Действие</th>`
+      ? `<th>#</th><th>Имя</th><th class="col-hide-sm">${OFFICE_MODE ? 'Команда' : 'Точка'}</th><th style="width:90px">Баллы</th><th class="col-hide-sm" style="width:60px">Карт.</th><th style="width:130px">Действие</th>`
       : `<th>#</th><th>Имя</th><th style="width:90px">Баллы</th><th class="col-hide-sm" style="width:60px">Карт.</th><th style="width:130px">Действие</th>`;
   }
 
@@ -4118,7 +4320,7 @@ function dashGoToPendingExchanges() {
   switchTab('exchanges');
   const statusSel = document.getElementById('exchanges-status');
   if (statusSel) {
-    statusSel.value = 'pending';
+    statusSel.value = 'action_required';
     loadExchanges();
   }
 }
@@ -4155,9 +4357,10 @@ async function loadDashboard() {
 
   const pendingEl = document.getElementById('dash-pending-ex-val');
   const pendingCard = document.getElementById('dash-pending-card');
-  pendingEl.textContent = data.pendingExchanges;
-  pendingCard.classList.toggle('has-pending', data.pendingExchanges > 0);
-  updatePendingBadge(data.pendingExchanges);
+  const actionRequired = data.actionRequiredExchanges ?? data.pendingExchanges ?? 0;
+  pendingEl.textContent = actionRequired;
+  pendingCard.classList.toggle('has-pending', actionRequired > 0);
+  updatePendingBadge(actionRequired);
 
   // Top-3 MVP
   const top3El = document.getElementById('dash-top3');
