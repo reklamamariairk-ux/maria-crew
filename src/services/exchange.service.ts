@@ -14,7 +14,7 @@ export interface ExchangeWithDelivery extends StoreExchange {
  *  Порядок: категория (по её sort_order) → цена ↑ → sort_order → id.
  *  Финальную сортировку «по цене внутри категории» под выбранную валюту
  *  делает клиент (карточки vs монеты), здесь — стабильный базовый порядок. */
-export async function getPrizes(): Promise<Prize[]> {
+export async function getPrizes(workspace: 'office' | 'retail' = 'retail'): Promise<Prize[]> {
   const { rows } = await pool.query<Prize>(
     `SELECT p.id, p.name, p.description, p.prize_type AS "prizeType",
             p.cards_required AS "cardsRequired", p.coins_required AS "coinsRequired",
@@ -24,8 +24,9 @@ export async function getPrizes(): Promise<Prize[]> {
             c.sort_order AS "categorySortOrder"
      FROM prizes p
      LEFT JOIN prize_categories c ON c.id = p.category_id
-     WHERE p.is_active = true
-     ORDER BY COALESCE(c.sort_order, 9999), p.coins_required, p.cards_required, p.sort_order, p.id`
+     WHERE p.is_active = true AND p.workspace = $1
+     ORDER BY COALESCE(c.sort_order, 9999), p.coins_required, p.cards_required, p.sort_order, p.id`,
+    [workspace],
   );
   return rows;
 }
@@ -43,13 +44,26 @@ export async function requestExchange(
 
     // Блокируем строку сотрудника — предотвращает concurrent exchanges
     await client.query('SELECT id FROM employees WHERE id = $1 FOR UPDATE', [employeeId]);
+    const { rows: employeeRows } = await client.query<{ workspace: 'office' | 'retail' }>(
+      `SELECT CASE
+                WHEN s.workspace = 'office' OR oem.employee_id IS NOT NULL
+                THEN 'office' ELSE 'retail'
+              END AS workspace
+         FROM employees e
+         LEFT JOIN stores s ON s.id = e.store_id
+         LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+        WHERE e.id = $1`,
+      [employeeId],
+    );
+    if (!employeeRows[0]) throw new Error('Сотрудник не найден');
+    const workspace = employeeRows[0].workspace;
 
     const { rows: prizeRows } = await client.query<Prize>(
       `SELECT id, name, description, prize_type AS "prizeType",
               cards_required AS "cardsRequired", coins_required AS "coinsRequired",
               is_active AS "isActive", sort_order AS "sortOrder"
-       FROM prizes WHERE id = $1 AND is_active = true`,
-      [prizeId]
+       FROM prizes WHERE id = $1 AND is_active = true AND workspace = $2`,
+      [prizeId, workspace]
     );
     const prize = prizeRows[0];
     if (!prize) throw new Error('Приз не найден или недоступен');
@@ -98,15 +112,15 @@ export async function requestExchange(
     // Создаём запись обмена
     const { rows } = await client.query<StoreExchange>(
       `INSERT INTO store_exchanges
-         (employee_id, prize_id, cards_spent, coins_spent, card_ids, prize_name, prize_type)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (employee_id, prize_id, cards_spent, coins_spent, card_ids, prize_name, prize_type, workspace)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, employee_id AS "employeeId", prize_id AS "prizeId",
                  cards_spent AS "cardsSpent", coins_spent AS "coinsSpent",
                  card_ids AS "cardIds", status, notes,
                  processed_by AS "processedBy", created_at AS "createdAt",
                  processed_at AS "processedAt"`,
       [employeeId, prizeId, prize.cardsRequired, prize.coinsRequired,
-       spentCardIds.length > 0 ? spentCardIds : null, prize.name, prize.prizeType]
+       spentCardIds.length > 0 ? spentCardIds : null, prize.name, prize.prizeType, workspace]
     );
     const exchange = rows[0];
 
@@ -354,7 +368,8 @@ async function getExchangeById(exchangeId: number): Promise<ExchangeWithDelivery
 /** История обменов сотрудника */
 export async function getExchangeHistory(
   employeeId: number,
-  limit = 10
+  limit = 10,
+  workspace: 'office' | 'retail' = 'retail',
 ): Promise<(StoreExchange & { prizeName: string; prizeType: string })[]> {
   const { rows } = await pool.query<StoreExchange & { prizeName: string; prizeType: string }>(
     `SELECT se.id, se.employee_id AS "employeeId", se.prize_id AS "prizeId",
@@ -366,10 +381,10 @@ export async function getExchangeHistory(
             COALESCE(p.prize_type::text, se.prize_type) AS "prizeType"
      FROM store_exchanges se
      LEFT JOIN prizes p ON p.id = se.prize_id
-     WHERE se.employee_id = $1
+     WHERE se.employee_id = $1 AND se.workspace = $3
      ORDER BY se.created_at DESC
      LIMIT $2`,
-    [employeeId, limit]
+    [employeeId, limit, workspace]
   );
   return rows;
 }

@@ -7,6 +7,7 @@ import { getStreak, doCheckin } from '../../services/streak.service';
 import { getActiveChallenges, checkAndCompleteChallenge } from '../../services/challenge.service';
 import { getAvailableCardCount } from '../../services/card.service';
 import { getPrizes, requestExchange, getExchangeHistory } from '../../services/exchange.service';
+import { employeeWorkspace } from '../../services/adminWorkspace.service';
 import { notifyAdminNewExchange } from '../../bot/notifications/sender';
 import { getEmployeeLeaderboard, getStoreLeaderboard } from '../../services/rating.service';
 import { markWebappAuth } from '../../diagnostics';
@@ -478,7 +479,7 @@ router.get('/prizes', async (req: Request, res: Response, next: NextFunction): P
   try {
     const auth = await requireAuth(req, res);
     if (!auth) return;
-    const prizes = await getPrizes();
+    const prizes = await getPrizes(await employeeWorkspace(auth.employee.id));
     res.json(prizes);
   } catch (err) { next(err); }
 });
@@ -720,7 +721,9 @@ router.get('/exchanges/my', async (req: Request, res: Response, next: NextFuncti
   try {
     const auth = await requireAuth(req, res);
     if (!auth) return;
-    const exchanges = await getExchangeHistory(auth.employee.id, 30);
+    const exchanges = await getExchangeHistory(
+      auth.employee.id, 30, await employeeWorkspace(auth.employee.id),
+    );
     res.json({ exchanges });
   } catch (err) { next(err); }
 });

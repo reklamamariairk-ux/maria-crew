@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { logAudit } from '../../services/audit.service';
+import { workspaceForRequest } from '../../services/adminWorkspace.service';
 
 const router = Router();
 
@@ -72,8 +73,9 @@ const PRIZE_SELECT = `
 
 // GET /api/prizes — все призы (включая скрытые), с полями категории.
 // Порядок: категория → цена ↑ → sort_order → id (как в витрине).
-router.get('/', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const workspace = workspaceForRequest(req);
     const { rows } = await pool.query(
       `SELECT p.id, p.name, p.description, p.prize_type AS "prizeType",
               p.cards_required AS "cardsRequired", p.coins_required AS "coinsRequired",
@@ -87,7 +89,9 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
               p.external_items        AS "externalItems"
        FROM prizes p
        LEFT JOIN prize_categories c ON c.id = p.category_id
-       ORDER BY COALESCE(c.sort_order, 9999), p.coins_required, p.cards_required, p.sort_order, p.id`
+       WHERE p.workspace = $1
+       ORDER BY COALESCE(c.sort_order, 9999), p.coins_required, p.cards_required, p.sort_order, p.id`,
+      [workspace],
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -96,6 +100,7 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction): Promis
 // POST /api/prizes — создать
 router.post('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const workspace = workspaceForRequest(req);
     const body = req.body as {
       name: string; description?: string; prizeType: string;
       cardsRequired?: number; coinsRequired?: number; sortOrder?: number;
@@ -123,10 +128,14 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
     const head = items[0] ?? null;
 
     const categoryId = Number.isFinite(body.categoryId as number) ? Number(body.categoryId) : null;
+    if (categoryId !== null) {
+      const category = await pool.query(`SELECT 1 FROM prize_categories WHERE id = $1 AND workspace = $2`, [categoryId, workspace]);
+      if (!category.rows[0]) { res.status(400).json({ error: 'Категория недоступна в этом магазине' }); return; }
+    }
     const { rows } = await pool.query(
       `INSERT INTO prizes (name, description, prize_type, cards_required, coins_required, sort_order,
-                           category_id, external_product_id, external_product_name, external_qty, external_items)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
+                           category_id, external_product_id, external_product_name, external_qty, external_items, workspace)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12)
        RETURNING ${PRIZE_SELECT.replace(/^[\s]*SELECT /, '')}`,
       [
         body.name.trim(), body.description?.trim() || null, body.prizeType,
@@ -136,6 +145,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
         head?.name ?? null,
         head?.qty ?? 1,
         JSON.stringify(items),
+        workspace,
       ]
     );
     res.status(201).json(rows[0]);
@@ -146,6 +156,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
 // PUT /api/prizes/:id — обновить
 router.put('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const workspace = workspaceForRequest(req);
     const body = req.body as {
       name?: string; description?: string | null; prizeType?: string;
       cardsRequired?: number; coinsRequired?: number;
@@ -174,6 +185,10 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     if (body.sortOrder !== undefined) { vals.push(body.sortOrder); sets.push(`sort_order = $${vals.length}`); }
     if (body.categoryId !== undefined) {
       const cid = Number.isFinite(body.categoryId as number) ? Number(body.categoryId) : null;
+      if (cid !== null) {
+        const category = await pool.query(`SELECT 1 FROM prize_categories WHERE id = $1 AND workspace = $2`, [cid, workspace]);
+        if (!category.rows[0]) { res.status(400).json({ error: 'Категория недоступна в этом магазине' }); return; }
+      }
       vals.push(cid); sets.push(`category_id = $${vals.length}`);
     }
 
@@ -191,9 +206,10 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
     if (!sets.length) { res.status(400).json({ error: 'Нечего обновлять' }); return; }
 
     vals.push(req.params.id);
+    vals.push(workspace);
     const { rows } = await pool.query(
       `UPDATE prizes SET ${sets.join(', ')}
-       WHERE id = $${vals.length}
+       WHERE id = $${vals.length - 1} AND workspace = $${vals.length}
        RETURNING ${PRIZE_SELECT.replace(/^[\s]*SELECT /, '')}`,
       vals
     );
@@ -210,7 +226,10 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction): Prom
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = parseInt(req.params.id, 10);
-    const { rowCount } = await pool.query(`DELETE FROM prizes WHERE id = $1`, [id]);
+    const { rowCount } = await pool.query(
+      `DELETE FROM prizes WHERE id = $1 AND workspace = $2`,
+      [id, workspaceForRequest(req)],
+    );
     if (!rowCount) { res.status(404).json({ error: 'Приз не найден' }); return; }
     res.json({ ok: true });
     logAudit('prize_delete', { prizeId: id }).catch(() => {});

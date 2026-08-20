@@ -18,10 +18,15 @@ beforeEach(() => {
   ({ pool: testPool } = newTestPool());
 });
 
-async function seedPrize(coins = 50, cards = 0): Promise<number> {
+async function seedPrize(
+  coins = 50,
+  cards = 0,
+  workspace: 'retail' | 'office' = 'retail',
+): Promise<number> {
   const { rows } = await testPool.query(
-    `INSERT INTO prizes (name, prize_type, cards_required, coins_required) VALUES ('Кофе', 'coffee', $1, $2) RETURNING id`,
-    [cards, coins]
+    `INSERT INTO prizes (name, prize_type, cards_required, coins_required, workspace)
+     VALUES ('Кофе', 'coffee', $1, $2, $3) RETURNING id`,
+    [cards, coins, workspace]
   );
   return (rows[0] as { id: number }).id;
 }
@@ -59,6 +64,38 @@ describe('exchange.service: requestExchange', () => {
     const { employeeId } = await seedEmployee(testPool);
     await expect(requestExchange(employeeId, 99999))
       .rejects.toThrow(/не найден/i);
+  });
+
+  it('офисный сотрудник может заказать только из офисного магазина', async () => {
+    const { employeeId } = await seedEmployee(testPool);
+    const { rows: officeStores } = await testPool.query(
+      `INSERT INTO stores (name, workspace) VALUES ('Офис', 'office') RETURNING id`,
+    );
+    const officeStoreId = (officeStores[0] as { id: number }).id;
+    await testPool.query(
+      `INSERT INTO office_employee_memberships (employee_id, office_store_id) VALUES ($1, $2)`,
+      [employeeId, officeStoreId],
+    );
+    const retailPrizeId = await seedPrize(0, 0, 'retail');
+    const officePrizeId = await seedPrize(0, 0, 'office');
+
+    await expect(requestExchange(employeeId, retailPrizeId))
+      .rejects.toThrow(/недоступен/i);
+
+    const exchange = await requestExchange(employeeId, officePrizeId);
+    const { rows } = await testPool.query(
+      `SELECT workspace FROM store_exchanges WHERE id = $1`,
+      [exchange.id],
+    );
+    expect((rows[0] as { workspace: string }).workspace).toBe('office');
+  });
+
+  it('розничный сотрудник не может заказать офисный приз', async () => {
+    const { employeeId } = await seedEmployee(testPool);
+    const officePrizeId = await seedPrize(0, 0, 'office');
+
+    await expect(requestExchange(employeeId, officePrizeId))
+      .rejects.toThrow(/недоступен/i);
   });
 });
 

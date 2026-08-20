@@ -17,7 +17,7 @@ async function loadOfficeDashboard(req: Request, res: Response, year: number, mo
   const storeClause = storeId ? 'AND COALESCE(oem.office_store_id, e.store_id) = $3' : '';
   const storeParams = storeId ? [year, month, storeId] : [year, month];
   const period = `${year}-${String(month).padStart(2, '0')}`;
-  const [employees, coins, performers, oneCSales] = await Promise.all([
+  const [employees, pending, coins, performers, oneCSales] = await Promise.all([
     pool.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count
          FROM employees e
@@ -25,6 +25,15 @@ async function loadOfficeDashboard(req: Request, res: Response, year: number, mo
          LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
         WHERE e.is_active = true AND e.fired_at IS NULL
           AND (s.workspace = 'office' OR oem.employee_id IS NOT NULL)
+          ${storeId ? 'AND COALESCE(oem.office_store_id, e.store_id) = $1' : ''}`,
+      storeId ? [storeId] : [],
+    ),
+    pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+         FROM store_exchanges se
+         JOIN employees e ON e.id = se.employee_id
+         LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+        WHERE se.workspace = 'office' AND se.status = 'pending'
           ${storeId ? 'AND COALESCE(oem.office_store_id, e.store_id) = $1' : ''}`,
       storeId ? [storeId] : [],
     ),
@@ -79,7 +88,7 @@ async function loadOfficeDashboard(req: Request, res: Response, year: number, mo
 
   res.json({
     activeEmployees: Number(employees.rows[0]?.count ?? 0),
-    pendingExchanges: 0,
+    pendingExchanges: Number(pending.rows[0]?.count ?? 0),
     top3Mvp: [],
     mvpPeriod: null,
     coinsIssuedThisMonth: Number(coins.rows[0]?.total ?? 0),

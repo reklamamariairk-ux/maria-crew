@@ -67,7 +67,10 @@ router.get('/me/admin', (req: Request, res: Response): void => {
 // дополнительно ограничивает данные офисным workspace.
 router.use('/office', requireRole('superadmin', 'office_admin'), officeRoutes);
 router.use((req: Request, res: Response, next: NextFunction): void => {
-  const officeAllowed = ['/coins', '/employees', '/stores', '/dashboard', '/vpn'];
+  const officeAllowed = [
+    '/coins', '/employees', '/stores', '/dashboard', '/vpn',
+    '/exchanges', '/prizes', '/categories',
+  ];
   if (req.adminRole === 'office_admin' && !officeAllowed.some(prefix => req.path === prefix || req.path.startsWith(prefix + '/'))) {
     res.status(403).json({ error: 'Офисной роли недоступны данные розницы' });
     return;

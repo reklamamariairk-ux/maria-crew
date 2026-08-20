@@ -23,7 +23,7 @@ const ROLE_LABEL = {
 };
 
 const OFFICE_MODE = location.pathname === '/office' || location.pathname.startsWith('/office/');
-const OFFICE_TABS = new Set(['dashboard', 'coins', 'employees', 'fired', 'vpn']);
+const OFFICE_TABS = new Set(['dashboard', 'exchanges', 'coins', 'employees', 'fired', 'prizes', 'vpn']);
 const LAST_TAB_KEY = OFFICE_MODE ? 'mc_office_last_tab' : 'mc_last_tab';
 
 // Единая точка истины: какие вкладки доступны какой роли.
@@ -370,8 +370,6 @@ function applyOfficeInterface() {
   if (existingEmployee) existingEmployee.classList.remove('hidden');
   const sales = document.getElementById('office-sales-summary');
   if (sales) sales.classList.remove('hidden');
-  const pending = document.getElementById('dash-pending-card');
-  if (pending) pending.classList.add('hidden');
   const top3 = document.getElementById('dash-top3')?.closest('.card');
   if (top3) top3.classList.add('hidden');
   const officeLink = document.querySelector('.sidebar-footer a[href="/office"]');
@@ -389,6 +387,12 @@ function applyOfficeInterface() {
   if (empSubtitle) empSubtitle.textContent = 'Офисная команда: Telegram, монеты, статусы и VPN';
   const vpnSubtitle = document.querySelector('#tab-vpn .page-subtitle');
   if (vpnSubtitle) vpnSubtitle.textContent = 'Ключи, онлайн и трафик офисных сотрудников';
+  const exchangesTitle = document.querySelector('#tab-exchanges .page-title');
+  if (exchangesTitle) exchangesTitle.textContent = 'Заявки офиса';
+  const exchangesSubtitle = document.querySelector('#tab-exchanges .page-subtitle');
+  if (exchangesSubtitle) exchangesSubtitle.textContent = 'Одобрение заявок только из офисного магазина';
+  const prizesTitle = document.querySelector('#tab-prizes .page-title');
+  if (prizesTitle) prizesTitle.textContent = 'Магазин офиса';
   const newEmpStore = document.getElementById('new-emp-store');
   if (newEmpStore?.closest('label')?.firstChild) newEmpStore.closest('label').firstChild.textContent = 'Команда ';
 }
@@ -429,6 +433,11 @@ async function showApp() {
   // Раз в 2 минуты подтягиваем счётчики ожидающих заявок + unread-запросов
   const refreshBadges = async () => {
     try {
+      if (OFFICE_MODE) {
+        const ex = await api('GET', '/exchanges?status=pending').catch(() => []);
+        updatePendingBadge(Array.isArray(ex) ? ex.length : 0);
+        return;
+      }
       const [ex, req] = await Promise.all([
         api('GET', '/exchanges?status=pending').catch(() => []),
         api('GET', '/requests/unread-count').catch(() => ({ count: 0 })),
@@ -437,8 +446,8 @@ async function showApp() {
       updateRequestsBadge(req?.count || 0);
     } catch { /* ignore */ }
   };
-  if (!OFFICE_MODE) refreshBadges();
-  if (!OFFICE_MODE && !state.pendingPoll) {
+  refreshBadges();
+  if (!state.pendingPoll) {
     state.pendingPoll = setInterval(refreshBadges, 30_000); // мессенджеру нужен живой бейдж
   }
 }
@@ -4863,7 +4872,7 @@ async function showEmployeeModal(id) {
   const [summary, coinHistory, exchanges] = await Promise.all([
     api('GET', `/employees/${id}/summary`),
     api('GET', `/coins/history/${id}?limit=15`),
-    OFFICE_MODE ? Promise.resolve([]) : api('GET', `/exchanges?employeeId=${id}`),
+    api('GET', `/exchanges?employeeId=${id}`),
   ]);
 
   if (!summary) { body.innerHTML = '<p class="text-muted">Ошибка загрузки</p>'; return; }
@@ -4956,7 +4965,7 @@ async function showEmployeeModal(id) {
          </table>`
       : '<p class="text-muted" style="margin-bottom:16px">Нет транзакций</p>'}
 
-    ${OFFICE_MODE ? '' : `<p class="section-title">Заявки на обмен</p>
+    <p class="section-title">${OFFICE_MODE ? 'Заявки в магазине офиса' : 'Заявки на обмен'}</p>
     ${(exchanges && exchanges.length > 0)
       ? `<table style="width:100%;font-size:13px">
            <thead><tr><th>Дата</th><th>Приз</th><th>Карт.</th><th>Монет</th><th>Статус</th></tr></thead>
@@ -4968,7 +4977,7 @@ async function showEmployeeModal(id) {
              <td><span class="badge badge-${ex.status}">${statusLabel(ex.status)}</span></td>
            </tr>`).join('')}</tbody>
          </table>`
-      : '<p class="text-muted">Нет заявок</p>'}`}
+      : '<p class="text-muted">Нет заявок</p>'}
   `;
   // Секция VPN подгружается отдельно — модалка не ждёт движок.
   if (state.role === 'superadmin' || state.role === 'office_admin') {

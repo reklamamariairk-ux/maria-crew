@@ -34,12 +34,11 @@ export async function areEmployeesInWorkspace(
     `SELECT COUNT(*)::int AS count
        FROM employees e
        LEFT JOIN stores s ON s.id = e.store_id
+       LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
       WHERE e.id = ANY($1::int[])
         AND (
           s.workspace = $2
-          OR ($2 = 'office' AND EXISTS (
-            SELECT 1 FROM office_employee_memberships oem WHERE oem.employee_id = e.id
-          ))
+          OR ($2 = 'office' AND oem.employee_id IS NOT NULL)
         )`,
     [ids, workspace],
   );
@@ -48,4 +47,17 @@ export async function areEmployeesInWorkspace(
 
 export async function areOfficeEmployees(employeeIds: number[]): Promise<boolean> {
   return areEmployeesInWorkspace(employeeIds, 'office');
+}
+
+export async function employeeWorkspace(employeeId: number): Promise<'office' | 'retail'> {
+  const { rows } = await pool.query<{ workspace: string | null; officeMember: boolean }>(
+    `SELECT s.workspace,
+            (oem.employee_id IS NOT NULL) AS "officeMember"
+       FROM employees e
+       LEFT JOIN stores s ON s.id = e.store_id
+       LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+      WHERE e.id = $1`,
+    [employeeId],
+  );
+  return rows[0]?.workspace === 'office' || rows[0]?.officeMember ? 'office' : 'retail';
 }

@@ -4,8 +4,22 @@ import { processExchange, tryPushDelivery } from '../../services/exchange.servic
 import { notifyExchangeStatus } from '../../bot/notifications/sender';
 import { logAudit } from '../../services/audit.service';
 import type { ExchangeStatus } from '../../types';
+import { isOfficeWorkspace, workspaceForRequest } from '../../services/adminWorkspace.service';
 
 const router = Router();
+
+router.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const idMatch = req.path.match(/^\/(\d+)(?:\/|$)/);
+  if (!idMatch) { next(); return; }
+  try {
+    const exchange = await pool.query(
+      `SELECT 1 FROM store_exchanges WHERE id = $1 AND workspace = $2`,
+      [Number(idMatch[1]), workspaceForRequest(req)],
+    );
+    if (!exchange.rows[0]) { res.status(403).json({ error: 'Заявка недоступна в текущем контуре' }); return; }
+    next();
+  } catch (err) { next(err); }
+});
 
 // GET /api/exchanges?status=pending&storeId=
 router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -13,12 +27,17 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
     const { status, storeId, employeeId } = req.query as { status?: string; storeId?: string; employeeId?: string };
     const conditions: string[] = [];
     const params: (string | number)[] = [];
+    const office = isOfficeWorkspace(req);
+    params.push(workspaceForRequest(req));
+    conditions.push(`se.workspace = $${params.length}`);
 
     if (status) { params.push(status); conditions.push(`se.status = $${params.length}`); }
     if (storeId) {
       const sid = parseInt(storeId, 10);
       if (!Number.isInteger(sid)) { res.status(400).json({ error: 'storeId должен быть числом' }); return; }
-      params.push(sid); conditions.push(`e.store_id = $${params.length}`);
+      params.push(sid); conditions.push(office
+        ? `COALESCE(oem.office_store_id, e.store_id) = $${params.length}`
+        : `e.store_id = $${params.length}`);
     }
     if (employeeId) {
       const eid = parseInt(employeeId, 10);
@@ -37,14 +56,16 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
               se.external_doc_status AS "externalDocStatus",
               se.external_doc_error  AS "externalDocError",
               se.external_doc_at     AS "externalDocAt",
-              e.name AS "employeeName", s.name AS "storeName",
+              e.name AS "employeeName", ${office ? 'COALESCE(os.name, s.name)' : 's.name'} AS "storeName",
               COALESCE(p.name, se.prize_name) AS "prizeName",
               COALESCE(p.prize_type::text, se.prize_type) AS "prizeType",
               p.external_product_id   AS "prizeExternalProductId",
               p.external_product_name AS "prizeExternalProductName"
        FROM store_exchanges se
        JOIN employees e ON e.id = se.employee_id
-       JOIN stores s ON s.id = e.store_id
+       LEFT JOIN stores s ON s.id = e.store_id
+       ${office ? `LEFT JOIN office_employee_memberships oem ON oem.employee_id = e.id
+       LEFT JOIN stores os ON os.id = oem.office_store_id` : ''}
        LEFT JOIN prizes p ON p.id = se.prize_id
        ${where}
        ORDER BY se.created_at DESC LIMIT 100`,

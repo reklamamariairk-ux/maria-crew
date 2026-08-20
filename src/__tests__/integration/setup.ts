@@ -25,6 +25,7 @@ export function newTestPool(): { pool: TestPool; db: IMemoryDb } {
       name TEXT NOT NULL,
       address TEXT,
       gis2_id TEXT,
+      workspace TEXT NOT NULL DEFAULT 'retail',
       is_active BOOLEAN NOT NULL DEFAULT true,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -90,7 +91,8 @@ export function newTestPool(): { pool: TestPool; db: IMemoryDb } {
       sort_order INT DEFAULT 0,
       external_items JSONB,
       external_product_id TEXT,
-      external_product_name TEXT
+      external_product_name TEXT,
+      workspace TEXT NOT NULL DEFAULT 'retail'
     );
 
     CREATE TABLE IF NOT EXISTS store_exchanges (
@@ -110,7 +112,14 @@ export function newTestPool(): { pool: TestPool; db: IMemoryDb } {
       external_doc_error TEXT,
       external_doc_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      processed_at TIMESTAMPTZ
+      processed_at TIMESTAMPTZ,
+      workspace TEXT NOT NULL DEFAULT 'retail'
+    );
+
+    CREATE TABLE IF NOT EXISTS office_employee_memberships (
+      employee_id INT PRIMARY KEY REFERENCES employees(id),
+      office_store_id INT NOT NULL REFERENCES stores(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS daily_checkins (

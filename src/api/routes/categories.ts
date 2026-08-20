@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../../db/pool';
 import { logAudit } from '../../services/audit.service';
+import { workspaceForRequest } from '../../services/adminWorkspace.service';
 
 const router = Router();
 
@@ -10,9 +11,12 @@ const CAT_SELECT = `
 `;
 
 // GET /api/categories — все категории призов (для дропдаунов и управления).
-router.get('/', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { rows } = await pool.query(`${CAT_SELECT} ORDER BY sort_order, id`);
+    const { rows } = await pool.query(
+      `${CAT_SELECT} WHERE workspace = $1 ORDER BY sort_order, id`,
+      [workspaceForRequest(req)],
+    );
     res.json(rows);
   } catch (err) { next(err); }
 });
@@ -26,10 +30,10 @@ router.post('/', async (req: Request, res: Response, next: NextFunction): Promis
     const emoji = body.emoji != null ? String(body.emoji).trim().slice(0, 16) || null : null;
     const sortOrder = Number.isFinite(body.sortOrder as number) ? Number(body.sortOrder) : 100;
     const { rows } = await pool.query(
-      `INSERT INTO prize_categories (name, emoji, sort_order)
-       VALUES ($1, $2, $3)
+      `INSERT INTO prize_categories (name, emoji, sort_order, workspace)
+       VALUES ($1, $2, $3, $4)
        RETURNING id, name, emoji, sort_order AS "sortOrder", is_active AS "isActive"`,
-      [name, emoji, sortOrder]
+      [name, emoji, sortOrder, workspaceForRequest(req)]
     );
     res.status(201).json(rows[0]);
     logAudit('prize_category_create', { id: rows[0].id, name }).catch(() => {});
@@ -55,9 +59,10 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction): Pr
     if (body.isActive !== undefined) { vals.push(!!body.isActive); sets.push(`is_active = $${vals.length}`); }
     if (!sets.length) { res.status(400).json({ error: 'Нечего обновлять' }); return; }
     vals.push(parseInt(req.params.id, 10));
+    vals.push(workspaceForRequest(req));
     const { rows } = await pool.query(
       `UPDATE prize_categories SET ${sets.join(', ')}
-       WHERE id = $${vals.length}
+       WHERE id = $${vals.length - 1} AND workspace = $${vals.length}
        RETURNING id, name, emoji, sort_order AS "sortOrder", is_active AS "isActive"`,
       vals
     );
@@ -72,7 +77,10 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction): Pr
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const id = parseInt(req.params.id, 10);
-    const { rowCount } = await pool.query(`DELETE FROM prize_categories WHERE id = $1`, [id]);
+    const { rowCount } = await pool.query(
+      `DELETE FROM prize_categories WHERE id = $1 AND workspace = $2`,
+      [id, workspaceForRequest(req)],
+    );
     if (!rowCount) { res.status(404).json({ error: 'Категория не найдена' }); return; }
     res.json({ ok: true });
     logAudit('prize_category_delete', { id }).catch(() => {});
