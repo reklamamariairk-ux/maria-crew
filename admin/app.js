@@ -1462,6 +1462,38 @@ async function awardCoins() {
 }
 
 // ── Заявки ────────────────────────────────────────────────────────────────────
+function describeOneCExchangeError(error) {
+  const raw = String(error || '').trim();
+  if (/phone_not_found|клиент[^\n]*по телефону[^\n]*не найден|карт[аы][^\n]*не найден/i.test(raw)) {
+    return {
+      title: 'Карта сотрудника не найдена в 1С',
+      help: 'Привяжите телефон сотрудника к дисконтной карте в 1С и нажмите «Повторить 1С».',
+    };
+  }
+  if (/не указан телефон|некорректн[^\n]*телефон/i.test(raw)) {
+    return {
+      title: 'Не указан корректный телефон сотрудника',
+      help: 'Добавьте телефон в карточке сотрудника и нажмите «Повторить 1С».',
+    };
+  }
+  if (/product_not_found|товар[^\n]*не найден/i.test(raw)) {
+    return {
+      title: 'Товар приза не найден в 1С',
+      help: 'Проверьте привязку товара в разделе «Призы» и повторите отправку.',
+    };
+  }
+  if (/product_out_of_stock|нет[^\n]*остат/i.test(raw)) {
+    return {
+      title: 'В 1С нет остатка товара',
+      help: 'Проверьте остаток товара и повторите отправку.',
+    };
+  }
+  return {
+    title: '1С не смогла выдать приз',
+    help: raw || 'Повторите отправку или проверьте доступность 1С.',
+  };
+}
+
 async function loadExchanges() {
   const status = document.getElementById('exchanges-status').value;
   const parts = [];
@@ -1491,8 +1523,12 @@ async function loadExchanges() {
       const tip = `1С документ: ${esc(ex.externalDocId || '')}${isMock ? ' (mock — реальный endpoint ещё не подключён)' : ''}`;
       oneCBadge = `<div style="margin-top:4px;color:var(--green,#22c55e);font-size:11px" title="${tip}">${isMock ? '🧪' : '✓'} 1С: ${esc((ex.externalDocId || '').slice(0, 18))}${(ex.externalDocId || '').length > 18 ? '…' : ''}</div>`;
     } else if (ex.externalDocStatus === 'failed') {
+      const error = describeOneCExchangeError(ex.externalDocError);
       const tip = `Ошибка 1С: ${esc(ex.externalDocError || 'unknown')}`;
-      oneCBadge = `<div style="margin-top:4px;color:var(--danger,#ef4444);font-size:11px" title="${tip}">⚠ 1С не выдал</div>`;
+      oneCBadge = `<div style="margin-top:6px;color:var(--danger,#ef4444);font-size:11px;line-height:1.35;max-width:260px" title="${tip}">
+        <strong>⚠ ${esc(error.title)}</strong>
+        <div style="margin-top:2px">${esc(error.help)}</div>
+      </div>`;
     } else if (ex.status === 'approved' && hasLink) {
       oneCBadge = `<div style="margin-top:4px;color:var(--muted);font-size:11px">⏳ ожидает 1С</div>`;
     }
@@ -1554,7 +1590,8 @@ async function retryExchange1c(id, btn) {
     if (r.externalDocStatus === 'created' || r.externalDocStatus === 'mock_created') {
       toast('✅ Документ создан в 1С');
     } else {
-      toast('⚠ 1С снова отказал: ' + (r.externalDocError || 'unknown'));
+      const error = describeOneCExchangeError(r.externalDocError);
+      toast(`⚠ ${error.title}. ${error.help}`);
     }
     loadExchanges();
   } catch (e) {
